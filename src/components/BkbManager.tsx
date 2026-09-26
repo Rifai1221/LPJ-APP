@@ -5,6 +5,7 @@ import {
   Calendar,
   Search,
   Plus,
+  X,
 } from 'lucide-react';
 import { BkbTransaction, SchoolMasterData } from '../types';
 import { formatRupiah } from '../utils/formatters';
@@ -74,7 +75,7 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
 
       {/* Filter Tabs */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {months.map((p) => (
             <button
               key={p}
@@ -88,6 +89,20 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
               {p === 'ALL' ? 'Semua Periode' : p}
             </button>
           ))}
+
+          {(selectedPeriod !== 'ALL' || searchQuery !== '') && (
+            <button
+              onClick={() => {
+                setSelectedPeriod('ALL');
+                setSearchQuery('');
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-xs ml-1"
+              title="Hapus Filter Periode & Pencarian"
+            >
+              <X className="w-3.5 h-3.5 text-rose-600" />
+              <span>Hapus Filter</span>
+            </button>
+          )}
         </div>
 
         <div className="relative min-w-[200px]">

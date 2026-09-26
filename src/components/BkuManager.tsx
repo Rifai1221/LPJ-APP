@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   FileText,
   Search,
+  X,
 } from 'lucide-react';
 import { BkuTransaction, SchoolMasterData } from '../types';
 import { formatRupiah } from '../utils/formatters';
@@ -70,7 +71,7 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
       {/* Monthly Tabs & Search */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {months.map((m) => (
               <button
                 key={m}
@@ -84,6 +85,20 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
                 {m === 'ALL' ? 'Semua Bulan (Keseluruhan)' : m}
               </button>
             ))}
+
+            {(selectedMonth !== 'ALL' || searchQuery !== '') && (
+              <button
+                onClick={() => {
+                  setSelectedMonth('ALL');
+                  setSearchQuery('');
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-xs ml-1"
+                title="Hapus Filter Bulan & Pencarian"
+              >
+                <X className="w-3.5 h-3.5 text-rose-600" />
+                <span>Hapus Filter</span>
+              </button>
+            )}
           </div>
 
           <div className="relative min-w-[200px]">
