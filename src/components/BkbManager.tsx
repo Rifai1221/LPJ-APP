@@ -66,39 +66,9 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
         </button>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {months.map((p) => (
-            <button
-              key={p}
-              onClick={() => setSelectedPeriod(p)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                selectedPeriod === p
-                  ? 'bg-indigo-600 text-white shadow-xs font-semibold'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {p === 'ALL' ? 'Semua Periode' : p}
-            </button>
-          ))}
-
-          {(selectedPeriod !== 'ALL' || searchQuery !== '') && (
-            <button
-              onClick={() => {
-                setSelectedPeriod('ALL');
-                setSearchQuery('');
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-xs ml-1"
-              title="Hapus Filter Periode & Pencarian"
-            >
-              <X className="w-3.5 h-3.5 text-rose-600" />
-              <span>Hapus Filter</span>
-            </button>
-          )}
-        </div>
-
-        <div className="relative min-w-[200px]">
+      {/* Search Bar */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-md">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -108,6 +78,16 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
             className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
           />
         </div>
+        {searchQuery !== '' && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-xs"
+            title="Bersihkan Pencarian"
+          >
+            <X className="w-3.5 h-3.5 text-rose-600" />
+            <span>Bersihkan</span>
+          </button>
+        )}
       </div>
 
       {/* Summary KPI */}
