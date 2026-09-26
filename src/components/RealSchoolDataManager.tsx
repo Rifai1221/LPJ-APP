@@ -1358,22 +1358,40 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                 Rincian koefisien bahan dan upah per satuan pekerjaan. Tambah, edit, atau hapus item & komponen pendukung.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                const nextRoman = toRoman((realData.ahspList || []).length + 1);
-                setNewAhspForm({
-                  kodePekerjaan: `AHSP-${nextRoman}`,
-                  namaPekerjaan: '',
-                  satuan: 'm³',
-                });
-                setIsAddingAhsp(true);
-              }}
-              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer shadow-xs"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ AHSP Pekerjaan Baru</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Reset seluruh Analisa AHSP ke data standar resmi sesuai AHSP.pdf?')) {
+                    onUpdateRealData({
+                      ...realData,
+                      ahspList: defaultRealSchoolData.ahspList,
+                    });
+                  }
+                }}
+                className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-bold transition cursor-pointer"
+                title="Muat Ulang Data Standar AHSP.pdf"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+                <span>Reset Data AHSP.pdf</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextRoman = toRoman((realData.ahspList || []).length + 1);
+                  setNewAhspForm({
+                    kodePekerjaan: `AHSP-${nextRoman}`,
+                    namaPekerjaan: '',
+                    satuan: 'm³',
+                  });
+                  setIsAddingAhsp(true);
+                }}
+                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ AHSP Pekerjaan Baru</span>
+              </button>
+            </div>
           </div>
 
           <div className="space-y-6">
