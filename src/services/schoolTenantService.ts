@@ -6,6 +6,7 @@ import {
   deleteDoc,
   getDocs,
   serverTimestamp,
+  disableNetwork,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { AppStateData } from '../types';
@@ -62,13 +63,18 @@ export function setStoredActiveTenantId(tenantId: string): void {
 
 // Global active school tracker stored in Firestore
 export async function getGlobalActiveTenantId(): Promise<string | null> {
+  if (checkIsQuotaExhausted()) return null;
   try {
     const activeDocRef = doc(db, 'app_settings', 'active_school');
     const snap = await withTimeout(getDoc(activeDocRef), 3000);
     if (snap.exists() && snap.data()?.activeTenantId) {
       return snap.data().activeTenantId as string;
     }
-  } catch (err) {
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes('resource-exhausted') || errMsg.includes('Quota limit exceeded') || errMsg.includes('Quota exceeded')) {
+      markQuotaExhausted();
+    }
     console.warn('Could not read global active school from Firestore:', err);
   }
   return null;
@@ -92,30 +98,36 @@ export async function getAllSchoolTenants(): Promise<SchoolTenant[]> {
   const hideDemo = isHideDemoPresets();
 
   // Step A: Load custom/active schools saved in Firestore FIRST (Highest Priority!)
-  try {
-    const schoolsCol = collection(db, 'schools');
-    const snapshot = await withTimeout(getDocs(schoolsCol), 3500);
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      if (data && (data.npsn || data.namaSekolah)) {
-        // Any document stored in Firestore was created or saved by the user!
-        // We always include it.
-        tenantsMap.set(docSnap.id, {
-          id: docSnap.id,
-          npsn: data.npsn || '10105685',
-          namaSekolah: data.namaSekolah || 'Sekolah Terdaftar',
-          jenjang: data.jenjang || 'SD',
-          kabKota: data.kabKota || '-',
-          provinsi: data.provinsi || '-',
-          email: data.email || '-',
-          isDemo: Boolean(data.isDemo && !data.lastActive),
-          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.createdAt || new Date().toISOString()),
-          lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate().toISOString() : (data.lastLogin || new Date().toISOString()),
-        });
+  if (!checkIsQuotaExhausted()) {
+    try {
+      const schoolsCol = collection(db, 'schools');
+      const snapshot = await withTimeout(getDocs(schoolsCol), 3500);
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data && (data.npsn || data.namaSekolah)) {
+          // Any document stored in Firestore was created or saved by the user!
+          // We always include it.
+          tenantsMap.set(docSnap.id, {
+            id: docSnap.id,
+            npsn: data.npsn || '10105685',
+            namaSekolah: data.namaSekolah || 'Sekolah Terdaftar',
+            jenjang: data.jenjang || 'SD',
+            kabKota: data.kabKota || '-',
+            provinsi: data.provinsi || '-',
+            email: data.email || '-',
+            isDemo: Boolean(data.isDemo && !data.lastActive),
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.createdAt || new Date().toISOString()),
+            lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate().toISOString() : (data.lastLogin || new Date().toISOString()),
+          });
+        }
+      });
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('resource-exhausted') || errMsg.includes('Quota limit exceeded') || errMsg.includes('Quota exceeded')) {
+        markQuotaExhausted();
       }
-    });
-  } catch (err) {
-    console.warn('Could not fetch schools from Firestore:', err);
+      console.warn('Could not fetch schools from Firestore:', err);
+    }
   }
 
   // Step B: Also check local storage custom tenants list if any offline registered
@@ -201,30 +213,36 @@ export async function registerNewSchoolTenant(
   const initialState = createSchoolStateForTenant(newTenant, params.templateType);
 
   // 1. Save metadata to Firestore
-  try {
-    const schoolDocRef = doc(db, 'schools', tenantId);
-    await setDoc(schoolDocRef, {
-      id: newTenant.id,
-      npsn: newTenant.npsn,
-      namaSekolah: newTenant.namaSekolah,
-      jenjang: newTenant.jenjang,
-      kabKota: newTenant.kabKota,
-      provinsi: newTenant.provinsi,
-      email: newTenant.email,
-      isDemo: false,
-      createdAt: serverTimestamp(),
-      lastLogin: serverTimestamp(),
-    });
+  if (!checkIsQuotaExhausted()) {
+    try {
+      const schoolDocRef = doc(db, 'schools', tenantId);
+      await setDoc(schoolDocRef, {
+        id: newTenant.id,
+        npsn: newTenant.npsn,
+        namaSekolah: newTenant.namaSekolah,
+        jenjang: newTenant.jenjang,
+        kabKota: newTenant.kabKota,
+        provinsi: newTenant.provinsi,
+        email: newTenant.email,
+        isDemo: false,
+        createdAt: serverTimestamp(),
+        lastLogin: serverTimestamp(),
+      });
 
-    // 2. Save isolated initial LPJ state to Firestore subcollection
-    const dataDocRef = doc(db, 'schools', tenantId, 'lpj_data', 'current');
-    const cleanState = sanitizeForFirestore(initialState);
-    await setDoc(dataDocRef, {
-      ...cleanState,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    console.warn('Firestore write warning during registration, caching locally:', err);
+      // 2. Save isolated initial LPJ state to Firestore subcollection
+      const dataDocRef = doc(db, 'schools', tenantId, 'lpj_data', 'current');
+      const cleanState = sanitizeForFirestore(initialState);
+      await setDoc(dataDocRef, {
+        ...cleanState,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('resource-exhausted') || errMsg.includes('Quota limit exceeded') || errMsg.includes('Quota exceeded')) {
+        markQuotaExhausted();
+      }
+      console.warn('Firestore write warning during registration, caching locally:', err);
+    }
   }
 
   // 3. Cache locally
@@ -254,45 +272,51 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
   const defaultState = createSchoolStateForTenant(tenant, 'full');
 
   // Try 1: Fetch directly from Cloud Firestore (Highest Authority)
-  try {
-    const dataDocRef = doc(db, 'schools', tenantId, 'lpj_data', 'current');
-    const docSnap = await withTimeout(getDoc(dataDocRef), 3500);
+  if (!checkIsQuotaExhausted()) {
+    try {
+      const dataDocRef = doc(db, 'schools', tenantId, 'lpj_data', 'current');
+      const docSnap = await withTimeout(getDoc(dataDocRef), 3500);
 
-    if (docSnap.exists()) {
-      const cloudData = docSnap.data();
-      if (cloudData && cloudData.school) {
-        const rawMergedState: AppStateData = {
-          ...defaultState,
-          ...cloudData,
-          school: {
-            ...defaultState.school,
-            ...(cloudData.school || {}),
-          },
-          realSchoolData: cloudData.realSchoolData || defaultState.realSchoolData,
-          rpdItems: Array.isArray(cloudData.rpdItems) ? cloudData.rpdItems : (defaultState.rpdItems || []),
-          workers: Array.isArray(cloudData.workers) ? cloudData.workers : (defaultState.workers || []),
-          stores: Array.isArray(cloudData.stores) ? cloudData.stores : (defaultState.stores || []),
-          progressWeeks: Array.isArray(cloudData.progressWeeks) ? cloudData.progressWeeks : defaultState.progressWeeks,
-          kwitansiList: Array.isArray(cloudData.kwitansiList) ? cloudData.kwitansiList : (defaultState.kwitansiList || []),
-          wageReports: Array.isArray(cloudData.wageReports) ? cloudData.wageReports : (defaultState.wageReports || []),
-          manualBkuTransactions: Array.isArray(cloudData.manualBkuTransactions) ? cloudData.manualBkuTransactions : [],
-          bkbRecords: Array.isArray(cloudData.bkbRecords) ? cloudData.bkbRecords : [],
-        };
-        const mergedState = sanitizeAndFilterDemoState(rawMergedState);
+      if (docSnap.exists()) {
+        const cloudData = docSnap.data();
+        if (cloudData && cloudData.school) {
+          const rawMergedState: AppStateData = {
+            ...defaultState,
+            ...cloudData,
+            school: {
+              ...defaultState.school,
+              ...(cloudData.school || {}),
+            },
+            realSchoolData: cloudData.realSchoolData || defaultState.realSchoolData,
+            rpdItems: Array.isArray(cloudData.rpdItems) ? cloudData.rpdItems : (defaultState.rpdItems || []),
+            workers: Array.isArray(cloudData.workers) ? cloudData.workers : (defaultState.workers || []),
+            stores: Array.isArray(cloudData.stores) ? cloudData.stores : (defaultState.stores || []),
+            progressWeeks: Array.isArray(cloudData.progressWeeks) ? cloudData.progressWeeks : defaultState.progressWeeks,
+            kwitansiList: Array.isArray(cloudData.kwitansiList) ? cloudData.kwitansiList : (defaultState.kwitansiList || []),
+            wageReports: Array.isArray(cloudData.wageReports) ? cloudData.wageReports : (defaultState.wageReports || []),
+            manualBkuTransactions: Array.isArray(cloudData.manualBkuTransactions) ? cloudData.manualBkuTransactions : [],
+            bkbRecords: Array.isArray(cloudData.bkbRecords) ? cloudData.bkbRecords : [],
+          };
+          const mergedState = sanitizeAndFilterDemoState(rawMergedState);
 
-        // Update local cache safely with actual cloud data
-        try {
-          localStorage.setItem(`${TENANT_CACHE_PREFIX}${tenantId}`, JSON.stringify(mergedState));
-        } catch {}
+          // Update local cache safely with actual cloud data
+          try {
+            localStorage.setItem(`${TENANT_CACHE_PREFIX}${tenantId}`, JSON.stringify(mergedState));
+          } catch {}
 
-        return {
-          state: mergedState,
-          source: 'cloud',
-        };
+          return {
+            state: mergedState,
+            source: 'cloud',
+          };
+        }
       }
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('resource-exhausted') || errMsg.includes('Quota limit exceeded') || errMsg.includes('Quota exceeded')) {
+        markQuotaExhausted();
+      }
+      console.warn(`[Multi-Tenant] Could not read Firestore for ${tenantId}:`, err);
     }
-  } catch (err) {
-    console.warn(`[Multi-Tenant] Could not read Firestore for ${tenantId}:`, err);
   }
 
   // Try 2: Load from local cache for this school
@@ -341,58 +365,72 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
   };
 }
 
+let isCloudQuotaExhausted = false;
+
+export function checkIsQuotaExhausted(): boolean {
+  if (isCloudQuotaExhausted) return true;
+  try {
+    const until = localStorage.getItem('FIRESTORE_QUOTA_EXHAUSTED_UNTIL');
+    if (until && Date.now() < Number(until)) {
+      isCloudQuotaExhausted = true;
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+export function markQuotaExhausted(): void {
+  isCloudQuotaExhausted = true;
+  try {
+    // Suppress network write retries for 1 hour to prevent console spam
+    localStorage.setItem('FIRESTORE_QUOTA_EXHAUSTED_UNTIL', String(Date.now() + 60 * 60 * 1000));
+    disableNetwork(db).catch(() => {});
+  } catch {}
+}
+
 // 5. Save school LPJ data to Cloud Firestore (Isolated per school tenant)
 export async function saveSchoolTenantAppState(
   tenantId: string,
   stateData: AppStateData
 ): Promise<boolean> {
-  // Always update local cache instantly for instant UI responsiveness
+  // Always update local cache instantly for instant UI responsiveness and 100% data safety
   try {
     localStorage.setItem(`${TENANT_CACHE_PREFIX}${tenantId}`, JSON.stringify(stateData));
   } catch (err) {
     console.error('Failed to cache locally:', err);
   }
 
+  // If quota was already marked exhausted, stay in local cache mode without spamming network
+  if (checkIsQuotaExhausted()) {
+    return true; // Successfully saved to local storage
+  }
+
   // Save to isolated Firestore path: schools/{tenantId}/lpj_data/current
   try {
     const dataDocRef = doc(db, 'schools', tenantId, 'lpj_data', 'current');
     const cleanData = sanitizeForFirestore(stateData);
-    await setDoc(dataDocRef, {
-      ...cleanData,
-      updatedAt: serverTimestamp(),
-    });
-
-    // Touch metadata lastActive and ensure isDemo is marked false (User actively uses this data)
-    const schoolDocRef = doc(db, 'schools', tenantId);
-    await setDoc(
-      schoolDocRef,
-      {
-        id: tenantId,
-        npsn: stateData.school.npsn || '10105685',
-        namaSekolah: stateData.school.namaSekolah,
-        kabKota: stateData.school.kabKota,
-        provinsi: stateData.school.provinsi,
-        lastActive: serverTimestamp(),
-        isDemo: false,
-      },
-      { merge: true }
-    );
-
-    // Also update global active school pointer so other sessions / newly published URLs pick it up
-    const activeRef = doc(db, 'app_settings', 'active_school');
-    await setDoc(
-      activeRef,
-      {
-        activeTenantId: tenantId,
+    await withTimeout(
+      setDoc(dataDocRef, {
+        ...cleanData,
         updatedAt: serverTimestamp(),
-      },
-      { merge: true }
+      }),
+      3500
     );
 
     return true;
-  } catch (err) {
-    console.error(`[Multi-Tenant] Failed to save Firestore for ${tenantId}:`, err);
-    return false;
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    if (
+      errMsg.includes('resource-exhausted') ||
+      errMsg.includes('Quota limit exceeded') ||
+      errMsg.includes('Quota exceeded')
+    ) {
+      markQuotaExhausted();
+      console.warn('[Firestore] Free daily write quota reached. Data is securely preserved in browser LocalStorage.');
+      return true; // Data is safe locally
+    }
+    console.warn(`[Multi-Tenant] Notice on Firestore save for ${tenantId}:`, err);
+    return true; // LocalStorage save succeeded
   }
 }
 

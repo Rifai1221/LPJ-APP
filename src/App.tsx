@@ -33,6 +33,7 @@ import {
   saveSchoolTenantAppState,
   registerNewSchoolTenant,
   deleteSchoolTenant,
+  checkIsQuotaExhausted,
 } from './services/schoolTenantService';
 import { getMonthFromPeriodString, resolveWeekDates } from './utils/monthHelper';
 import { firestoreDatabaseId } from './services/firebase';
@@ -166,7 +167,9 @@ export default function App() {
         isDirtyRef.current = false;
         const now = new Date();
         const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
-        if (ok) {
+        if (checkIsQuotaExhausted()) {
+          setLastSyncedText(`Tersimpan di Memori Lokal ${timeStr}`);
+        } else if (ok) {
           setLastSyncedText(`Tersimpan ${timeStr}`);
         } else {
           setLastSyncedText(`Tersimpan Offline ${timeStr}`);
@@ -174,9 +177,9 @@ export default function App() {
       } catch (err) {
         console.warn('Auto-save notice:', err);
         setIsSyncing(false);
-        setLastSyncedText('Tersimpan Offline');
+        setLastSyncedText('Tersimpan di Memori Lokal');
       }
-    }, 800);
+    }, 1800);
 
     return () => {
       if (saveTimeoutRef.current) {
@@ -293,12 +296,15 @@ export default function App() {
       isDirtyRef.current = false;
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
-      if (ok) {
+      if (checkIsQuotaExhausted()) {
+        setLastSyncedText(`Tersimpan di Memori Lokal ${timeStr}`);
+        setSwitchNotification(`Data ${currentTenant.namaSekolah} tersimpan aman di memori lokal browser (Batas kuota harian cloud tercapai).`);
+      } else if (ok) {
         setLastSyncedText(`Tersimpan ${timeStr}`);
         setSwitchNotification(`Data ${currentTenant.namaSekolah} berhasil disimpan permanen ke Google Cloud Firestore.`);
       } else {
         setLastSyncedText(`Tersimpan Offline ${timeStr}`);
-        setSwitchNotification(`Data tersimpan aman di memori lokal perangkat. Akan otomatis tersinkron ke Cloud saat jaringan terhubung.`);
+        setSwitchNotification(`Data tersimpan aman di memori lokal perangkat.`);
       }
       setTimeout(() => setSwitchNotification(null), 4000);
     } catch (err) {

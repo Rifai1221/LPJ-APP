@@ -5,6 +5,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
   memoryLocalCache,
+  disableNetwork,
   type Firestore,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
@@ -53,6 +54,14 @@ try {
 }
 
 export const db = firestoreDb;
+
+// If quota was previously marked as exhausted, disable Firestore network to prevent retry console logs
+try {
+  const until = localStorage.getItem('FIRESTORE_QUOTA_EXHAUSTED_UNTIL');
+  if (until && Date.now() < Number(until)) {
+    disableNetwork(db).catch(() => {});
+  }
+} catch {}
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);
