@@ -25,9 +25,10 @@ export const TaxManager: React.FC<TaxManagerProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const months = getAvailableMonthsForSchool(school, [taxRecords]);
+  const activeSelectedMonth = (selectedMonth === 'ALL' || months.includes(selectedMonth)) ? selectedMonth : 'ALL';
 
   const filtered = taxRecords.filter((t) => {
-    const matchMonth = selectedMonth === 'ALL' || t.bulan === selectedMonth;
+    const matchMonth = activeSelectedMonth === 'ALL' || t.bulan === activeSelectedMonth;
     const matchSearch =
       t.keperluan.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.noBukti.toLowerCase().includes(searchQuery.toLowerCase());

@@ -29,9 +29,10 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const months = getAvailableMonthsForSchool(school, [bkuList]);
+  const activeSelectedMonth = (selectedMonth === 'ALL' || months.includes(selectedMonth)) ? selectedMonth : 'ALL';
 
   const filteredBku = bkuList.filter((tx) => {
-    const matchMonth = selectedMonth === 'ALL' || tx.bulan === selectedMonth;
+    const matchMonth = activeSelectedMonth === 'ALL' || tx.bulan === activeSelectedMonth;
     const matchQuery =
       tx.uraian.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.noBukti.toLowerCase().includes(searchQuery.toLowerCase());

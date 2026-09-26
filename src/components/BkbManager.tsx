@@ -26,6 +26,7 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const months = getAvailableMonthsForSchool(school, [bkbList]);
+  const activeSelectedPeriod = (selectedPeriod === 'ALL' || months.includes(selectedPeriod)) ? selectedPeriod : 'ALL';
 
   // Calculate running bank balance
   let currentSaldo = 0;
@@ -38,7 +39,7 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
   });
 
   const filtered = computedList.filter((tx) => {
-    const matchPeriod = selectedPeriod === 'ALL' || tx.bulan === selectedPeriod;
+    const matchPeriod = activeSelectedPeriod === 'ALL' || tx.bulan === activeSelectedPeriod;
     const matchSearch =
       tx.uraian.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.noBukti.toLowerCase().includes(searchQuery.toLowerCase());

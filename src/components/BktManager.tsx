@@ -24,9 +24,10 @@ export const BktManager: React.FC<BktManagerProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const months = getAvailableMonthsForSchool(school, [bktList]);
+  const activeSelectedMonth = (selectedMonth === 'ALL' || months.includes(selectedMonth)) ? selectedMonth : 'ALL';
 
   const filteredBkt = bktList.filter((tx) => {
-    const matchMonth = selectedMonth === 'ALL' || tx.bulan === selectedMonth;
+    const matchMonth = activeSelectedMonth === 'ALL' || tx.bulan === activeSelectedMonth;
     const matchQuery =
       tx.uraian.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.noBukti.toLowerCase().includes(searchQuery.toLowerCase());
