@@ -818,28 +818,66 @@ export default function App() {
           } else if (div.prestasiMingguIni > 0 && div.kategori === 'MANAJEMEN') {
             const volRatio = div.bobotTotal > 0 ? div.prestasiMingguIni / div.bobotTotal : 0.1;
             const nomBiaya = Math.max(150000, Math.round(volRatio * (appState.school.totalAnggaran || 750000000) * (div.bobotTotal / 100)));
-            const kwBukti = `OP/${targetWeek < 10 ? '0' + targetWeek : targetWeek}-${dIdx + 1}/${yearStr}`;
+            const isPerencana = /perencana/i.test(div.uraian);
+            const isPengawas = /pengawas/i.test(div.uraian);
+            const isAdm = /administrasi|pengelolaan/i.test(div.uraian);
+
+            let kwBukti = `ADM/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`;
+            let penerimaNama = 'IRWAN YUSUF';
+            let penerimaPekerjaan = 'Pengelola Administrasi LPJ';
+            let tipeKw: KwitansiDocument['tipe'] = 'OPERASIONAL';
+            let isPph23 = false;
+            let pph23Amount = 0;
+
+            if (isPerencana) {
+              kwBukti = `KONS-P/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`;
+              penerimaNama = 'Zulfahmi, ST';
+              penerimaPekerjaan = 'Konsultan Perencana Teknis';
+              tipeKw = 'KONSULTAN';
+              isPph23 = true;
+              pph23Amount = Math.round(nomBiaya * 0.02);
+            } else if (isPengawas) {
+              kwBukti = `KONS-W/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`;
+              penerimaNama = 'M. Aris Syahputra, ST';
+              penerimaPekerjaan = 'Konsultan Pengawas Lapangan';
+              tipeKw = 'KONSULTAN';
+              isPph23 = true;
+              pph23Amount = Math.round(nomBiaya * 0.02);
+            }
+
+            // Pembayaran perencana, pengawas, dan administrasi dicatat pada setiap TANGGAL AKHIR MINGGU
             const opKwDoc: KwitansiDocument = {
               id: `kw-op-m${targetWeek}-${dIdx}-${Date.now()}`,
               noBukti: kwBukti,
               noSpb: `SPB-${kwBukti}`,
-              tipe: 'OPERASIONAL',
-              tanggal: startDateStr,
-              tanggalFormatted: formattedDateStart,
+              tipe: tipeKw,
+              tanggal: dateStr, // Tanggal akhir minggu (endDate)
+              tanggalFormatted: formattedDateEnd, // Tanggal akhir minggu (formatted)
               bulan: bulan,
-              uraian: `Pembayaran Biaya ${div.uraian} Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Revitalisasi ${appState.school.namaSekolah}`,
-              penerimaNama: appState.school.namaKepalaSekolah || 'Kepala Sekolah / Panitia',
-              penerimaPekerjaan: 'Ketua Tim Pelaksana',
+              uraian: isPerencana
+                ? `Pembayaran Lunas Honorarium Jasa Perencana Teknis Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Revitalisasi ${appState.school.namaSekolah}`
+                : isPengawas
+                ? `Pembayaran Lunas Honorarium Jasa Pengawas Lapangan Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Revitalisasi ${appState.school.namaSekolah}`
+                : `Pembayaran Lunas Biaya Pengelolaan Administrasi LPJ Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Revitalisasi ${appState.school.namaSekolah}`,
+              penerimaNama: penerimaNama,
+              penerimaPekerjaan: penerimaPekerjaan,
               penerimaAlamat: appState.school.kabKota,
-              items: [{ namaBarang: div.uraian, volume: 1, satuan: 'Kegiatan', hargaSatuan: nomBiaya, jumlah: nomBiaya }],
+              items: [{ 
+                namaBarang: isPerencana ? 'Honorarium Jasa Konsultan Perencana' : isPengawas ? 'Honorarium Jasa Konsultan Pengawas' : 'Biaya Pengelolaan Administrasi & ATK LPJ', 
+                volume: 1, 
+                satuan: 'Laporan/Minggu', 
+                hargaSatuan: nomBiaya, 
+                jumlah: nomBiaya 
+              }],
               nominal: nomBiaya,
               isPpn: false,
               isPph22: false,
-              isPph23: false,
+              isPph23: isPph23,
               ppnAmount: 0,
               pph22Amount: 0,
-              pph23Amount: 0,
+              pph23Amount: pph23Amount,
               kategoriBiayaPajak: 'Perencanaan_Pengelolaan',
+              keteranganSpb: `Pembayaran ${div.uraian} Minggu Ke-${targetWeek} Dibayarkan Pada Akhir Minggu (${formattedDateEnd})`,
               mingguKeRef: targetWeek,
             };
             const existingOpIdx = newKwitansiList.findIndex((k) => k.noBukti === kwBukti);
@@ -878,9 +916,11 @@ export default function App() {
       bkbRecords: currentBkb,
     }));
 
-    try {
-      confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-    } catch {}
+    setTimeout(() => {
+      try {
+        confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      } catch {}
+    }, 150);
   };
 
   const handleAutoGenerateFromProgress = (

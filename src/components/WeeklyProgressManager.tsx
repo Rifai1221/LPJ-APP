@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
   Sparkles,
@@ -89,8 +89,84 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   const [customRealisasiStr, setCustomRealisasiStr] = useState<Record<number, string>>({});
   const [customTargetStr, setCustomTargetStr] = useState<Record<number, string>>({});
 
+  // States for manual input, edit, and delete of week transactions
+  const [isTxModalOpen, setIsTxModalOpen] = useState<boolean>(false);
+  const [editingTx, setEditingTx] = useState<BkuTransaction | null>(null);
+  const [txFormError, setTxFormError] = useState<string | null>(null);
+  const [confirmDeleteTx, setConfirmDeleteTx] = useState<BkuTransaction | null>(null);
+
   const currentWeek =
-    progressWeeks.find((w) => w.mingguKe === selectedWeekNum) || progressWeeks[0];
+    progressWeeks.find((w) => w.mingguKe === selectedWeekNum) || progressWeeks[0] || { mingguKe: 1 };
+
+  const schoolYear = school?.tahunAnggaran?.trim() || '2026';
+  const weekResolved = resolveWeekDates(currentWeek, schoolYear);
+
+  const [txFormData, setTxFormData] = useState({
+    tanggal: weekResolved.startDate,
+    jenis: 'PENGELUARAN' as 'PENERIMAAN' | 'PENGELUARAN',
+    uraian: '',
+    noBukti: '',
+    nominal: 0,
+    kategoriBiaya: 'Konstruksi',
+  });
+
+  // Filter transactions belonging to selectedWeekNum
+  const currentWeekTransactions = useMemo(() => {
+    if (!bkuList) return [];
+    return bkuList.filter((tx) => {
+      // 1. Linked kwitansi with mingguKeRef
+      if (tx.kwitansiIdRef && kwitansiList) {
+        const linkedKw = kwitansiList.find((k) => k.id === tx.kwitansiIdRef);
+        if (linkedKw?.mingguKeRef === selectedWeekNum) return true;
+      }
+      // 2. Proof number matches week
+      const padWeek = selectedWeekNum < 10 ? `0${selectedWeekNum}` : `${selectedWeekNum}`;
+      if (
+        tx.noBukti.includes(`/UK/${padWeek}/`) ||
+        tx.noBukti.includes(`UK/${padWeek}/`) ||
+        tx.noBukti.includes(`M${selectedWeekNum}-`) ||
+        tx.noBukti.includes(`TARIK-M${selectedWeekNum}`)
+      ) {
+        return true;
+      }
+      // 3. Description mentions week
+      const lowUraian = tx.uraian.toLowerCase();
+      if (
+        lowUraian.includes(`minggu ke-${selectedWeekNum}`) ||
+        lowUraian.includes(`minggu ${selectedWeekNum} `) ||
+        lowUraian.includes(`minggu ${selectedWeekNum}(`) ||
+        lowUraian.includes(`minggu ${selectedWeekNum},`) ||
+        lowUraian.includes(`minggu ${selectedWeekNum} (${weekResolved.startDateFormatted}`)
+      ) {
+        return true;
+      }
+      // 4. Initial Termin 1 in Week 1
+      if (selectedWeekNum === 1 && (tx.id === 'bku-init-1' || tx.noBukti === 'BKT-01')) {
+        return true;
+      }
+      // 5. Initial Termin 2 in Week 8
+      if (selectedWeekNum === 8 && (tx.id === 'bku-init-2' || tx.noBukti === 'BKT-02')) {
+        return true;
+      }
+      // 6. Transaction date falls between week startDate and endDate
+      if (tx.tanggalObj && tx.tanggalObj >= weekResolved.startDate && tx.tanggalObj <= weekResolved.endDate) {
+        return true;
+      }
+      return false;
+    });
+  }, [bkuList, kwitansiList, selectedWeekNum, weekResolved]);
+
+  const totalPengeluaranWeek = useMemo(() => {
+    return currentWeekTransactions
+      .filter((t) => t.jenis === 'PENGELUARAN')
+      .reduce((s, t) => s + t.pengeluaran, 0);
+  }, [currentWeekTransactions]);
+
+  const totalPenerimaanWeek = useMemo(() => {
+    return currentWeekTransactions
+      .filter((t) => t.jenis === 'PENERIMAAN')
+      .reduce((s, t) => s + t.penerimaan, 0);
+  }, [currentWeekTransactions]);
 
   // If week doesn't have divisions array initialized, construct from DEFAULT_DIVISIONS
   const rawDivisions: DivisionProgressItem[] =
@@ -473,9 +549,6 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   };
 
   // Weekly Date Range Handlers
-  const schoolYear = school?.tahunAnggaran?.trim() || '2026';
-  const weekResolved = resolveWeekDates(currentWeek, schoolYear);
-
   const handleStartDateChange = (newStartIso: string) => {
     if (!newStartIso) return;
     const sDate = new Date(`${newStartIso}T00:00:00`);
@@ -546,85 +619,6 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     });
     onUpdateWeeks(updated);
   };
-
-  // States for manual input, edit, and delete of week transactions
-  const [isTxModalOpen, setIsTxModalOpen] = useState<boolean>(false);
-  const [editingTx, setEditingTx] = useState<BkuTransaction | null>(null);
-  const [txFormError, setTxFormError] = useState<string | null>(null);
-  const [confirmDeleteTx, setConfirmDeleteTx] = useState<BkuTransaction | null>(null);
-
-  const [txFormData, setTxFormData] = useState({
-    tanggal: weekResolved.startDate,
-    jenis: 'PENGELUARAN' as 'PENERIMAAN' | 'PENGELUARAN',
-    uraian: '',
-    noBukti: '',
-    nominal: 0,
-    kategoriBiaya: 'Konstruksi',
-  });
-
-  // Filter transactions belonging to selectedWeekNum
-  const currentWeekTransactions = useMemo(() => {
-    if (!bkuList) return [];
-    return bkuList.filter((tx) => {
-      // 1. Linked kwitansi with mingguKeRef
-      if (tx.kwitansiIdRef && kwitansiList) {
-        const linkedKw = kwitansiList.find((k) => k.id === tx.kwitansiIdRef);
-        if (linkedKw?.mingguKeRef === selectedWeekNum) return true;
-      }
-      // 2. Proof number matches week
-      const padWeek = selectedWeekNum < 10 ? `0${selectedWeekNum}` : `${selectedWeekNum}`;
-      if (
-        tx.noBukti.includes(`/UK/${padWeek}/`) ||
-        tx.noBukti.includes(`UK/${padWeek}/`) ||
-        tx.noBukti.includes(`M${selectedWeekNum}-`) ||
-        tx.noBukti.includes(`TARIK-M${selectedWeekNum}`)
-      ) {
-        return true;
-      }
-      // 3. Description mentions week
-      const lowUraian = tx.uraian.toLowerCase();
-      if (
-        lowUraian.includes(`minggu ke-${selectedWeekNum}`) ||
-        lowUraian.includes(`minggu ${selectedWeekNum} `) ||
-        lowUraian.includes(`minggu ${selectedWeekNum}(`) ||
-        lowUraian.includes(`minggu ${selectedWeekNum},`) ||
-        lowUraian.includes(`minggu ${selectedWeekNum} (${weekResolved.startDateFormatted}`)
-      ) {
-        return true;
-      }
-      // 4. Initial Termin 1 in Week 1
-      if (selectedWeekNum === 1 && (tx.id === 'bku-init-1' || tx.noBukti === 'BKT-01')) {
-        return true;
-      }
-      // 5. Initial Termin 2 in Week 8
-      if (selectedWeekNum === 8 && (tx.id === 'bku-init-2' || tx.noBukti === 'BKT-02')) {
-        return true;
-      }
-      // 6. Transaction date falls between week startDate and endDate
-      if (tx.tanggalObj && tx.tanggalObj >= weekResolved.startDate && tx.tanggalObj <= weekResolved.endDate) {
-        return true;
-      }
-      return false;
-    });
-  }, [bkuList, kwitansiList, selectedWeekNum, weekResolved]);
-
-  const hasTriggeredRef = useRef<Record<number, boolean>>({});
-
-  // Auto-breakdown from Weekly Progress & Bobot inputs if no transactions exist yet for the selected week
-  useEffect(() => {
-    if (currentWeekTransactions.length === 0 && !hasTriggeredRef.current[selectedWeekNum]) {
-      hasTriggeredRef.current[selectedWeekNum] = true;
-      onAutoGenerateFromProgress(selectedWeekNum, true, progressWeeks);
-    }
-  }, [selectedWeekNum, currentWeekTransactions.length]);
-
-  const totalPengeluaranWeek = currentWeekTransactions
-    .filter((t) => t.jenis === 'PENGELUARAN')
-    .reduce((s, t) => s + t.pengeluaran, 0);
-
-  const totalPenerimaanWeek = currentWeekTransactions
-    .filter((t) => t.jenis === 'PENERIMAAN')
-    .reduce((s, t) => s + t.penerimaan, 0);
 
   const handleOpenAddTx = () => {
     setEditingTx(null);
@@ -1022,7 +1016,11 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold">
               <AlertCircle className="w-3.5 h-3.5" />
-              Tgl Mulai: ≥ {weekResolved.startDateFormatted} (Invarian Terkunci)
+              Tgl Mulai: ≥ {weekResolved.startDateFormatted}
+            </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[11px] font-bold">
+              <Calendar className="w-3.5 h-3.5 text-purple-300" />
+              Upah & Honor (Perencana, Pengawas, Adm): Akhir Minggu ({weekResolved.endDateFormatted})
             </span>
             <span className="text-xs text-slate-300 font-mono">
               ({currentWeekTransactions.length} transaksi • {formatRupiah(totalPengeluaranWeek)})
@@ -1739,7 +1737,11 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
               </span>
               <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" />
-                Tgl Mulai: {weekResolved.startDateFormatted} (Invarian Terkunci)
+                Tgl Mulai: {weekResolved.startDateFormatted}
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                Upah, Perencana, Pengawas & Adm: Akhir Minggu ({weekResolved.endDateFormatted})
               </span>
             </div>
             <h3 className="text-base font-bold flex items-center gap-2 text-white">
@@ -1827,11 +1829,11 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
         </div>
 
         {/* Date Invariant Notice Bar */}
-        <div className="bg-amber-50/80 border-b border-amber-200 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-amber-950">
+        <div className="bg-amber-50/90 border-b border-amber-200 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-amber-950">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
             <span>
-              <strong>Ketentuan Invarian Tanggal:</strong> Tanggal mulai pencatatan transaksi kas tidak boleh kurang dari tanggal mulai yang di-input dari Laporan Mingguan & Bobot (<strong>{weekResolved.startDateFormatted}</strong>).
+              <strong>Ketentuan Pembayaran & Tanggal:</strong> Tanggal mulai transaksi kas tidak boleh kurang dari <strong>{weekResolved.startDateFormatted}</strong>. Pembayaran <strong>upah tukang, konsultan perencana, pengawas, dan administrasi</strong> dibayarkan setiap <strong>tanggal akhir minggu ({weekResolved.endDateFormatted})</strong>.
             </span>
           </div>
           <span className="text-amber-800 font-semibold text-[10px] bg-amber-100 px-2 py-0.5 rounded border border-amber-300 shrink-0">
@@ -1890,6 +1892,9 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
               <tbody className="divide-y divide-slate-100 font-sans">
                 {currentWeekTransactions.map((tx, idx) => {
                   const isStartDate = tx.tanggal === weekResolved.startDateSlash || tx.tanggalObj === weekResolved.startDate;
+                  const isEndDate = tx.tanggal === weekResolved.endDateSlash || tx.tanggalObj === weekResolved.endDate;
+                  const isUpahHonorAdm = /upah|tukang|pekerja|perencana|pengawas|administrasi|pengelolaan/i.test(tx.uraian) || /uk\/|kons-|adm\//i.test(tx.noBukti || '');
+
                   return (
                     <tr key={tx.id || idx} className="hover:bg-slate-50/80 transition group">
                       <td className="py-2.5 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
@@ -1899,6 +1904,18 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                           {isStartDate && (
                             <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded" title="Tanggal Mulai Minggu Ini">
                               Mulai
+                            </span>
+                          )}
+                          {isEndDate && (
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                isUpahHonorAdm
+                                  ? 'bg-purple-100 text-purple-900 border-purple-300'
+                                  : 'bg-slate-100 text-slate-700 border-slate-300'
+                              }`}
+                              title={isUpahHonorAdm ? "Dibayarkan pada Tanggal Akhir Minggu Sesuai Aturan" : "Tanggal Akhir Minggu"}
+                            >
+                              Akhir M{selectedWeekNum}
                             </span>
                           )}
                         </div>
@@ -2016,11 +2033,124 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             )}
 
             <form onSubmit={handleSaveTx} className="space-y-3.5 text-xs">
+              {/* Preset Cepat Tanggal & Kategori */}
+              <div className="space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
+                  Pilih Preset Cepat Transaksi Minggu Ke-{selectedWeekNum}:
+                </span>
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxFormData({
+                        ...txFormData,
+                        tanggal: weekResolved.endDate,
+                        jenis: 'PENGELUARAN',
+                        kategoriBiaya: 'Konstruksi',
+                        noBukti: `UK/${selectedWeekNum < 10 ? '0' + selectedWeekNum : selectedWeekNum}/${schoolYear}`,
+                        uraian: `Pembayaran Lunas Upah Tukang & Pekerja Minggu Ke-${selectedWeekNum}`,
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                    title="Dibayarkan setiap tanggal akhir minggu"
+                  >
+                    <span>👷 Upah Tukang (Akhir Minggu)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxFormData({
+                        ...txFormData,
+                        tanggal: weekResolved.endDate,
+                        jenis: 'PENGELUARAN',
+                        kategoriBiaya: 'Perencanaan_Pengelolaan',
+                        noBukti: `KONS-P/${selectedWeekNum < 10 ? '0' + selectedWeekNum : selectedWeekNum}/${schoolYear}`,
+                        uraian: `Pembayaran Honorarium Jasa Perencana Teknis Minggu Ke-${selectedWeekNum}`,
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                    title="Dibayarkan setiap tanggal akhir minggu"
+                  >
+                    <span>📐 Perencana (Akhir Minggu)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxFormData({
+                        ...txFormData,
+                        tanggal: weekResolved.endDate,
+                        jenis: 'PENGELUARAN',
+                        kategoriBiaya: 'Perencanaan_Pengelolaan',
+                        noBukti: `KONS-W/${selectedWeekNum < 10 ? '0' + selectedWeekNum : selectedWeekNum}/${schoolYear}`,
+                        uraian: `Pembayaran Honorarium Jasa Pengawas Lapangan Minggu Ke-${selectedWeekNum}`,
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                    title="Dibayarkan setiap tanggal akhir minggu"
+                  >
+                    <span>🔍 Pengawas (Akhir Minggu)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxFormData({
+                        ...txFormData,
+                        tanggal: weekResolved.endDate,
+                        jenis: 'PENGELUARAN',
+                        kategoriBiaya: 'Perencanaan_Pengelolaan',
+                        noBukti: `ADM/${selectedWeekNum < 10 ? '0' + selectedWeekNum : selectedWeekNum}/${schoolYear}`,
+                        uraian: `Pembayaran Biaya Pengelolaan Administrasi LPJ Minggu Ke-${selectedWeekNum}`,
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                    title="Dibayarkan setiap tanggal akhir minggu"
+                  >
+                    <span>📑 Administrasi (Akhir Minggu)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxFormData({
+                        ...txFormData,
+                        tanggal: weekResolved.startDate,
+                        jenis: 'PENGELUARAN',
+                        kategoriBiaya: 'Konstruksi',
+                        noBukti: `M${selectedWeekNum}-01/${schoolYear}`,
+                        uraian: `Belanja Material & Bahan Toko Minggu Ke-${selectedWeekNum}`,
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                    title="Belanja material harian mulai dari awal minggu"
+                  >
+                    <span>🧱 Belanja Toko (Mulai Minggu)</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Tanggal with Minimum Date Protection */}
               <div className="space-y-1">
-                <label className="font-bold text-slate-700 block">
-                  Tanggal Transaksi <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-700 block">
+                    Tanggal Transaksi <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTxFormData({ ...txFormData, tanggal: weekResolved.startDate })}
+                      className="text-[10px] text-blue-700 hover:underline font-bold cursor-pointer"
+                    >
+                      Set Awal ({weekResolved.startDateFormatted})
+                    </button>
+                    <span className="text-slate-300">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setTxFormData({ ...txFormData, tanggal: weekResolved.endDate })}
+                      className="text-[10px] text-purple-700 hover:underline font-bold cursor-pointer"
+                    >
+                      Set Akhir ({weekResolved.endDateFormatted})
+                    </button>
+                  </div>
+                </div>
                 <input
                   type="date"
                   min={weekResolved.startDate}
@@ -2029,12 +2159,16 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   required
                 />
-                <p className="text-[11px] text-amber-800 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 mt-1 flex items-center gap-1 font-medium">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>
-                    Tanggal tidak boleh kurang dari tanggal mulai Laporan Mingguan: <strong>{weekResolved.startDateFormatted}</strong>.
-                  </span>
-                </p>
+                <div className="text-[11px] text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 mt-1 space-y-0.5">
+                  <p className="flex items-center gap-1 text-amber-800 font-semibold">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Tanggal minimal: <strong>{weekResolved.startDateFormatted}</strong>.</span>
+                  </p>
+                  <p className="flex items-center gap-1 text-purple-800 font-semibold">
+                    <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                    <span>Upah tukang, perencana, pengawas, dan administrasi dibayarkan pada <strong>tanggal akhir minggu ({weekResolved.endDateFormatted})</strong>.</span>
+                  </p>
+                </div>
               </div>
 
               {/* Jenis Transaksi */}

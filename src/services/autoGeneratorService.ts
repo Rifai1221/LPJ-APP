@@ -105,12 +105,24 @@ export function calculateBkuFromTransactions(
       }
     }
 
-    // Enforce invariant: tanggal transaksi otomatis jangan kurang dari tanggal mulai Laporan Mingguan & Bobot
+    // Enforce business rules:
+    // 1. Pembayaran upah tukang, perencana, pengawas, dan administrasi dibayarkan pada setiap tanggal AKHIR MINGGU
+    // 2. Tanggal transaksi belanja/material jangan pernah kurang dari tanggal mulai Laporan Mingguan & Bobot
     if (kw.mingguKeRef && progressWeeks && progressWeeks.length > 0) {
       const matchW = progressWeeks.find((w) => w.mingguKe === kw.mingguKeRef);
       if (matchW) {
         const resolvedW = resolveWeekDates(matchW, yearStr);
-        if (sortDate < resolvedW.startDate) {
+        const isAkhirMingguPayment =
+          kw.tipe === 'UPAH' ||
+          kw.tipe === 'KONSULTAN' ||
+          /upah|tukang|pekerja|perencana|pengawas|administrasi|pengelolaan/i.test(kw.uraian) ||
+          /uk\/|kons-p|kons-w|adm\//i.test(kw.noBukti || '') ||
+          /upah|tukang|pekerja|perencana|pengawas|administrasi|pengelolaan/i.test(kw.keteranganSpb || '');
+
+        if (isAkhirMingguPayment) {
+          sortDate = resolvedW.endDate;
+          displayTanggal = resolvedW.endDateSlash;
+        } else if (sortDate < resolvedW.startDate) {
           sortDate = resolvedW.startDate;
           displayTanggal = resolvedW.startDateSlash;
         }
@@ -121,15 +133,26 @@ export function calculateBkuFromTransactions(
       displayTanggal = startProjectDateSlash;
     }
 
+    let bkuUraian = kw.uraian;
+    if (kw.tipe === 'UPAH') {
+      bkuUraian = kw.uraian.replace('Pembayaran Lunas Biaya ', 'Bayar ');
+    } else if (/perencana/i.test(kw.uraian)) {
+      bkuUraian = `Bayar Honorarium Jasa Perencana Teknis (${kw.penerimaNama || 'Zulfahmi, ST'})`;
+    } else if (/pengawas/i.test(kw.uraian)) {
+      bkuUraian = `Bayar Honorarium Jasa Pengawas Lapangan (${kw.penerimaNama || 'M. Aris Syahputra, ST'})`;
+    } else if (/administrasi|pengelolaan/i.test(kw.uraian)) {
+      bkuUraian = `Bayar Biaya Pengelolaan Administrasi LPJ (${kw.penerimaNama || 'IRWAN YUSUF'})`;
+    } else {
+      bkuUraian = `Bayar Bahan Dari ${kw.namaToko || kw.penerimaNama}`;
+    }
+
     result.push({
       id: kwBkuId,
       tanggal: displayTanggal,
       tanggalObj: sortDate,
       bulan: kw.bulan || startProjectBulan,
       jenis: 'PENGELUARAN',
-      uraian: kw.tipe === 'UPAH' 
-        ? kw.uraian.replace('Pembayaran Lunas Biaya ', 'Bayar ') 
-        : `Bayar Bahan Dari ${kw.namaToko || kw.penerimaNama}`,
+      uraian: bkuUraian,
       noBukti: kw.noBukti,
       penerimaan: 0,
       pengeluaran: kw.nominal,
