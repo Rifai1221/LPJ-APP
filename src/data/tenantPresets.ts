@@ -76,9 +76,9 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
       workers: workers,
       stores: initialStores,
       progressWeeks: initialProgressWeeks,
-      kwitansiList: getCompleteInitialKwitansiList(),
-      wageReports: generateSampleWeeklyWageReports(workers),
-      bkbRecords: initialBkbRecords,
+      kwitansiList: [],
+      wageReports: [],
+      bkbRecords: [],
       manualBkuTransactions: [],
     };
   }
@@ -101,9 +101,9 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
       termin2Nilai: 253500000,
       namaKepalaSekolah: 'Dra. Hj. Maryani, M.Pd',
       nipKepalaSekolah: '196805141994122001',
-      nomorSkP2SP: '421.3/042/SK-P2SP/2025',
-      tanggalSkP2SP: '20 Juli 2025',
-      tentangSkP2SP: 'Pembentukan Panitia Pembangunan Satuan Pendidikan (P2SP) SMP Negeri 2 Banda Aceh TA 2025',
+      nomorSkP2SP: '421.3/042/SK-P2SP/2026',
+      tanggalSkP2SP: '20 Juli 2026',
+      tentangSkP2SP: 'Pembentukan Panitia Pembangunan Satuan Pendidikan (P2SP) SMP Negeri 2 Banda Aceh TA 2026',
       namaKetuaP2SP: 'Drs. H. M. Husen',
       jabatanKetuaP2SP: 'Ketua Komite Sekolah SMPN 2',
       namaSekretaris: 'Cut Mutia, S.Pd',
@@ -120,7 +120,7 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
 
     return {
       school: smpSchool,
-      rpdItems: initialRpdItems.map((item, idx) => ({
+      rpdItems: initialRpdItems.map((item) => ({
         ...item,
         id: `smp-${item.id}`,
         hargaSatuan: Math.round(item.hargaSatuan * 1.05),
@@ -131,14 +131,9 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
         nama: idx === 0 ? 'Kamaruddin (Mandor)' : idx === 1 ? 'Sulaiman' : w.nama,
       })),
       progressWeeks: initialProgressWeeks,
-      kwitansiList: getCompleteInitialKwitansiList().slice(0, 15).map((k) => ({
-        ...k,
-        id: `smp-${k.id}`,
-        uraian: k.uraian.replace('SD NEGERI 1 MUARA DUA', 'SMP NEGERI 2 BANDA ACEH'),
-        nominal: Math.round(k.nominal * 1.05),
-      })),
-      wageReports: generateSampleWeeklyWageReports(initialWorkers).slice(0, 8),
-      bkbRecords: initialBkbRecords,
+      kwitansiList: [],
+      wageReports: [],
+      bkbRecords: [],
       manualBkuTransactions: [],
     };
   }
@@ -202,13 +197,9 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
     workers: initialWorkers,
     stores: initialStores,
     progressWeeks: initialProgressWeeks,
-    kwitansiList: getCompleteInitialKwitansiList().slice(0, 10).map((k) => ({
-      ...k,
-      id: `sch-${tenant.id}-${k.id}`,
-      uraian: k.uraian.replace('SD NEGERI 1 MUARA DUA', tenant.namaSekolah),
-    })),
-    wageReports: generateSampleWeeklyWageReports(initialWorkers).slice(0, 6),
-    bkbRecords: initialBkbRecords,
+    kwitansiList: [],
+    wageReports: [],
+    bkbRecords: [],
     manualBkuTransactions: [],
     realSchoolData: defaultRealSchoolData,
   };

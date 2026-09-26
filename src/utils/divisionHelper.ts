@@ -79,20 +79,20 @@ interface WeekPlanItem {
  */
 export function buildDefaultWeeklyProgress(): ProjectProgressWeek[] {
   const weeksPlan: WeekPlanItem[] = [
-    { m: 1, p: '20 Okt - 26 Okt 2025', r: 1.73, wkFisik: { 'div-1': 0.84 }, wkAdm: { 'div-m1': 0.55, 'div-m2': 0.22, 'div-m3': 0.24 }, ket: 'Pekerjaan persiapan, papan nama, K3, perencanaan teknis' },
-    { m: 2, p: '27 Okt - 02 Nov 2025', r: 5.50, wkFisik: { 'div-1': 1.82, 'div-2': 1.79, 'div-3': 1.50 }, wkAdm: { 'div-m1': 0.30, 'div-m2': 0.20 }, ket: 'Pembersihan lapangan, galian tanah pondasi, pondasi batu kali' },
-    { m: 3, p: '03 Nov - 09 Nov 2025', r: 12.80, wkFisik: { 'div-3': 4.00, 'div-4': 3.50, 'div-5': 1.20 }, wkAdm: { 'div-m2': 0.30, 'div-m3': 0.30 }, ket: 'Pasangan dinding bata merah, cor sloof dan kolom praktis' },
-    { m: 4, p: '10 Nov - 16 Nov 2025', r: 21.00, wkFisik: { 'div-3': 4.50, 'div-4': 3.80, 'div-5': 1.80 }, wkAdm: { 'div-m2': 0.30 }, ket: 'Lanjutan dinding bata, ring balok, persiapan kusen pintu/jendela' },
-    { m: 5, p: '17 Nov - 23 Nov 2025', r: 33.50, wkFisik: { 'div-3': 4.96, 'div-6': 6.50, 'div-5': 2.00 }, wkAdm: { 'div-m2': 0.30 }, ket: 'Kuda-kuda rangka baja profil, gording, dan atap spandek' },
-    { m: 6, p: '24 Nov - 30 Nov 2025', r: 47.00, wkFisik: { 'div-6': 11.12, 'div-7': 3.50, 'div-5': 1.50 }, wkAdm: { 'div-m3': 0.50 }, ket: 'Penutupan atap spandek tuntas, rangka plafon furing' },
-    { m: 7, p: '01 Des - 07 Des 2025', r: 58.00, wkFisik: { 'div-7': 6.44, 'div-8': 4.00, 'div-4': 3.00 }, wkAdm: { 'div-m2': 0.30 }, ket: 'Pemasangan plafon PVC, rabat lantai kerja' },
-    { m: 8, p: '08 Des - 14 Des 2025', r: 70.00, wkFisik: { 'div-8': 6.05, 'div-4': 3.36, 'div-5': 1.86 }, wkAdm: { 'div-m1': 0.50, 'div-m2': 0.20 }, ket: 'Pemasangan lantai keramik 40x40, evaluasi termin 1 (70%)' },
-    { m: 9, p: '15 Des - 21 Des 2025', r: 78.50, wkFisik: { 'div-9': 2.50, 'div-10': 0.80, 'div-11': 2.50 }, wkAdm: { 'div-m2': 0.20 }, ket: 'Pengecatan dasar interior/eksterior, instalasi pipa kabel listrik' },
-    { m: 10, p: '22 Des - 28 Des 2025', r: 87.00, wkFisik: { 'div-9': 2.82, 'div-10': 0.80, 'div-11': 2.50 }, wkAdm: { 'div-m3': 0.40 }, ket: 'Finishing cat penutup tembok & kayu, pemasangan armatur lampu' },
-    { m: 11, p: '29 Des - 04 Jan 2026', r: 92.50, wkFisik: { 'div-11': 2.62 }, wkAdm: { 'div-m1': 0.50, 'div-m2': 0.20 }, ket: 'Pengiriman perabot mebeler meja siswa dan guru' },
-    { m: 12, p: '05 Jan - 11 Jan 2026', r: 96.00, wkFisik: {}, wkAdm: { 'div-m2': 0.17, 'div-m3': 0.47 }, ket: 'Penataan mebeler, instalasi kunci & engsel, cek fungsi' },
-    { m: 13, p: '12 Jan - 18 Jan 2026', r: 98.50, wkFisik: {}, wkAdm: { 'div-m3': 0.30 }, ket: 'Pembersihan sisa material, perapihan lanskap, uji operasional' },
-    { m: 14, p: '19 Jan - 25 Jan 2026', r: 100.00, wkFisik: {}, wkAdm: { 'div-m3': 0.20 }, ket: 'Pekerjaan 100% tuntas, penyusunan LPJ final dan serah terima' },
+    { m: 1, p: '01 Jul - 07 Jul 2026', r: 1.73, wkFisik: { 'div-1': 0.84 }, wkAdm: { 'div-m1': 0.55, 'div-m2': 0.22, 'div-m3': 0.24 }, ket: 'Pekerjaan persiapan, papan nama, K3, perencanaan teknis' },
+    { m: 2, p: '08 Jul - 14 Jul 2026', r: 5.50, wkFisik: { 'div-1': 1.82, 'div-2': 1.79, 'div-3': 1.50 }, wkAdm: { 'div-m1': 0.30, 'div-m2': 0.20 }, ket: 'Pembersihan lapangan, galian tanah pondasi, pondasi batu kali' },
+    { m: 3, p: '15 Jul - 21 Jul 2026', r: 12.80, wkFisik: { 'div-3': 4.00, 'div-4': 3.50, 'div-5': 1.20 }, wkAdm: { 'div-m2': 0.30, 'div-m3': 0.30 }, ket: 'Pasangan dinding bata merah, cor sloof dan kolom praktis' },
+    { m: 4, p: '22 Jul - 28 Jul 2026', r: 21.00, wkFisik: { 'div-3': 4.50, 'div-4': 3.80, 'div-5': 1.80 }, wkAdm: { 'div-m2': 0.30 }, ket: 'Lanjutan dinding bata, ring balok, persiapan kusen pintu/jendela' },
+    { m: 5, p: '29 Jul - 04 Agu 2026', r: 33.50, wkFisik: { 'div-3': 4.96, 'div-6': 6.50, 'div-5': 2.00 }, wkAdm: { 'div-m2': 0.30 }, ket: 'Kuda-kuda rangka baja profil, gording, dan atap spandek' },
+    { m: 6, p: '05 Agu - 11 Agu 2026', r: 47.00, wkFisik: { 'div-6': 11.12, 'div-7': 3.50, 'div-5': 1.50 }, wkAdm: { 'div-m3': 0.50 }, ket: 'Penutupan atap spandek tuntas, rangka plafon furing' },
+    { m: 7, p: '12 Agu - 18 Agu 2026', r: 58.00, wkFisik: { 'div-7': 6.44, 'div-8': 4.00, 'div-4': 3.00 }, wkAdm: { 'div-m2': 0.30 }, ket: 'Pemasangan plafon PVC, rabat lantai kerja' },
+    { m: 8, p: '19 Agu - 25 Agu 2026', r: 70.00, wkFisik: { 'div-8': 6.05, 'div-4': 3.36, 'div-5': 1.86 }, wkAdm: { 'div-m1': 0.50, 'div-m2': 0.20 }, ket: 'Pemasangan lantai keramik 40x40, evaluasi termin 1 (70%)' },
+    { m: 9, p: '26 Agu - 01 Sep 2026', r: 78.50, wkFisik: { 'div-9': 2.50, 'div-10': 0.80, 'div-11': 2.50 }, wkAdm: { 'div-m2': 0.20 }, ket: 'Pengecatan dasar interior/eksterior, instalasi pipa kabel listrik' },
+    { m: 10, p: '02 Sep - 08 Sep 2026', r: 87.00, wkFisik: { 'div-9': 2.82, 'div-10': 0.80, 'div-11': 2.50 }, wkAdm: { 'div-m3': 0.40 }, ket: 'Finishing cat penutup tembok & kayu, pemasangan armatur lampu' },
+    { m: 11, p: '09 Sep - 15 Sep 2026', r: 92.50, wkFisik: { 'div-11': 2.62 }, wkAdm: { 'div-m1': 0.50, 'div-m2': 0.20 }, ket: 'Pengiriman perabot mebeler meja siswa dan guru' },
+    { m: 12, p: '16 Sep - 22 Sep 2026', r: 96.00, wkFisik: {}, wkAdm: { 'div-m2': 0.17, 'div-m3': 0.47 }, ket: 'Penataan mebeler, instalasi kunci & engsel, cek fungsi' },
+    { m: 13, p: '23 Sep - 29 Sep 2026', r: 98.50, wkFisik: {}, wkAdm: { 'div-m3': 0.30 }, ket: 'Pembersihan sisa material, perapihan lanskap, uji operasional' },
+    { m: 14, p: '30 Sep - 06 Okt 2026', r: 100.00, wkFisik: {}, wkAdm: { 'div-m3': 0.20 }, ket: 'Pekerjaan 100% tuntas, penyusunan LPJ final dan serah terima' },
   ];
 
   // Accumulator for cumulative weights

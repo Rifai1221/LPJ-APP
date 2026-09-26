@@ -23,7 +23,7 @@ const monthOrderMap: Record<string, number> = {
 /**
  * Expand range of Indonesian months from a period string like "18 Oktober 2025 s.d 25 Januari 2026" or "Juli 2025 - Oktober 2025"
  */
-export function expandMonthsFromPeriodeString(periodeStr: string, defaultYear = '2025'): string[] {
+export function expandMonthsFromPeriodeString(periodeStr: string, defaultYear = '2026'): string[] {
   if (!periodeStr || typeof periodeStr !== 'string') return [];
 
   const monthRegex = /(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|jun|jul|agu|agt|ags|sep|okt|nov|des)/gi;
@@ -38,7 +38,7 @@ export function expandMonthsFromPeriodeString(periodeStr: string, defaultYear = 
   const startMonthName = matches[0][0].toLowerCase();
   const endMonthName = matches[matches.length - 1][0].toLowerCase();
 
-  const mIdxStart = monthOrderMap[startMonthName] || 10;
+  const mIdxStart = monthOrderMap[startMonthName] || 7;
   const mIdxEnd = monthOrderMap[endMonthName] || mIdxStart;
 
   const results: string[] = [];
@@ -59,10 +59,10 @@ export function expandMonthsFromPeriodeString(periodeStr: string, defaultYear = 
 }
 
 /**
- * Parse Indonesian month name and year automatically from period date string (e.g., '20 Okt - 26 Okt 2025' -> 'Oktober 2025')
+ * Parse Indonesian month name and year automatically from period date string (e.g., '20 Jul - 26 Jul 2026' -> 'Juli 2026')
  */
-export function getMonthFromPeriodString(periode: string, defaultYear = '2025'): string {
-  if (!periode) return `Oktober ${defaultYear}`;
+export function getMonthFromPeriodString(periode: string, defaultYear = '2026'): string {
+  if (!periode) return `Juli ${defaultYear}`;
 
   const lower = periode.toLowerCase();
   
@@ -84,7 +84,7 @@ export function getMonthFromPeriodString(periode: string, defaultYear = '2025'):
   if (lower.includes('nov')) return `November ${year}`;
   if (lower.includes('des')) return `Desember ${year}`;
 
-  // Check numeric month if date is formatted like '26/10/2025'
+  // Check numeric month if date is formatted like '26/07/2026'
   const dateNumMatch = periode.match(/\d{1,2}\/(\d{1,2})\/20\d\d/);
   if (dateNumMatch && dateNumMatch[1]) {
     const monthIdx = parseInt(dateNumMatch[1], 10) - 1;
@@ -93,7 +93,7 @@ export function getMonthFromPeriodString(periode: string, defaultYear = '2025'):
     }
   }
 
-  return `Oktober ${year}`;
+  return `Juli ${year}`;
 }
 
 /**
@@ -107,7 +107,7 @@ export function getAvailableMonthsForSchool(
 
   // 1. First Priority: Extract months from school.periodePenggunaan in Data Master Sekolah
   if (school?.periodePenggunaan) {
-    const expanded = expandMonthsFromPeriodeString(school.periodePenggunaan, school.tahunAnggaran || '2025');
+    const expanded = expandMonthsFromPeriodeString(school.periodePenggunaan, school.tahunAnggaran || '2026');
     expanded.forEach((m) => monthSet.add(m));
   }
 
@@ -126,14 +126,14 @@ export function getAvailableMonthsForSchool(
 
   // If still empty, default fallback
   if (monthSet.size === 0) {
-    return ['ALL', 'Oktober 2025', 'November 2025', 'Desember 2025', 'Januari 2026'];
+    return ['ALL', 'Juli 2026', 'Agustus 2026', 'September 2026', 'Oktober 2026', 'November 2026'];
   }
 
   const monthArray = Array.from(monthSet).sort((a, b) => {
     const parseMonthYear = (str: string) => {
       const parts = str.split(' ');
       const mName = parts[0]?.toLowerCase() || '';
-      const year = parseInt(parts[1] || '2025', 10);
+      const year = parseInt(parts[1] || '2026', 10);
       const mIdx = monthOrderMap[mName] || 1;
       return year * 100 + mIdx;
     };

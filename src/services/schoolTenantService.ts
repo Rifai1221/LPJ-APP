@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { AppStateData } from '../types';
+import { sanitizeAndFilterDemoState } from './storageService';
 import {
   SchoolTenant,
   DEFAULT_PRESET_TENANTS,
@@ -220,7 +221,7 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
     if (docSnap.exists()) {
       const cloudData = docSnap.data();
       if (cloudData && cloudData.school) {
-        const mergedState: AppStateData = {
+        const rawMergedState: AppStateData = {
           ...defaultState,
           ...cloudData,
           school: {
@@ -236,6 +237,7 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
           manualBkuTransactions: Array.isArray(cloudData.manualBkuTransactions) ? cloudData.manualBkuTransactions : [],
           bkbRecords: Array.isArray(cloudData.bkbRecords) ? cloudData.bkbRecords : [],
         };
+        const mergedState = sanitizeAndFilterDemoState(rawMergedState);
 
         // Update local cache safely with actual cloud data
         try {
@@ -258,7 +260,7 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
     if (cachedRaw) {
       const parsed = JSON.parse(cachedRaw);
       if (parsed && parsed.school) {
-        const mergedCache: AppStateData = {
+        const rawMergedCache: AppStateData = {
           ...defaultState,
           ...parsed,
           school: {
@@ -274,6 +276,7 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
           manualBkuTransactions: Array.isArray(parsed.manualBkuTransactions) ? parsed.manualBkuTransactions : [],
           bkbRecords: Array.isArray(parsed.bkbRecords) ? parsed.bkbRecords : [],
         };
+        const mergedCache = sanitizeAndFilterDemoState(rawMergedCache);
 
         return {
           state: mergedCache,
