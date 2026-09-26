@@ -12,31 +12,17 @@ const STORAGE_KEY = 'LPJ_REVITALISASI_DATA_V1';
 export type { AppStateData };
 
 /**
- * Filter out legacy demo transaction records dated between October 2025 and January 2026.
- * Preserves all user-entered data for 2026 and custom records across redeploys.
+ * Preserves all user-entered data, progress, kwitansi, and records across redeploys.
  */
 export function sanitizeAndFilterDemoState(state: AppStateData): AppStateData {
   if (!state) return state;
 
-  const isOldDemoTransaction = (item: any): boolean => {
-    if (!item) return false;
-    const str = JSON.stringify(item).toLowerCase();
-    return (
-      str.includes('2025') ||
-      str.includes('oktober 2025') ||
-      str.includes('november 2025') ||
-      str.includes('desember 2025') ||
-      str.includes('januari 2026') ||
-      str.includes('2026-01-')
-    );
-  };
-
   return {
     ...state,
-    kwitansiList: (state.kwitansiList || []).filter((item) => !isOldDemoTransaction(item)),
-    wageReports: (state.wageReports || []).filter((item) => !isOldDemoTransaction(item)),
-    bkbRecords: (state.bkbRecords || []).filter((item) => !isOldDemoTransaction(item)),
-    manualBkuTransactions: (state.manualBkuTransactions || []).filter((item) => !isOldDemoTransaction(item)),
+    kwitansiList: state.kwitansiList || [],
+    wageReports: state.wageReports || [],
+    bkbRecords: state.bkbRecords || [],
+    manualBkuTransactions: state.manualBkuTransactions || [],
   };
 }
 
