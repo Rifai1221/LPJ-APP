@@ -49,10 +49,12 @@ export function calculateBkuFromTransactions(
   // 1. Initial Deposit / Penarikan Termin 1 (70%)
   // Sesuai juknis: Tanggal mulai pencatatan tidak boleh kurang dari tanggal mulai Laporan Mingguan & Bobot
   const manualInit1 = manualTransactions.find((m) => m.id === 'bku-init-1');
+  const termin1Amount = school?.termin1Nilai || (school?.totalAnggaran ? Math.round(school.totalAnggaran * ((school.termin1Persen || 70) / 100)) : 0);
+
   if (!deletedIds.includes('bku-init-1')) {
     if (manualInit1) {
       result.push(manualInit1);
-    } else {
+    } else if (termin1Amount > 0 && (kwitansiList.length > 0 || manualTransactions.length > 0)) {
       result.push({
         id: 'bku-init-1',
         tanggal: startProjectDateSlash,
@@ -61,7 +63,7 @@ export function calculateBkuFromTransactions(
         jenis: 'PENERIMAAN',
         uraian: 'Penarikan dari Bank (Termin 1 - 70%)',
         noBukti: 'BKT-01',
-        penerimaan: school.termin1Nilai || 537580794,
+        penerimaan: termin1Amount,
         pengeluaran: 0,
       });
     }
@@ -163,10 +165,12 @@ export function calculateBkuFromTransactions(
 
   // 3. Add Termin 2 bank withdrawal
   const manualInit2 = manualTransactions.find((m) => m.id === 'bku-init-2');
+  const termin2Amount = school?.termin2Nilai || (school?.totalAnggaran ? Math.round(school.totalAnggaran * ((school.termin2Persen || 30) / 100)) : 0);
+
   if (!deletedIds.includes('bku-init-2')) {
     if (manualInit2) {
       result.push(manualInit2);
-    } else {
+    } else if (termin2Amount > 0 && kwitansiList.some((k) => (k.mingguKeRef || 0) >= 8)) {
       result.push({
         id: 'bku-init-2',
         tanggal: termin2DateSlash,
@@ -175,7 +179,7 @@ export function calculateBkuFromTransactions(
         jenis: 'PENERIMAAN',
         uraian: 'Penarikan dari Bank (Termin 2 - 30%)',
         noBukti: 'BKT-02',
-        penerimaan: school.termin2Nilai || 230391769,
+        penerimaan: termin2Amount,
         pengeluaran: 0,
       });
     }

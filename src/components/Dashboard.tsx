@@ -49,16 +49,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenQuickReceipt,
 }) => {
   // Calculations
-  const totalAnggaran = school.totalAnggaran || 767972563;
+  const totalAnggaran = school.totalAnggaran || 0;
   const totalRealisasi = kwitansiList.reduce((acc, curr) => acc + curr.nominal, 0);
-  const sisaAnggaran = totalAnggaran - totalRealisasi;
-  const persentaseKeuangan = Math.min(100, (totalRealisasi / totalAnggaran) * 100);
+  const sisaAnggaran = totalAnggaran > 0 ? totalAnggaran - totalRealisasi : 0;
+  const persentaseKeuangan = totalAnggaran > 0 ? Math.min(100, (totalRealisasi / totalAnggaran) * 100) : 0;
 
-  const latestWeek = progressWeeks[progressWeeks.length - 1] || {
-    bobotRealisasi: 100,
-    bobotRencana: 100,
-  };
-  const currentFisik = latestWeek.bobotRealisasi;
+  const latestWeek = progressWeeks && progressWeeks.length > 0
+    ? progressWeeks[progressWeeks.length - 1]
+    : { bobotRealisasi: 0, bobotRencana: 0, deviasi: 0 };
+  const currentFisik = latestWeek.bobotRealisasi || 0;
 
   const totalPajakPPN = taxRecords.reduce((sum, t) => sum + t.ppn11, 0);
   const totalPajakPPh22 = taxRecords.reduce((sum, t) => sum + t.pph22, 0);

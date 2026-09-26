@@ -299,7 +299,6 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     });
 
     onUpdateWeeks(updatedAllWeeks);
-    onAutoGenerateFromProgress(selectedWeekNum, true, updatedAllWeeks);
   };
 
   // Add new division to either FISIK or MANAJEMEN category
@@ -448,7 +447,6 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     });
 
     onUpdateWeeks(updatedAllWeeks);
-    onAutoGenerateFromProgress(selectedWeekNum, true, updatedAllWeeks);
     setSyncSuccessMsg(`Total Bobot berhasil diseimbangkan tepat 100,00% (penyesuaian ${diff > 0 ? '+' : ''}${formatNumber(diff, 2, 2)}% pada ${divisions[divisions.length - 1]?.uraian || 'divisi terakhir'}).`);
     setTimeout(() => setSyncSuccessMsg(null), 4000);
   };
@@ -526,7 +524,6 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     });
 
     onUpdateWeeks(updatedAllWeeks);
-    onAutoGenerateFromProgress(selectedWeekNum, true, updatedAllWeeks);
   };
 
   const handleApplyAndSync = () => {
@@ -578,7 +575,6 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       return w;
     });
     onUpdateWeeks(updated);
-    onAutoGenerateFromProgress(selectedWeekNum, true, updated);
   };
 
   const handleEndDateChange = (newEndIso: string) => {
@@ -607,7 +603,6 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       return w;
     });
     onUpdateWeeks(updated);
-    onAutoGenerateFromProgress(selectedWeekNum, true, updated);
   };
 
   const handlePeriodeTextChange = (text: string) => {

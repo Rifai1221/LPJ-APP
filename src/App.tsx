@@ -975,10 +975,20 @@ export default function App() {
   };
 
   const handleResetData = () => {
-    if (confirm(`Kembalikan data ${currentTenant.namaSekolah} ke template standar awal?`)) {
-      const reset = createSchoolStateForTenant(currentTenant, 'full');
+    if (
+      confirm(`Kosongkan seluruh data transaksi & pembukuan untuk ${currentTenant.namaSekolah}?
+
+Semua kwitansi, catatan BKU, BKB, dan laporan upah akan dikosongkan (0 transaksi) agar bersih untuk pencatatan data real.
+Identitas sekolah, NPSN, dan rekening tetap dipertahankan.`)
+    ) {
+      const reset = createSchoolStateForTenant(currentTenant, 'blank');
+      if (appState.school.namaSekolah) {
+        reset.school = { ...appState.school };
+      }
       isDirtyRef.current = true;
       setAppState(reset);
+      setSwitchNotification('✅ Lembar pembukuan berhasil dikosongkan. Seluruh transaksi demo telah dibersihkan.');
+      setTimeout(() => setSwitchNotification(null), 4000);
     }
   };
 

@@ -102,8 +102,6 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
   taxRecords,
   progressWeeks,
 }) => {
-  if (!isOpen) return null;
-
   const [selectedDoc, setSelectedDoc] = React.useState<string>(documentType);
 
   React.useEffect(() => {
@@ -113,6 +111,8 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
   const docType = selectedDoc;
 
   const printAreaRef = useRef<HTMLDivElement>(null);
+
+  if (!isOpen) return null;
 
   const handlePrint = () => {
     window.print();

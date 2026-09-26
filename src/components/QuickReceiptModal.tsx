@@ -16,8 +16,6 @@ export const QuickReceiptModal: React.FC<QuickReceiptModalProps> = ({
   onSave,
   availableStores = [],
 }) => {
-  if (!isOpen) return null;
-
   const [tipe, setTipe] = useState<'MATERIAL' | 'UPAH' | 'KONSULTAN' | 'PERABOT' | 'OPERASIONAL'>('MATERIAL');
   const [noBukti, setNoBukti] = useState(`KW/${Math.floor(Math.random() * 900 + 100)}/2025`);
   const [noSpb, setNoSpb] = useState(`SPB/${Math.floor(Math.random() * 900 + 100)}/2025`);
@@ -31,6 +29,16 @@ export const QuickReceiptModal: React.FC<QuickReceiptModalProps> = ({
   const [uraian, setUraian] = useState(
     'Pembayaran Lunas Biaya Pembelian Material Bangunan, Untuk Pekerjaan Revitalisasi Sekolah, Tahun 2025, Daftar Terlampir.'
   );
+
+  const [items, setItems] = useState<TokoItem[]>([
+    { namaBarang: 'Semen PC (40 kg)', volume: 50, satuan: 'Zak', hargaSatuan: 72000, jumlah: 3600000 },
+  ]);
+
+  const [isPpn, setIsPpn] = useState(false);
+  const [isPph22, setIsPph22] = useState(false);
+  const [isPph23, setIsPph23] = useState(false);
+
+  if (!isOpen) return null;
 
   const handleSelectPredefinedStore = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const storeId = e.target.value;
@@ -47,14 +55,6 @@ export const QuickReceiptModal: React.FC<QuickReceiptModalProps> = ({
       else setTipe('MATERIAL');
     }
   };
-
-  const [items, setItems] = useState<TokoItem[]>([
-    { namaBarang: 'Semen PC (40 kg)', volume: 50, satuan: 'Zak', hargaSatuan: 72000, jumlah: 3600000 },
-  ]);
-
-  const [isPpn, setIsPpn] = useState(false);
-  const [isPph22, setIsPph22] = useState(false);
-  const [isPph23, setIsPph23] = useState(false);
 
   const totalNominal = items.reduce((sum, it) => sum + it.jumlah, 0);
 

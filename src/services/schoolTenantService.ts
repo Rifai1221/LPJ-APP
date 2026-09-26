@@ -41,9 +41,14 @@ function withTimeout<T>(promise: Promise<T>, ms = 3500): Promise<T> {
 // 1. Get currently active tenant ID (with fallback to global Firestore setting)
 export function getStoredActiveTenantId(): string {
   try {
-    return localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY) || PRESET_SDN1_MUARA_DUA.id;
-  } catch {
+    const saved = localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);
+    if (saved) return saved;
+    if (isHideDemoPresets()) {
+      return 'sch_real_primary';
+    }
     return PRESET_SDN1_MUARA_DUA.id;
+  } catch {
+    return 'sch_real_primary';
   }
 }
 
@@ -69,12 +74,14 @@ export async function getGlobalActiveTenantId(): Promise<string | null> {
   return null;
 }
 
-// Check whether the user wants to hide pure demo presets
+// Check whether the user wants to hide pure demo presets (Default TRUE for real production)
 export function isHideDemoPresets(): boolean {
   try {
-    return localStorage.getItem('LPJ_HIDE_DEMO_DATA') === 'true';
+    const val = localStorage.getItem('LPJ_HIDE_DEMO_DATA');
+    if (val === 'false') return false;
+    return true; // Clean production by default
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -133,9 +140,25 @@ export async function getAllSchoolTenants(): Promise<SchoolTenant[]> {
     }
   });
 
-  // Step D: Ensure at least the primary school exists
+  // Step D: Ensure at least one school exists (Real School first if demo is hidden)
   if (tenantsMap.size === 0) {
-    tenantsMap.set(PRESET_SDN1_MUARA_DUA.id, PRESET_SDN1_MUARA_DUA);
+    if (hideDemo) {
+      const realPrimary: SchoolTenant = {
+        id: 'sch_real_primary',
+        npsn: '',
+        namaSekolah: 'SEKOLAH SAYA (LENGKAPI IDENTITAS)',
+        jenjang: 'SD',
+        kabKota: '',
+        provinsi: '',
+        email: '',
+        isDemo: false,
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+      };
+      tenantsMap.set(realPrimary.id, realPrimary);
+    } else {
+      tenantsMap.set(PRESET_SDN1_MUARA_DUA.id, PRESET_SDN1_MUARA_DUA);
+    }
   }
 
   return Array.from(tenantsMap.values());
@@ -245,12 +268,12 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
             ...defaultState.school,
             ...(cloudData.school || {}),
           },
-          rpdItems: Array.isArray(cloudData.rpdItems) ? cloudData.rpdItems : defaultState.rpdItems,
-          workers: Array.isArray(cloudData.workers) ? cloudData.workers : defaultState.workers,
-          stores: Array.isArray(cloudData.stores) ? cloudData.stores : (defaultState.stores || initialStores),
+          rpdItems: Array.isArray(cloudData.rpdItems) ? cloudData.rpdItems : (defaultState.rpdItems || []),
+          workers: Array.isArray(cloudData.workers) ? cloudData.workers : (defaultState.workers || []),
+          stores: Array.isArray(cloudData.stores) ? cloudData.stores : (defaultState.stores || []),
           progressWeeks: Array.isArray(cloudData.progressWeeks) ? cloudData.progressWeeks : defaultState.progressWeeks,
-          kwitansiList: Array.isArray(cloudData.kwitansiList) ? cloudData.kwitansiList : defaultState.kwitansiList,
-          wageReports: Array.isArray(cloudData.wageReports) ? cloudData.wageReports : defaultState.wageReports,
+          kwitansiList: Array.isArray(cloudData.kwitansiList) ? cloudData.kwitansiList : (defaultState.kwitansiList || []),
+          wageReports: Array.isArray(cloudData.wageReports) ? cloudData.wageReports : (defaultState.wageReports || []),
           manualBkuTransactions: Array.isArray(cloudData.manualBkuTransactions) ? cloudData.manualBkuTransactions : [],
           bkbRecords: Array.isArray(cloudData.bkbRecords) ? cloudData.bkbRecords : [],
         };
@@ -284,12 +307,12 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
             ...defaultState.school,
             ...(parsed.school || {}),
           },
-          rpdItems: Array.isArray(parsed.rpdItems) ? parsed.rpdItems : defaultState.rpdItems,
-          workers: Array.isArray(parsed.workers) ? parsed.workers : defaultState.workers,
-          stores: Array.isArray(parsed.stores) ? parsed.stores : (defaultState.stores || initialStores),
+          rpdItems: Array.isArray(parsed.rpdItems) ? parsed.rpdItems : (defaultState.rpdItems || []),
+          workers: Array.isArray(parsed.workers) ? parsed.workers : (defaultState.workers || []),
+          stores: Array.isArray(parsed.stores) ? parsed.stores : (defaultState.stores || []),
           progressWeeks: Array.isArray(parsed.progressWeeks) ? parsed.progressWeeks : defaultState.progressWeeks,
-          kwitansiList: Array.isArray(parsed.kwitansiList) ? parsed.kwitansiList : defaultState.kwitansiList,
-          wageReports: Array.isArray(parsed.wageReports) ? parsed.wageReports : defaultState.wageReports,
+          kwitansiList: Array.isArray(parsed.kwitansiList) ? parsed.kwitansiList : (defaultState.kwitansiList || []),
+          wageReports: Array.isArray(parsed.wageReports) ? parsed.wageReports : (defaultState.wageReports || []),
           manualBkuTransactions: Array.isArray(parsed.manualBkuTransactions) ? parsed.manualBkuTransactions : [],
           bkbRecords: Array.isArray(parsed.bkbRecords) ? parsed.bkbRecords : [],
         };

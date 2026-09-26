@@ -62,14 +62,16 @@ export const SchoolTenantPortalModal: React.FC<SchoolTenantPortalModalProps> = (
   const [kabKota, setKabKota] = useState('');
   const [provinsi, setProvinsi] = useState('Prov. Aceh');
   const [email, setEmail] = useState('');
-  const [templateType, setTemplateType] = useState<'full' | 'blank'>('full');
+  const [templateType, setTemplateType] = useState<'full' | 'blank'>('blank');
 
-  // Demo visibility filter state
+  // Demo visibility filter state - default to TRUE (clean production)
   const [hideDemo, setHideDemo] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('LPJ_HIDE_DEMO_DATA') === 'true';
+      const val = localStorage.getItem('LPJ_HIDE_DEMO_DATA');
+      if (val === 'false') return false;
+      return true; // Default hide demo
     } catch {
-      return false;
+      return true;
     }
   });
 

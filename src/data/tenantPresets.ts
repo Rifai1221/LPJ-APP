@@ -138,55 +138,67 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
     };
   }
 
-  // Generic or custom school registration
+  // Generic or custom real school
+  const isRealSchool = !tenant.isDemo;
+
   const customSchool: SchoolMasterData = {
     ...initialSchoolData,
-    namaSekolah: tenant.namaSekolah,
-    npsn: tenant.npsn,
-    alamat: `Jl. Pendidikan No. 1, ${tenant.kabKota}`,
-    desa: '-',
-    kecamatan: '-',
-    kabKota: tenant.kabKota,
-    provinsi: tenant.provinsi,
-    dinasPendidikan: `Dinas Pendidikan dan Kebudayaan ${tenant.kabKota}`,
-    totalAnggaran: 750000000,
+    namaSekolah: tenant.namaSekolah || 'NAMA SEKOLAH',
+    npsn: tenant.npsn || '',
+    alamat: tenant.kabKota ? `Jl. Pendidikan, ${tenant.kabKota}` : '',
+    desa: '',
+    kecamatan: '',
+    kabKota: tenant.kabKota || '',
+    provinsi: tenant.provinsi || '',
+    dinasPendidikan: tenant.kabKota ? `Dinas Pendidikan dan Kebudayaan ${tenant.kabKota}` : '',
+    totalAnggaran: isRealSchool ? 0 : 750000000,
     termin1Persen: 70,
     termin2Persen: 30,
-    termin1Nilai: 525000000,
-    termin2Nilai: 225000000,
-    namaKepalaSekolah: 'Nama Kepala Sekolah, S.Pd',
-    nipKepalaSekolah: '197501012000031001',
-    nomorSkP2SP: `421.2/001/SK-P2SP/${new Date().getFullYear()}`,
-    tanggalSkP2SP: `10 Juli ${new Date().getFullYear()}`,
-    tentangSkP2SP: `Pembentukan Panitia Pembangunan Satuan Pendidikan (P2SP) ${tenant.namaSekolah}`,
-    namaKetuaP2SP: 'Nama Ketua Komite',
+    termin1Nilai: 0,
+    termin2Nilai: 0,
+    namaKepalaSekolah: '',
+    nipKepalaSekolah: '',
+    nomorSkP2SP: '',
+    tanggalSkP2SP: '',
+    tentangSkP2SP: tenant.namaSekolah ? `Pembentukan Panitia Pembangunan Satuan Pendidikan (P2SP) ${tenant.namaSekolah}` : '',
+    namaKetuaP2SP: '',
     jabatanKetuaP2SP: 'Ketua Komite Sekolah',
-    namaSekretaris: 'Nama Sekretaris, S.Pd',
-    nipSekretaris: '-',
+    namaSekretaris: '',
+    nipSekretaris: '',
     jabatanSekretaris: 'Sekretaris P2SP',
-    namaBendahara: 'Nama Bendahara, S.Pd',
-    nipBendahara: '-',
+    namaBendahara: '',
+    nipBendahara: '',
     jabatanBendahara: 'Bendahara P2SP',
-    namaBank: 'Bank Pembangunan Daerah / Bank Daerah',
-    nomorRekening: '123-456-7890',
-    namaRekening: `P2SP ${tenant.namaSekolah}`,
-    kotaTempatBintek: tenant.kabKota.replace('Kota ', '').replace('Kab. ', ''),
+    namaBank: '',
+    nomorRekening: '',
+    namaRekening: tenant.namaSekolah ? `P2SP ${tenant.namaSekolah}` : '',
+    kotaTempatBintek: (tenant.kabKota || '').replace('Kota ', '').replace('Kab. ', ''),
   };
 
-  if (baseType === 'blank') {
+  const cleanProgressWeeks = initialProgressWeeks.map((pw) => ({
+    ...pw,
+    bobotRealisasi: 0,
+    deviasi: 0,
+    divisions: (pw.divisions || []).map((d) => ({
+      ...d,
+      prestasiMingguLalu: 0,
+      prestasiMingguIni: 0,
+      prestasiSdMingguIni: 0,
+    })),
+  }));
+
+  if (isRealSchool || baseType === 'blank') {
     return {
       school: customSchool,
       rpdItems: [],
-      workers: initialWorkers.slice(0, 5),
+      workers: [],
       stores: [],
-      progressWeeks: initialProgressWeeks.map((pw) => ({
-        ...pw,
-        divisions: pw.divisions?.map((d) => ({ ...d, prestasiMingguIni: 0, sProgressLalu: 0, sProgressIni: 0 })),
-      })),
+      progressWeeks: cleanProgressWeeks,
       kwitansiList: [],
       wageReports: [],
       bkbRecords: [],
       manualBkuTransactions: [],
+      deletedBkuIds: [],
     };
   }
 
@@ -196,7 +208,7 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
     rpdItems: initialRpdItems,
     workers: initialWorkers,
     stores: initialStores,
-    progressWeeks: initialProgressWeeks,
+    progressWeeks: cleanProgressWeeks,
     kwitansiList: [],
     wageReports: [],
     bkbRecords: [],
