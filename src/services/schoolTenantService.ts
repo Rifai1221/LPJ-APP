@@ -21,6 +21,23 @@ import { initialStores } from '../data/initialData';
 const ACTIVE_TENANT_STORAGE_KEY = 'ACTIVE_SCHOOL_TENANT_ID_V1';
 const TENANT_CACHE_PREFIX = 'LPJ_TENANT_CACHE_';
 
+function withTimeout<T>(promise: Promise<T>, ms = 3500): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Firestore request timed out after ${ms}ms`));
+    }, ms);
+    promise
+      .then((res) => {
+        clearTimeout(timer);
+        resolve(res);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 // 1. Get currently active tenant ID (with fallback to global Firestore setting)
 export function getStoredActiveTenantId(): string {
   try {
@@ -42,7 +59,7 @@ export function setStoredActiveTenantId(tenantId: string): void {
 export async function getGlobalActiveTenantId(): Promise<string | null> {
   try {
     const activeDocRef = doc(db, 'app_settings', 'active_school');
-    const snap = await getDoc(activeDocRef);
+    const snap = await withTimeout(getDoc(activeDocRef), 3000);
     if (snap.exists() && snap.data()?.activeTenantId) {
       return snap.data().activeTenantId as string;
     }
@@ -70,7 +87,7 @@ export async function getAllSchoolTenants(): Promise<SchoolTenant[]> {
   // Step A: Load custom/active schools saved in Firestore FIRST (Highest Priority!)
   try {
     const schoolsCol = collection(db, 'schools');
-    const snapshot = await getDocs(schoolsCol);
+    const snapshot = await withTimeout(getDocs(schoolsCol), 3500);
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
       if (data && (data.npsn || data.namaSekolah)) {
@@ -216,7 +233,7 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
   // Try 1: Fetch directly from Cloud Firestore (Highest Authority)
   try {
     const dataDocRef = doc(db, 'schools', tenantId, 'lpj_data', 'current');
-    const docSnap = await getDoc(dataDocRef);
+    const docSnap = await withTimeout(getDoc(dataDocRef), 3500);
 
     if (docSnap.exists()) {
       const cloudData = docSnap.data();

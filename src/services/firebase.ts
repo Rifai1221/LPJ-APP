@@ -31,7 +31,6 @@ try {
     app,
     {
       experimentalAutoDetectLongPolling: true,
-      experimentalForceLongPolling: true,
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
       }),
@@ -44,7 +43,6 @@ try {
       app,
       {
         experimentalAutoDetectLongPolling: true,
-        experimentalForceLongPolling: true,
         localCache: memoryLocalCache(),
       },
       firestoreDatabaseId
@@ -58,4 +56,3 @@ export const db = firestoreDb;
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);
-
