@@ -1,0 +1,215 @@
+import { SchoolMasterData, AppStateData } from '../types';
+import { initialSchoolData, initialWorkers, initialRpdItems, initialProgressWeeks, initialStores } from './initialData';
+import { initialBkbRecords } from './initialData2';
+import { getCompleteInitialKwitansiList, generateSampleWeeklyWageReports } from './fullPreset';
+
+export interface SchoolTenant {
+  id: string;
+  npsn: string;
+  namaSekolah: string;
+  jenjang: 'SD' | 'SMP' | 'SMA' | 'SMK';
+  kabKota: string;
+  provinsi: string;
+  email: string;
+  isDemo?: boolean;
+  createdAt: string;
+  lastLogin: string;
+}
+
+// 1. Preset SDN 1 Muara Dua (Default Complete)
+export const PRESET_SDN1_MUARA_DUA: SchoolTenant = {
+  id: 'sch_10105685',
+  npsn: '10105685',
+  namaSekolah: 'SD NEGERI 1 MUARA DUA',
+  jenjang: 'SD',
+  kabKota: 'Kota Lhokseumawe',
+  provinsi: 'Prov. Aceh',
+  email: 'sdn1muaradua@sekolah.id',
+  isDemo: true,
+  createdAt: '2025-07-01T08:00:00Z',
+  lastLogin: new Date().toISOString(),
+};
+
+// 2. Preset SMPN 2 Banda Aceh (Distinct second school)
+export const PRESET_SMPN2_BANDA_ACEH: SchoolTenant = {
+  id: 'sch_10101234',
+  npsn: '10101234',
+  namaSekolah: 'SMP NEGERI 2 BANDA ACEH',
+  jenjang: 'SMP',
+  kabKota: 'Kota Banda Aceh',
+  provinsi: 'Prov. Aceh',
+  email: 'smpn2bandaaceh@sekolah.id',
+  isDemo: true,
+  createdAt: '2025-07-10T09:00:00Z',
+  lastLogin: new Date().toISOString(),
+};
+
+// 3. Preset SDN 03 Kebon Jeruk (Distinct third school)
+export const PRESET_SDN03_KEBON_JERUK: SchoolTenant = {
+  id: 'sch_20104567',
+  npsn: '20104567',
+  namaSekolah: 'SD NEGERI 03 KEBON JERUK',
+  jenjang: 'SD',
+  kabKota: 'Kota Jakarta Barat',
+  provinsi: 'Prov. DKI Jakarta',
+  email: 'sdn03kebonjeruk@sekolah.id',
+  isDemo: true,
+  createdAt: '2025-07-15T10:00:00Z',
+  lastLogin: new Date().toISOString(),
+};
+
+import { defaultRealSchoolData } from './realSchoolData';
+
+export const DEFAULT_PRESET_TENANTS: SchoolTenant[] = [
+  PRESET_SDN1_MUARA_DUA,
+  PRESET_SMPN2_BANDA_ACEH,
+  PRESET_SDN03_KEBON_JERUK,
+];
+
+// Helper to create tailored initial state for a new or preset school
+export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full' | 'blank' = 'full'): AppStateData {
+  if (tenant.id === PRESET_SDN1_MUARA_DUA.id) {
+    const workers = initialWorkers;
+    return {
+      school: initialSchoolData,
+      rpdItems: initialRpdItems,
+      workers: workers,
+      stores: initialStores,
+      progressWeeks: initialProgressWeeks,
+      kwitansiList: getCompleteInitialKwitansiList(),
+      wageReports: generateSampleWeeklyWageReports(workers),
+      bkbRecords: initialBkbRecords,
+      manualBkuTransactions: [],
+    };
+  }
+
+  if (tenant.id === PRESET_SMPN2_BANDA_ACEH.id) {
+    const smpSchool: SchoolMasterData = {
+      ...initialSchoolData,
+      namaSekolah: 'SMP NEGERI 2 BANDA ACEH',
+      npsn: '10101234',
+      alamat: 'Jl. Prof. A. Majid Ibrahim No. 12',
+      desa: 'Lampriek',
+      kecamatan: 'Kec. Kuta Alam',
+      kabKota: 'Kota Banda Aceh',
+      provinsi: 'Prov. Aceh',
+      dinasPendidikan: 'Dinas Pendidikan dan Kebudayaan Kota Banda Aceh',
+      totalAnggaran: 845000000,
+      termin1Persen: 70,
+      termin2Persen: 30,
+      termin1Nilai: 591500000,
+      termin2Nilai: 253500000,
+      namaKepalaSekolah: 'Dra. Hj. Maryani, M.Pd',
+      nipKepalaSekolah: '196805141994122001',
+      nomorSkP2SP: '421.3/042/SK-P2SP/2025',
+      tanggalSkP2SP: '20 Juli 2025',
+      tentangSkP2SP: 'Pembentukan Panitia Pembangunan Satuan Pendidikan (P2SP) SMP Negeri 2 Banda Aceh TA 2025',
+      namaKetuaP2SP: 'Drs. H. M. Husen',
+      jabatanKetuaP2SP: 'Ketua Komite Sekolah SMPN 2',
+      namaSekretaris: 'Cut Mutia, S.Pd',
+      nipSekretaris: '198703152011012014',
+      jabatanSekretaris: 'Guru Penggerak / Staf Kurikulum',
+      namaBendahara: 'M. Faisal, S.E.',
+      nipBendahara: '198207192008011009',
+      jabatanBendahara: 'Bendahara Keuangan Sekolah',
+      namaBank: 'Bank BSI (Bank Syariah Indonesia)',
+      nomorRekening: '711.234.5678',
+      namaRekening: 'P2SP SMPN 2 BANDA ACEH',
+      kotaTempatBintek: 'Banda Aceh',
+    };
+
+    return {
+      school: smpSchool,
+      rpdItems: initialRpdItems.map((item, idx) => ({
+        ...item,
+        id: `smp-${item.id}`,
+        hargaSatuan: Math.round(item.hargaSatuan * 1.05),
+      })),
+      workers: initialWorkers.map((w, idx) => ({
+        ...w,
+        id: `smp-${w.id}`,
+        nama: idx === 0 ? 'Kamaruddin (Mandor)' : idx === 1 ? 'Sulaiman' : w.nama,
+      })),
+      progressWeeks: initialProgressWeeks,
+      kwitansiList: getCompleteInitialKwitansiList().slice(0, 15).map((k) => ({
+        ...k,
+        id: `smp-${k.id}`,
+        uraian: k.uraian.replace('SD NEGERI 1 MUARA DUA', 'SMP NEGERI 2 BANDA ACEH'),
+        nominal: Math.round(k.nominal * 1.05),
+      })),
+      wageReports: generateSampleWeeklyWageReports(initialWorkers).slice(0, 8),
+      bkbRecords: initialBkbRecords,
+      manualBkuTransactions: [],
+    };
+  }
+
+  // Generic or custom school registration
+  const customSchool: SchoolMasterData = {
+    ...initialSchoolData,
+    namaSekolah: tenant.namaSekolah,
+    npsn: tenant.npsn,
+    alamat: `Jl. Pendidikan No. 1, ${tenant.kabKota}`,
+    desa: '-',
+    kecamatan: '-',
+    kabKota: tenant.kabKota,
+    provinsi: tenant.provinsi,
+    dinasPendidikan: `Dinas Pendidikan dan Kebudayaan ${tenant.kabKota}`,
+    totalAnggaran: 750000000,
+    termin1Persen: 70,
+    termin2Persen: 30,
+    termin1Nilai: 525000000,
+    termin2Nilai: 225000000,
+    namaKepalaSekolah: 'Nama Kepala Sekolah, S.Pd',
+    nipKepalaSekolah: '197501012000031001',
+    nomorSkP2SP: `421.2/001/SK-P2SP/${new Date().getFullYear()}`,
+    tanggalSkP2SP: `10 Juli ${new Date().getFullYear()}`,
+    tentangSkP2SP: `Pembentukan Panitia Pembangunan Satuan Pendidikan (P2SP) ${tenant.namaSekolah}`,
+    namaKetuaP2SP: 'Nama Ketua Komite',
+    jabatanKetuaP2SP: 'Ketua Komite Sekolah',
+    namaSekretaris: 'Nama Sekretaris, S.Pd',
+    nipSekretaris: '-',
+    jabatanSekretaris: 'Sekretaris P2SP',
+    namaBendahara: 'Nama Bendahara, S.Pd',
+    nipBendahara: '-',
+    jabatanBendahara: 'Bendahara P2SP',
+    namaBank: 'Bank Pembangunan Daerah / Bank Daerah',
+    nomorRekening: '123-456-7890',
+    namaRekening: `P2SP ${tenant.namaSekolah}`,
+    kotaTempatBintek: tenant.kabKota.replace('Kota ', '').replace('Kab. ', ''),
+  };
+
+  if (baseType === 'blank') {
+    return {
+      school: customSchool,
+      rpdItems: [],
+      workers: initialWorkers.slice(0, 5),
+      stores: [],
+      progressWeeks: initialProgressWeeks.map((pw) => ({
+        ...pw,
+        divisions: pw.divisions?.map((d) => ({ ...d, prestasiMingguIni: 0, sProgressLalu: 0, sProgressIni: 0 })),
+      })),
+      kwitansiList: [],
+      wageReports: [],
+      bkbRecords: [],
+      manualBkuTransactions: [],
+    };
+  }
+
+  // Pre-seed with revitalisasi standard template for easy customization
+  return {
+    school: customSchool,
+    rpdItems: initialRpdItems,
+    workers: initialWorkers,
+    stores: initialStores,
+    progressWeeks: initialProgressWeeks,
+    kwitansiList: getCompleteInitialKwitansiList().slice(0, 10).map((k) => ({
+      ...k,
+      id: `sch-${tenant.id}-${k.id}`,
+      uraian: k.uraian.replace('SD NEGERI 1 MUARA DUA', tenant.namaSekolah),
+    })),
+    wageReports: generateSampleWeeklyWageReports(initialWorkers).slice(0, 6),
+    bkbRecords: initialBkbRecords,
+    manualBkuTransactions: [],
+    realSchoolData: defaultRealSchoolData,
+  };
+}
