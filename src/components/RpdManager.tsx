@@ -11,8 +11,9 @@ import {
   DollarSign,
   Printer,
   Sparkles,
+  FolderSync,
 } from 'lucide-react';
-import { RpdItem, RpdKategori, StoreVendor } from '../types';
+import { RpdItem, RpdKategori, StoreVendor, RealSchoolData } from '../types';
 import { formatRupiah, formatNumber } from '../utils/formatters';
 
 interface RpdManagerProps {
@@ -20,6 +21,8 @@ interface RpdManagerProps {
   onUpdateItems: (newItems: RpdItem[]) => void;
   onOpenPrintModal: () => void;
   availableStores?: StoreVendor[];
+  realSchoolData?: RealSchoolData;
+  onSyncFromRealData?: () => void;
 }
 
 export const RpdManager: React.FC<RpdManagerProps> = ({
@@ -27,6 +30,8 @@ export const RpdManager: React.FC<RpdManagerProps> = ({
   onUpdateItems,
   onOpenPrintModal,
   availableStores = [],
+  realSchoolData,
+  onSyncFromRealData,
 }) => {
   const [activeKategori, setActiveKategori] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,7 +160,17 @@ export const RpdManager: React.FC<RpdManagerProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {onSyncFromRealData && (
+            <button
+              onClick={onSyncFromRealData}
+              title="Tarik seluruh uraian, volume, satuan, dan harga satuan dari Data Real Sekolah"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+            >
+              <FolderSync className="w-4 h-4 text-emerald-200" />
+              <span>Tarik dari Data Real Sekolah</span>
+            </button>
+          )}
           <button
             onClick={() => setIsAddingNew(true)}
             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer"
