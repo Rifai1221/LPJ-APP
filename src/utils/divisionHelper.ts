@@ -32,18 +32,34 @@ export function toRoman(num: number): string {
 }
 
 /**
- * Renumber items sequentially using Roman numerals according to their category ('FISIK' or 'MANAJEMEN')
+ * Renumber items using Roman numerals according to their category ('FISIK' or 'MANAJEMEN').
+ * Locks exact Roman codes for physical work items as displayed in the official form layout:
+ * I, II, III, IV, V, VI, VII, VIII, X, XI, XII for Physical Work, and I, II, III for Management.
  */
-export function renumberDivisions<T extends { kode: string; kategori: 'FISIK' | 'MANAJEMEN' }>(items: T[]): T[] {
-  let fisikIndex = 0;
+export function renumberDivisions<T extends { kode: string; uraian?: string; kategori: 'FISIK' | 'MANAJEMEN' }>(items: T[]): T[] {
   let manIndex = 0;
+  let fisikIndex = 0;
   return items.map((item) => {
-    if (item.kategori === 'FISIK') {
-      fisikIndex += 1;
-      return { ...item, kode: toRoman(fisikIndex) };
-    } else {
+    if (item.kategori === 'MANAJEMEN') {
       manIndex += 1;
       return { ...item, kode: toRoman(manIndex) };
+    } else {
+      const upper = (item.uraian || '').toUpperCase();
+      if (upper.includes('PERSIAPAN')) return { ...item, kode: 'I' };
+      if (upper.includes('GALIAN') || upper.includes('URUGAN')) return { ...item, kode: 'II' };
+      if (upper.includes('PASANGAN')) return { ...item, kode: 'III' };
+      if (upper.includes('BETON')) return { ...item, kode: 'IV' };
+      if (upper.includes('KAYU') || upper.includes('KACA') || upper.includes('BESI')) return { ...item, kode: 'V' };
+      if (upper.includes('ATAP')) return { ...item, kode: 'VI' };
+      if (upper.includes('LANGIT')) return { ...item, kode: 'VII' };
+      if (upper.includes('LANTAI')) return { ...item, kode: 'VIII' };
+      if (upper.includes('PENGUNCI')) return { ...item, kode: 'IX' };
+      if (upper.includes('CAT') || upper.includes('CAT-CATAN')) return { ...item, kode: 'X' };
+      if (upper.includes('LISTRIK') || upper.includes('INSTALASI LISTRIK')) return { ...item, kode: 'XI' };
+      if (upper.includes('MEBELER') || upper.includes('PERABOT')) return { ...item, kode: 'XII' };
+
+      fisikIndex += 1;
+      return { ...item, kode: item.kode || toRoman(fisikIndex) };
     }
   });
 }
@@ -57,9 +73,9 @@ export const DEFAULT_DIVISIONS: Omit<DivisionProgressItem, 'prestasiMingguLalu' 
   { id: 'div-6', kode: 'VI', kategori: 'FISIK', uraian: 'PEKERJAAN ATAP', bobotTotal: 17.62, materialRef: ['Seng Spandek', 'Baja Profil', 'Baja ringan', 'Rangka Metal', 'Rabung'] },
   { id: 'div-7', kode: 'VII', kategori: 'FISIK', uraian: 'PEKERJAAN LANGIT-LANGIT', bobotTotal: 9.94, materialRef: ['Plafon PVC', 'Papan Gypsum', 'Rangka Furing', 'List Profil'] },
   { id: 'div-8', kode: 'VIII', kategori: 'FISIK', uraian: 'PEKERJAAN LANTAI', bobotTotal: 10.05, materialRef: ['Keramik', 'Semen Warna'] },
-  { id: 'div-9', kode: 'IX', kategori: 'FISIK', uraian: 'PEKERJAAN CAT-CATAN', bobotTotal: 5.32, materialRef: ['Cat Dasar', 'Cat Penutup', 'Cat Tembok', 'Tinner', 'Ampelas', 'Kuas'] },
-  { id: 'div-10', kode: 'X', kategori: 'FISIK', uraian: 'PEKERJAAN INSTALASI LISTRIK', bobotTotal: 1.60, materialRef: ['Kabel NYM', 'Downlight', 'Lampu LED', 'Saklar', 'Stop Kontak', 'MCB'] },
-  { id: 'div-11', kode: 'XI', kategori: 'FISIK', uraian: 'PEKERJAAN MEBELER', bobotTotal: 7.62, materialRef: ['Kursi Guru', 'Meja Guru', 'Kursi Siswa', 'Meja Siswa', 'Meja & Kursi'] },
+  { id: 'div-9', kode: 'X', kategori: 'FISIK', uraian: 'PEKERJAAN CAT-CATAN', bobotTotal: 5.32, materialRef: ['Cat Dasar', 'Cat Penutup', 'Cat Tembok', 'Tinner', 'Ampelas', 'Kuas'] },
+  { id: 'div-10', kode: 'XI', kategori: 'FISIK', uraian: 'PEKERJAAN INSTALASI LISTRIK', bobotTotal: 1.60, materialRef: ['Kabel NYM', 'Downlight', 'Lampu LED', 'Saklar', 'Stop Kontak', 'MCB'] },
+  { id: 'div-11', kode: 'XII', kategori: 'FISIK', uraian: 'PEKERJAAN MEBELER', bobotTotal: 7.62, materialRef: ['Kursi Guru', 'Meja Guru', 'Kursi Siswa', 'Meja Siswa', 'Meja & Kursi'] },
   { id: 'div-m1', kode: 'I', kategori: 'MANAJEMEN', uraian: 'BIAYA PERENCANAAN', bobotTotal: 1.85, materialRef: ['Perencanaan'] },
   { id: 'div-m2', kode: 'II', kategori: 'MANAJEMEN', uraian: 'BIAYA PENGAWASAN', bobotTotal: 2.19, materialRef: ['Pengawasan'] },
   { id: 'div-m3', kode: 'III', kategori: 'MANAJEMEN', uraian: 'BIAYA PENGELOLAAN', bobotTotal: 2.41, materialRef: ['Pengelolaan', 'ATK'] },

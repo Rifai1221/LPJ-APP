@@ -37,6 +37,7 @@ import {
 } from './services/schoolTenantService';
 import { getMonthFromPeriodString, resolveWeekDates } from './utils/monthHelper';
 import { firestoreDatabaseId } from './services/firebase';
+import { initialProgressWeeks, initialWorkers, initialStores } from './data/initialData';
 
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
@@ -720,19 +721,61 @@ export default function App() {
 
   const handleResetData = () => {
     if (
-      confirm(`Kosongkan seluruh data transaksi & pembukuan untuk ${currentTenant.namaSekolah}?
+      confirm(`Kosongkan seluruh data transaksi & pembukuan untuk ${appState.school.namaSekolah || currentTenant.namaSekolah}?
 
-Semua kwitansi, catatan BKU, BKB, dan laporan upah akan dikosongkan (0 transaksi) agar bersih untuk pencatatan data real.
-Identitas sekolah, NPSN, dan rekening tetap dipertahankan.`)
+Data yang DIPERTAHANKAN:
+- Ringkasan Proyek
+- Data Real Sekolah
+- Data Master Sekolah
+- Upah Tenaga Kerja (Daftar Master Pekerja & Tukang)
+- Toko Rekanan & Penyedia
+
+Data yang DIKOSONGKAN:
+- RPD, Laporan Mingguan & Bobot, BKU/BKT/BKB, Kwitansi & Absensi Upah.
+
+Lanjutkan pengosongan data transaksi?`)
     ) {
-      const reset = createSchoolStateForTenant(currentTenant, 'blank');
-      if (appState.school.namaSekolah) {
-        reset.school = { ...appState.school };
-      }
+      const cleanProgressWeeks = (appState.progressWeeks || initialProgressWeeks).map((w) => ({
+        ...w,
+        bobotRealisasi: 0,
+        deviasi: Math.round((0 - w.bobotRencana) * 100) / 100,
+        divisions: (w.divisions || []).map((d) => ({
+          ...d,
+          prestasiMingguLalu: 0,
+          prestasiMingguIni: 0,
+          prestasiSdMingguIni: 0,
+        })),
+      }));
+
+      const cleanWageReports = (appState.wageReports || []).map((rep) => ({
+        ...rep,
+        totalUpah: 0,
+        attendance: (rep.attendance || []).map((att) => ({
+          ...att,
+          days: [0, 0, 0, 0, 0, 0, 0] as [number, number, number, number, number, number, number],
+          hok: 0,
+          totalUpah: 0,
+        })),
+      }));
+
+      const resetState: AppStateData = {
+        school: { ...appState.school },
+        realSchoolData: appState.realSchoolData || defaultRealSchoolData,
+        workers: appState.workers && appState.workers.length > 0 ? appState.workers : initialWorkers,
+        stores: appState.stores && appState.stores.length > 0 ? appState.stores : initialStores,
+        rpdItems: [],
+        kwitansiList: [],
+        manualBkuTransactions: [],
+        bkbRecords: [],
+        deletedBkuIds: [],
+        wageReports: cleanWageReports,
+        progressWeeks: cleanProgressWeeks,
+      };
+
       isDirtyRef.current = true;
-      setAppState(reset);
-      setSwitchNotification('✅ Lembar pembukuan berhasil dikosongkan. Seluruh transaksi demo telah dibersihkan.');
-      setTimeout(() => setSwitchNotification(null), 4000);
+      setAppState(resetState);
+      setSwitchNotification('✅ Seluruh lembar transaksi & pembukuan berhasil dikosongkan. Data Master Sekolah, Data Real, Pekerja/Tukang & Toko Rekanan tetap tersimpan utuh.');
+      setTimeout(() => setSwitchNotification(null), 5000);
     }
   };
 
