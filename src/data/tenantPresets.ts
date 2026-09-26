@@ -80,6 +80,7 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
       wageReports: [],
       bkbRecords: [],
       manualBkuTransactions: [],
+      realSchoolData: defaultRealSchoolData,
     };
   }
 
@@ -135,6 +136,7 @@ export function createSchoolStateForTenant(tenant: SchoolTenant, baseType: 'full
       wageReports: [],
       bkbRecords: [],
       manualBkuTransactions: [],
+      realSchoolData: defaultRealSchoolData,
     };
   }
 

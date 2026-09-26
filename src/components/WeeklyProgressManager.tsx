@@ -526,6 +526,59 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     onUpdateWeeks(updatedAllWeeks);
   };
 
+  const handlePrestasiMingguLaluChange = (divisionId: string, valueStr: string) => {
+    const val = parseFloat(valueStr) || 0;
+
+    // Calculate this week's updated divisions with adjusted prestasiMingguLalu
+    const updatedDivisions = divisions.map((d) => {
+      if (d.id === divisionId) {
+        const sdIni = Math.min(d.bobotTotal, Math.round((val + d.prestasiMingguIni) * 100) / 100);
+        return {
+          ...d,
+          prestasiMingguLalu: val,
+          prestasiSdMingguIni: sdIni,
+        };
+      }
+      return d;
+    });
+
+    const newTotalSdIni = Math.min(100, Math.round(updatedDivisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100);
+    const newDev = Math.round((newTotalSdIni - currentWeek.bobotRencana) * 100) / 100;
+
+    // Propagate forward to subsequent weeks
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          bobotRealisasi: newTotalSdIni,
+          deviasi: newDev,
+          divisions: updatedDivisions,
+        };
+      } else if (w.mingguKe > selectedWeekNum) {
+        const nextDivs = (w.divisions || DEFAULT_DIVISIONS.map(d => ({ ...d, prestasiMingguLalu: 0, prestasiMingguIni: 0, prestasiSdMingguIni: 0 }))).map((nd) => {
+          const matchedCurrent = updatedDivisions.find((ud) => ud.id === nd.id);
+          const previousCumulative = matchedCurrent ? matchedCurrent.prestasiSdMingguIni : nd.prestasiMingguLalu;
+          const sdIni = Math.min(nd.bobotTotal, Math.round((previousCumulative + nd.prestasiMingguIni) * 100) / 100);
+          return {
+            ...nd,
+            prestasiMingguLalu: previousCumulative,
+            prestasiSdMingguIni: sdIni,
+          };
+        });
+        const nextTotal = Math.min(100, Math.round(nextDivs.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100);
+        return {
+          ...w,
+          bobotRealisasi: nextTotal,
+          deviasi: Math.round((nextTotal - w.bobotRencana) * 100) / 100,
+          divisions: nextDivs,
+        };
+      }
+      return w;
+    });
+
+    onUpdateWeeks(updatedAllWeeks);
+  };
+
   const handleApplyAndSync = () => {
     onAutoGenerateFromProgress(selectedWeekNum);
     setSyncSuccessMsg(`Berhasil! Data Minggu ke-${selectedWeekNum} telah disinkronkan ke Absensi 7 Hari, Kwitansi Upah, Bon/Faktur Toko, SPB, BKU, BKT, BKB, dan Pajak.`);
@@ -1074,7 +1127,12 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                     </span>
                   </div>
                 </th>
-                <th className="py-3 px-3 border border-slate-700 w-28">PRESTASI MINGGU LALU BOBOT %</th>
+                <th className="py-3 px-3 border border-slate-700 w-32 bg-[#005a9e]">
+                  <div className="flex flex-col items-center justify-center gap-0.5">
+                    <span>PRESTASI MINGGU LALU BOBOT %</span>
+                    <span className="text-[9px] font-normal text-amber-200">(Bisa Disesuaikan)</span>
+                  </div>
+                </th>
                 <th className="py-3 px-3 border border-slate-700 w-32 bg-blue-700">PRESTASI MINGGU INI BOBOT % (INPUT)</th>
                 <th className="py-3 px-3 border border-slate-700 w-32">PRESTASI S.D MINGGU INI BOBOT %</th>
               </tr>
@@ -1205,8 +1263,18 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                       </div>
                     )}
                   </td>
-                  <td className="py-2 px-3 border border-slate-300 text-right font-mono text-slate-600 bg-slate-50/50">
-                    {item.prestasiMingguLalu > 0 ? formatNumber(item.prestasiMingguLalu, 2, 2) : ''}
+                  <td className="py-1.5 px-2 border border-slate-300 text-right bg-amber-50/40">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={item.bobotTotal}
+                      value={item.prestasiMingguLalu === 0 ? '' : item.prestasiMingguLalu}
+                      onChange={(e) => handlePrestasiMingguLaluChange(item.id, e.target.value)}
+                      placeholder="0,00"
+                      className="w-full text-right font-mono font-medium text-amber-950 px-2 py-1 bg-white border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                      title="Isi / sesuaikan nilai prestasi minggu lalu (Bobot %)"
+                    />
                   </td>
                   <td className="py-1.5 px-2 border border-slate-300 text-right bg-blue-50/60">
                     <input
@@ -1417,8 +1485,18 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                       </div>
                     )}
                   </td>
-                  <td className="py-2 px-3 border border-slate-300 text-right font-mono text-slate-600 bg-slate-50/50">
-                    {item.prestasiMingguLalu > 0 ? formatNumber(item.prestasiMingguLalu, 2, 2) : ''}
+                  <td className="py-1.5 px-2 border border-slate-300 text-right bg-amber-50/40">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={item.bobotTotal}
+                      value={item.prestasiMingguLalu === 0 ? '' : item.prestasiMingguLalu}
+                      onChange={(e) => handlePrestasiMingguLaluChange(item.id, e.target.value)}
+                      placeholder="0,00"
+                      className="w-full text-right font-mono font-medium text-amber-950 px-2 py-1 bg-white border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                      title="Isi / sesuaikan nilai prestasi minggu lalu (Bobot %)"
+                    />
                   </td>
                   <td className="py-1.5 px-2 border border-slate-300 text-right bg-blue-50/60">
                     <input
