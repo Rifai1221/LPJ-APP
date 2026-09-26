@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
-import {
-  CreditCard,
-  Printer,
-  Calendar,
-  Search,
-  Plus,
-  X,
-} from 'lucide-react';
+import { CreditCard, Printer } from 'lucide-react';
 import { BkbTransaction, SchoolMasterData } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { getAvailableMonthsForSchool } from '../utils/monthHelper';
+import { AdvancedFilterSection, FilterState, initialFilterState } from './AdvancedFilterSection';
 
 interface BkbManagerProps {
   bkbList: BkbTransaction[];
@@ -23,11 +17,21 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
   school,
   onOpenPrintModal,
 }) => {
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [filterState, setFilterState] = useState<FilterState>(initialFilterState);
 
   const months = getAvailableMonthsForSchool(school, [bkbList]);
-  const activeSelectedPeriod = (selectedPeriod === 'ALL' || months.includes(selectedPeriod)) ? selectedPeriod : 'ALL';
+  const activeSelectedPeriod =
+    filterState.selectedMonth === 'ALL' || months.includes(filterState.selectedMonth)
+      ? filterState.selectedMonth
+      : 'ALL';
+
+  const handleUpdateFilterState = (updated: Partial<FilterState>) => {
+    setFilterState((prev) => ({ ...prev, ...updated }));
+  };
+
+  const handleResetAllFilters = () => {
+    setFilterState(initialFilterState);
+  };
 
   // Calculate running bank balance
   let currentSaldo = 0;
@@ -42,9 +46,29 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
   const filtered = computedList.filter((tx) => {
     const matchPeriod = activeSelectedPeriod === 'ALL' || tx.bulan === activeSelectedPeriod;
     const matchSearch =
-      tx.uraian.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.noBukti.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchPeriod && matchSearch;
+      filterState.searchQuery === '' ||
+      tx.uraian.toLowerCase().includes(filterState.searchQuery.toLowerCase()) ||
+      tx.noBukti.toLowerCase().includes(filterState.searchQuery.toLowerCase());
+
+    const matchType =
+      filterState.filterType === 'ALL' ||
+      (filterState.filterType === 'INCOME' && tx.penerimaan > 0) ||
+      (filterState.filterType === 'EXPENSE' && tx.pengeluaran > 0);
+
+    let matchDate = true;
+    if (filterState.startDate) {
+      matchDate = matchDate && tx.tanggal >= filterState.startDate;
+    }
+    if (filterState.endDate) {
+      matchDate = matchDate && tx.tanggal <= filterState.endDate;
+    }
+
+    let matchAmount = true;
+    if (filterState.minAmount !== '' && typeof filterState.minAmount === 'number') {
+      matchAmount = tx.penerimaan >= filterState.minAmount || tx.pengeluaran >= filterState.minAmount;
+    }
+
+    return matchPeriod && matchSearch && matchType && matchDate && matchAmount;
   });
 
   const totalPenerimaan = filtered.reduce((s, t) => s + t.penerimaan, 0);
@@ -65,7 +89,7 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
         </div>
 
         <button
-          onClick={() => onOpenPrintModal(selectedPeriod === 'ALL' ? undefined : selectedPeriod)}
+          onClick={() => onOpenPrintModal(filterState.selectedMonth === 'ALL' ? undefined : filterState.selectedMonth)}
           className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer"
         >
           <Printer className="w-4 h-4 text-emerald-400" />
@@ -73,49 +97,15 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
         </button>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {months.map((p) => (
-            <button
-              key={p}
-              onClick={() => setSelectedPeriod(p)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                selectedPeriod === p
-                  ? 'bg-indigo-600 text-white shadow-xs font-semibold'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {p === 'ALL' ? 'Semua Periode' : p}
-            </button>
-          ))}
-
-          {(selectedPeriod !== 'ALL' || searchQuery !== '') && (
-            <button
-              onClick={() => {
-                setSelectedPeriod('ALL');
-                setSearchQuery('');
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-xs ml-1"
-              title="Hapus Filter Periode & Pencarian"
-            >
-              <X className="w-3.5 h-3.5 text-rose-600" />
-              <span>Hapus Filter</span>
-            </button>
-          )}
-        </div>
-
-        <div className="relative min-w-[200px]">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Cari transaksi bank..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
-      </div>
+      {/* Advanced Filter Section */}
+      <AdvancedFilterSection
+        months={months}
+        filterState={filterState}
+        onChangeFilterState={handleUpdateFilterState}
+        onResetAll={handleResetAllFilters}
+        searchPlaceholder="Cari transaksi bank / rekening..."
+        themeColor="indigo"
+      />
 
       {/* Summary KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

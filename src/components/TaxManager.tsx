@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
-import {
-  FileCheck2,
-  Printer,
-  Calendar,
-  Search,
-  CheckCircle,
-  X,
-} from 'lucide-react';
+import { FileCheck2, Printer } from 'lucide-react';
 import { TaxRecord, SchoolMasterData } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { getAvailableMonthsForSchool } from '../utils/monthHelper';
+import { AdvancedFilterSection, FilterState, initialFilterState } from './AdvancedFilterSection';
 
 interface TaxManagerProps {
   taxRecords: TaxRecord[];
@@ -22,18 +16,49 @@ export const TaxManager: React.FC<TaxManagerProps> = ({
   school,
   onOpenPrintModal,
 }) => {
-  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [filterState, setFilterState] = useState<FilterState>(initialFilterState);
 
   const months = getAvailableMonthsForSchool(school, [taxRecords]);
-  const activeSelectedMonth = (selectedMonth === 'ALL' || months.includes(selectedMonth)) ? selectedMonth : 'ALL';
+  const activeSelectedMonth =
+    filterState.selectedMonth === 'ALL' || months.includes(filterState.selectedMonth)
+      ? filterState.selectedMonth
+      : 'ALL';
+
+  const handleUpdateFilterState = (updated: Partial<FilterState>) => {
+    setFilterState((prev) => ({ ...prev, ...updated }));
+  };
+
+  const handleResetAllFilters = () => {
+    setFilterState(initialFilterState);
+  };
 
   const filtered = taxRecords.filter((t) => {
     const matchMonth = activeSelectedMonth === 'ALL' || t.bulan === activeSelectedMonth;
     const matchSearch =
-      t.keperluan.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.noBukti.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchMonth && matchSearch;
+      filterState.searchQuery === '' ||
+      t.keperluan.toLowerCase().includes(filterState.searchQuery.toLowerCase()) ||
+      t.noBukti.toLowerCase().includes(filterState.searchQuery.toLowerCase());
+
+    let matchDate = true;
+    if (filterState.startDate) {
+      matchDate = matchDate && t.tanggal >= filterState.startDate;
+    }
+    if (filterState.endDate) {
+      matchDate = matchDate && t.tanggal <= filterState.endDate;
+    }
+
+    let matchAmount = true;
+    const totalTaxForRecord = t.ppn11 + t.pph22 + t.pph23;
+    if (filterState.minAmount !== '' && typeof filterState.minAmount === 'number') {
+      matchAmount =
+        t.nominalKonstruksi >= filterState.minAmount ||
+        t.nominalPerabot >= filterState.minAmount ||
+        t.nominalPeralatan >= filterState.minAmount ||
+        t.nominalKonsultanAdm >= filterState.minAmount ||
+        totalTaxForRecord >= filterState.minAmount;
+    }
+
+    return matchMonth && matchSearch && matchDate && matchAmount;
   });
 
   const totalKonstruksi = filtered.reduce((s, t) => s + t.nominalKonstruksi, 0);
@@ -59,57 +84,23 @@ export const TaxManager: React.FC<TaxManagerProps> = ({
         </div>
 
         <button
-          onClick={() => onOpenPrintModal(selectedMonth === 'ALL' ? undefined : selectedMonth)}
+          onClick={() => onOpenPrintModal(filterState.selectedMonth === 'ALL' ? undefined : filterState.selectedMonth)}
           className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer"
         >
           <Printer className="w-4 h-4 text-emerald-400" />
-          <span>Cetak Rekap Pajak {selectedMonth !== 'ALL' ? selectedMonth : 'Total'}</span>
+          <span>Cetak Rekap Pajak {filterState.selectedMonth !== 'ALL' ? filterState.selectedMonth : 'Total'}</span>
         </button>
       </div>
 
-      {/* Tabs & Search */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {months.map((m) => (
-            <button
-              key={m}
-              onClick={() => setSelectedMonth(m)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                selectedMonth === m
-                  ? 'bg-amber-600 text-white shadow-xs font-semibold'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {m === 'ALL' ? 'Semua Bulan (Rekap Akumulatif)' : m}
-            </button>
-          ))}
-
-          {(selectedMonth !== 'ALL' || searchQuery !== '') && (
-            <button
-              onClick={() => {
-                setSelectedMonth('ALL');
-                setSearchQuery('');
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-xs ml-1"
-              title="Hapus Filter Bulan & Pencarian"
-            >
-              <X className="w-3.5 h-3.5 text-rose-600" />
-              <span>Hapus Filter</span>
-            </button>
-          )}
-        </div>
-
-        <div className="relative min-w-[200px]">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Cari transaksi pajak..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-          />
-        </div>
-      </div>
+      {/* Advanced Filter Section */}
+      <AdvancedFilterSection
+        months={months}
+        filterState={filterState}
+        onChangeFilterState={handleUpdateFilterState}
+        onResetAll={handleResetAllFilters}
+        searchPlaceholder="Cari transaksi pajak / keperluan..."
+        themeColor="amber"
+      />
 
       {/* KPI Tax */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
