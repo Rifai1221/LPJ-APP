@@ -51,6 +51,7 @@ export function getDefaultState(): AppStateData {
     wageReports: [],
     bkbRecords: [],
     manualBkuTransactions: [],
+    deletedBkuIds: [],
   };
 }
 

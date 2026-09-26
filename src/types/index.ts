@@ -352,5 +352,6 @@ export interface AppStateData {
   wageReports: WeeklyWageReport[];
   bkbRecords: BkbTransaction[];
   manualBkuTransactions: BkuTransaction[];
+  deletedBkuIds?: string[];
   realSchoolData?: RealSchoolData;
 }

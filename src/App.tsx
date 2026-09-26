@@ -312,9 +312,17 @@ export default function App() {
     return calculateBkuFromTransactions(
       appState.kwitansiList,
       appState.school,
-      appState.manualBkuTransactions
+      appState.manualBkuTransactions,
+      appState.progressWeeks,
+      appState.deletedBkuIds || []
     );
-  }, [appState.kwitansiList, appState.school, appState.manualBkuTransactions]);
+  }, [
+    appState.kwitansiList,
+    appState.school,
+    appState.manualBkuTransactions,
+    appState.progressWeeks,
+    appState.deletedBkuIds,
+  ]);
 
   const bktList = useMemo(() => {
     return calculateBktFromBku(bkuList);
@@ -323,6 +331,112 @@ export default function App() {
   const taxRecords = useMemo(() => {
     return generateTaxesFromKwitansi(appState.kwitansiList);
   }, [appState.kwitansiList]);
+
+  // Handlers
+  const handleAddManualBku = (tx: Omit<BkuTransaction, 'id'>, weekNum?: number) => {
+    const newTxId = `bku-manual-${Date.now()}`;
+    const newTx: BkuTransaction = {
+      ...tx,
+      id: newTxId,
+    };
+
+    // If expenditure, also register corresponding Kwitansi so SPJ, BKU, and Bon Toko remain unified
+    let newKw: KwitansiDocument | null = null;
+    if (tx.jenis === 'PENGELUARAN' && tx.pengeluaran > 0) {
+      const yearStr = appState.school.tahunAnggaran?.trim() || '2026';
+      newKw = {
+        id: `kw-manual-${Date.now()}`,
+        noBukti: tx.noBukti || `MANUAL-${Date.now().toString().slice(-4)}`,
+        noSpb: `SPB-${tx.noBukti || Date.now().toString().slice(-4)}`,
+        tipe: tx.uraian.toLowerCase().includes('upah') ? 'UPAH' : 'MATERIAL',
+        tanggal: tx.tanggal,
+        tanggalFormatted: tx.tanggal,
+        bulan: tx.bulan,
+        uraian: tx.uraian,
+        penerimaNama: 'Penerima Manual',
+        penerimaPekerjaan: 'Penyedia / Pekerja',
+        penerimaAlamat: appState.school.kabKota,
+        nominal: tx.pengeluaran,
+        items: [{ namaBarang: tx.uraian, volume: 1, satuan: 'Kegiatan', hargaSatuan: tx.pengeluaran, jumlah: tx.pengeluaran }],
+        isPpn: false,
+        isPph22: false,
+        isPph23: false,
+        ppnAmount: 0,
+        pph22Amount: 0,
+        pph23Amount: 0,
+        kategoriBiayaPajak: (tx.kategoriBiaya as 'Konstruksi' | 'Perabot' | 'Peralatan' | 'Perencanaan_Pengelolaan') || 'Konstruksi',
+        mingguKeRef: weekNum,
+      };
+      if (newKw) {
+        newTx.kwitansiIdRef = newKw.id;
+      }
+    }
+
+    isDirtyRef.current = true;
+    setAppState((prev) => ({
+      ...prev,
+      kwitansiList: newKw ? [newKw, ...prev.kwitansiList] : prev.kwitansiList,
+      manualBkuTransactions: [...(prev.manualBkuTransactions || []), newTx],
+    }));
+  };
+
+  const handleUpdateBku = (updatedTx: BkuTransaction) => {
+    isDirtyRef.current = true;
+    setAppState((prev) => {
+      // 1. If linked to kwitansi, sync kwitansi
+      let updatedKwitansi = prev.kwitansiList;
+      if (updatedTx.kwitansiIdRef) {
+        updatedKwitansi = prev.kwitansiList.map((kw) => {
+          if (kw.id === updatedTx.kwitansiIdRef) {
+            return {
+              ...kw,
+              tanggal: updatedTx.tanggal,
+              tanggalFormatted: updatedTx.tanggal,
+              bulan: updatedTx.bulan,
+              uraian: updatedTx.uraian,
+              noBukti: updatedTx.noBukti,
+              nominal: updatedTx.pengeluaran || updatedTx.penerimaan,
+            };
+          }
+          return kw;
+        });
+      }
+
+      // 2. Update or upsert into manualBkuTransactions
+      const exists = (prev.manualBkuTransactions || []).some((m) => m.id === updatedTx.id);
+      const updatedManual = exists
+        ? (prev.manualBkuTransactions || []).map((m) => (m.id === updatedTx.id ? updatedTx : m))
+        : [...(prev.manualBkuTransactions || []), updatedTx];
+
+      return {
+        ...prev,
+        kwitansiList: updatedKwitansi,
+        manualBkuTransactions: updatedManual,
+      };
+    });
+  };
+
+  const handleDeleteBku = (txToDelete: BkuTransaction) => {
+    isDirtyRef.current = true;
+    setAppState((prev) => {
+      let updatedKwitansi = prev.kwitansiList;
+      if (txToDelete.kwitansiIdRef) {
+        updatedKwitansi = prev.kwitansiList.filter((kw) => kw.id !== txToDelete.kwitansiIdRef);
+      }
+
+      const updatedManual = (prev.manualBkuTransactions || []).filter((m) => m.id !== txToDelete.id);
+      const updatedDeletedIds = Array.from(
+        new Set([...(prev.deletedBkuIds || []), txToDelete.id, txToDelete.kwitansiIdRef || ''])
+      ).filter(Boolean);
+
+      return {
+        ...prev,
+        kwitansiList: updatedKwitansi,
+        manualBkuTransactions: updatedManual,
+        deletedBkuIds: updatedDeletedIds,
+      };
+    });
+  };
 
   // Handlers
   const handleUpdateSchool = (updated: SchoolMasterData) => {
@@ -478,222 +592,287 @@ export default function App() {
     }
   };
 
-  const handleAutoGenerateFromProgress = (targetWeek: number, splitDays = true) => {
-    const weekObj = appState.progressWeeks.find((w) => w.mingguKe === targetWeek);
-    if (!weekObj) return;
-
+  // Core generator that breaks down Laporan Mingguan & Bobot into daily & weekly transactions
+  const generateTransactionsForWeeks = (
+    targetWeeks: number[],
+    splitDays = true,
+    overrideWeeks?: ProjectProgressWeek[]
+  ) => {
+    if (targetWeeks.length === 0) return;
     const yearStr = appState.school.tahunAnggaran?.trim() || '2026';
-    const weekDates = resolveWeekDates(weekObj, yearStr);
+    const weeksToUse = overrideWeeks || appState.progressWeeks;
 
-    const bulan = weekDates.bulan;
-    const dateStr = weekDates.endDateSlash; // e.g. '07/07/2026'
-    const startDateStr = weekDates.startDateSlash; // e.g. '01/07/2026'
-    const formattedDateEnd = weekDates.endDateFormatted; // e.g. '07 Juli 2026'
-    const formattedDateStart = weekDates.startDateFormatted; // e.g. '01 Juli 2026'
-    
-    // 1. Generate/Ensure UK Upah Kwitansi & Sync Weekly Wage Report
-    let currentWageReport = appState.wageReports.find((r) => r.mingguKe === targetWeek);
-    const updatedWageReports = [...appState.wageReports];
+    let newKwitansiList = [...appState.kwitansiList];
+    let updatedWageReports = [...appState.wageReports];
+    let currentBkb = [...appState.bkbRecords];
 
-    // Calculate wages from physical progress delta if needed
-    if (!currentWageReport) {
-      const defaultAttendance = appState.workers.map((w, idx) => {
-        const days: [number, number, number, number, number, number, number] = [1, 1, 1, 1, idx % 4 === 0 ? 0 : 1, 1, 1];
-        const hok = days.reduce((a, b) => a + b, 0);
-        return {
-          workerId: w.id,
-          nama: w.nama,
-          jenisKelamin: w.jenisKelamin,
-          domisili: w.domisili,
-          peran: w.peran,
-          peranLabel: w.peranLabel,
-          days,
-          hok,
-          upahHarian: w.upahHarian,
-          totalUpah: hok * w.upahHarian,
-        };
+    // Ensure initial Termin 1 deposit in BKB if not yet present
+    const hasTermin1Bkb = currentBkb.some((b) => b.noBukti === 'KREDIT-T1' || b.id === 'bkb-init-termin1');
+    if (!hasTermin1Bkb && weeksToUse.length > 0) {
+      const w1 = weeksToUse[0];
+      const w1Dates = resolveWeekDates(w1, yearStr);
+      currentBkb.unshift({
+        id: 'bkb-init-termin1',
+        tanggal: w1Dates.startDateSlash,
+        tanggalObj: w1Dates.startDate,
+        bulan: w1Dates.bulan,
+        uraian: 'Penerimaan Dana Revitalisasi Termin 1 (70%) ke Rekening Bank',
+        noBukti: 'KREDIT-T1',
+        penerimaan: appState.school.termin1Nilai || 525000000,
+        pengeluaran: 0,
       });
-      const totUpah = defaultAttendance.reduce((s, a) => s + a.totalUpah, 0);
-      currentWageReport = {
-        id: `wage-rep-m${targetWeek}`,
-        mingguKe: targetWeek,
-        bulan,
-        periodeStart: formattedDateStart,
-        periodeEnd: formattedDateEnd,
-        tanggalKwitansi: formattedDateEnd,
-        noBuktiKwitansi: `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
-        penerimaNama: 'Budiman',
-        penerimaJabatan: 'Kepala Tukang',
-        attendance: defaultAttendance,
-        totalUpah: totUpah,
-        bobotMingguIni: weekObj.bobotRealisasi || 0,
-        bobotKumulatif: weekObj.bobotRealisasi || 0,
-      };
-      updatedWageReports.push(currentWageReport);
-    } else {
-      // Sync dates on existing wage report
-      const wageIdx = updatedWageReports.findIndex((r) => r.mingguKe === targetWeek);
-      if (wageIdx >= 0) {
-        updatedWageReports[wageIdx] = {
-          ...updatedWageReports[wageIdx],
+    }
+
+    targetWeeks.forEach((targetWeek) => {
+      const weekObj = weeksToUse.find((w) => w.mingguKe === targetWeek);
+      if (!weekObj) return;
+
+      const weekDates = resolveWeekDates(weekObj, yearStr);
+      const bulan = weekDates.bulan;
+      const dateStr = weekDates.endDateSlash; // e.g. '07/07/2026'
+      const startDateStr = weekDates.startDateSlash; // e.g. '01/07/2026'
+      const formattedDateEnd = weekDates.endDateFormatted;
+      const formattedDateStart = weekDates.startDateFormatted;
+
+      // 1. Upah Kwitansi & Wage Report
+      let currentWageReport = updatedWageReports.find((r) => r.mingguKe === targetWeek);
+      if (!currentWageReport) {
+        const defaultAttendance = appState.workers.map((w, idx) => {
+          const days: [number, number, number, number, number, number, number] = [1, 1, 1, 1, idx % 4 === 0 ? 0 : 1, 1, 1];
+          const hok = days.reduce((a, b) => a + b, 0);
+          return {
+            workerId: w.id,
+            nama: w.nama,
+            jenisKelamin: w.jenisKelamin,
+            domisili: w.domisili,
+            peran: w.peran,
+            peranLabel: w.peranLabel,
+            days,
+            hok,
+            upahHarian: w.upahHarian,
+            totalUpah: hok * w.upahHarian,
+          };
+        });
+        const totUpah = defaultAttendance.reduce((s, a) => s + a.totalUpah, 0);
+        currentWageReport = {
+          id: `wage-rep-m${targetWeek}`,
+          mingguKe: targetWeek,
           bulan,
           periodeStart: formattedDateStart,
           periodeEnd: formattedDateEnd,
           tanggalKwitansi: formattedDateEnd,
           noBuktiKwitansi: `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
+          penerimaNama: 'Budiman',
+          penerimaJabatan: 'Kepala Tukang',
+          attendance: defaultAttendance,
+          totalUpah: totUpah,
+          bobotMingguIni: weekObj.bobotRealisasi || 0,
+          bobotKumulatif: weekObj.bobotRealisasi || 0,
         };
-        currentWageReport = updatedWageReports[wageIdx];
+        updatedWageReports.push(currentWageReport);
+      } else {
+        const wageIdx = updatedWageReports.findIndex((r) => r.mingguKe === targetWeek);
+        if (wageIdx >= 0) {
+          updatedWageReports[wageIdx] = {
+            ...updatedWageReports[wageIdx],
+            bulan,
+            periodeStart: formattedDateStart,
+            periodeEnd: formattedDateEnd,
+            tanggalKwitansi: formattedDateEnd,
+            noBuktiKwitansi: `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
+          };
+          currentWageReport = updatedWageReports[wageIdx];
+        }
       }
-    }
 
-    const totalWage = currentWageReport.totalUpah;
-    const kwUpahBukti = `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`;
+      const totalWage = currentWageReport.totalUpah;
+      const kwUpahBukti = `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`;
 
-    let newKwitansiList: KwitansiDocument[] = [...appState.kwitansiList];
+      const upahKwIdx = newKwitansiList.findIndex((k) => k.mingguKeRef === targetWeek || k.noBukti === kwUpahBukti);
+      const upahKwDoc: KwitansiDocument = {
+        id: upahKwIdx >= 0 ? newKwitansiList[upahKwIdx].id : `kw-wage-m${targetWeek}-${Date.now()}`,
+        noBukti: kwUpahBukti,
+        noSpb: `SPB-UPAH/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
+        tipe: 'UPAH',
+        tanggal: dateStr,
+        tanggalFormatted: formattedDateEnd,
+        bulan: bulan,
+        uraian: `Pembayaran Lunas Biaya Upah Tukang & Pekerja Minggu ${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Untuk Pekerjaan Revitalisasi ${appState.school.namaSekolah}, Tahun ${yearStr}, Daftar Terlampir.`,
+        penerimaNama: currentWageReport.penerimaNama || 'Budiman',
+        penerimaPekerjaan: currentWageReport.penerimaJabatan || 'Kepala Tukang',
+        penerimaAlamat: appState.school.kabKota,
+        nominal: totalWage,
+        items: [{ namaBarang: `Upah Tukang & Pekerja Minggu ${targetWeek} (${formattedDateStart} - ${formattedDateEnd})`, volume: 1, satuan: 'Minggu', hargaSatuan: totalWage, jumlah: totalWage }],
+        isPpn: false,
+        isPph22: false,
+        isPph23: false,
+        ppnAmount: 0,
+        pph22Amount: 0,
+        pph23Amount: 0,
+        kategoriBiayaPajak: 'Konstruksi',
+        keteranganSpb: `Pembayaran Upah Kerja Fisik Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}) Sesuai Laporan Progres`,
+        mingguKeRef: targetWeek,
+      };
 
-    // Check if Upah Kwitansi exists, replace or add
-    const upahKwIdx = newKwitansiList.findIndex((k) => k.mingguKeRef === targetWeek || k.noBukti === kwUpahBukti);
-    const upahKwDoc: KwitansiDocument = {
-      id: upahKwIdx >= 0 ? newKwitansiList[upahKwIdx].id : `kw-wage-m${targetWeek}-${Date.now()}`,
-      noBukti: kwUpahBukti,
-      noSpb: `SPB-UPAH/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
-      tipe: 'UPAH',
-      tanggal: dateStr,
-      tanggalFormatted: formattedDateEnd,
-      bulan: bulan,
-      uraian: `Pembayaran Lunas Biaya Upah Tukang & Pekerja Minggu ${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Untuk Pekerjaan Revitalisasi ${appState.school.namaSekolah}, Tahun ${yearStr}, Daftar Terlampir.`,
-      penerimaNama: currentWageReport.penerimaNama || 'Budiman',
-      penerimaPekerjaan: currentWageReport.penerimaJabatan || 'Kepala Tukang',
-      penerimaAlamat: appState.school.kabKota,
-      nominal: totalWage,
-      items: [{ namaBarang: `Upah Tukang & Pekerja Minggu ${targetWeek} (${formattedDateStart} - ${formattedDateEnd})`, volume: 1, satuan: 'Minggu', hargaSatuan: totalWage, jumlah: totalWage }],
-      isPpn: false,
-      isPph22: false,
-      isPph23: false,
-      ppnAmount: 0,
-      pph22Amount: 0,
-      pph23Amount: 0,
-      kategoriBiayaPajak: 'Konstruksi',
-      keteranganSpb: `Pembayaran Upah Kerja Fisik Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}) Sesuai Laporan Progres`,
-      mingguKeRef: targetWeek,
-    };
+      if (upahKwIdx >= 0) {
+        newKwitansiList[upahKwIdx] = upahKwDoc;
+      } else {
+        newKwitansiList.unshift(upahKwDoc);
+      }
 
-    if (upahKwIdx >= 0) {
-      newKwitansiList[upahKwIdx] = upahKwDoc;
-    } else {
-      newKwitansiList.unshift(upahKwDoc);
-    }
+      // 2. Material Kwitansi (pecah harian sesuai tanggal mulai mingguan)
+      if (weekObj.divisions) {
+        weekObj.divisions.forEach((div, dIdx) => {
+          if (div.prestasiMingguIni > 0 && div.kategori === 'FISIK') {
+            const matchedRpd = appState.rpdItems.filter((it) =>
+              div.materialRef?.some((kw) => it.uraian.toLowerCase().includes(kw.toLowerCase())) ||
+              it.uraian.toLowerCase().includes(div.uraian.toLowerCase()) ||
+              div.uraian.toLowerCase().includes(it.uraian.toLowerCase())
+            );
 
-    // 2. Generate Material Receipts & SPB for divisions with progress > 0 in this week
-    if (weekObj.divisions) {
-      weekObj.divisions.forEach((div, dIdx) => {
-        if (div.prestasiMingguIni > 0 && div.kategori === 'FISIK') {
-          // Find matching RPD items for this division
-          const matchedRpd = appState.rpdItems.filter((it) =>
-            div.materialRef?.some((kw) => it.uraian.toLowerCase().includes(kw.toLowerCase())) ||
-            it.uraian.toLowerCase().includes(div.uraian.toLowerCase()) ||
-            div.uraian.toLowerCase().includes(it.uraian.toLowerCase())
-          );
+            const rpdCandidates = matchedRpd.length > 0 ? matchedRpd : appState.rpdItems.filter((it) => it.kategori === 'BAHAN_REHAB' || it.kategori === 'BAHAN_BARU').slice(0, 3);
 
-          const rpdCandidates = matchedRpd.length > 0 ? matchedRpd : appState.rpdItems.filter((it) => it.kategori === 'BAHAN_REHAB' || it.kategori === 'BAHAN_BARU').slice(0, 3);
+            if (rpdCandidates.length > 0) {
+              const defaultToko = rpdCandidates[0].defaultToko || (appState.stores && appState.stores[0]?.namaToko) || 'USAHA FAMILY';
+              const tokoVendor = (appState.stores || []).find((s) => s.namaToko.toLowerCase() === defaultToko.toLowerCase());
 
-          if (rpdCandidates.length > 0) {
-            const defaultToko = rpdCandidates[0].defaultToko || (appState.stores && appState.stores[0]?.namaToko) || 'USAHA FAMILY';
-            const tokoVendor = (appState.stores || []).find((s) => s.namaToko.toLowerCase() === defaultToko.toLowerCase());
-
-            const tokoItems = rpdCandidates.map((it) => {
-              const volRatio = div.bobotTotal > 0 ? (div.prestasiMingguIni / div.bobotTotal) : 0.1;
-              const volProp = Math.max(1, Math.round(volRatio * it.volume100 * 100) / 100);
-              return {
-                namaBarang: it.uraian,
-                volume: volProp,
-                satuan: it.satuan,
-                hargaSatuan: it.hargaSatuan,
-                jumlah: Math.round(volProp * it.hargaSatuan),
-              };
-            });
-
-            const nominalMaterial = tokoItems.reduce((s, it) => s + it.jumlah, 0);
-            if (nominalMaterial > 0) {
-              // If daily split is enabled, divide items into 2 daily transactions per week (e.g., Day 1 & Day 3)
-              const chunkCount = splitDays && tokoItems.length > 1 ? 2 : 1;
-              const halfIndex = Math.ceil(tokoItems.length / chunkCount);
-
-              for (let c = 0; c < chunkCount; c++) {
-                const chunkItems = chunkCount === 1 ? tokoItems : c === 0 ? tokoItems.slice(0, halfIndex) : tokoItems.slice(halfIndex);
-                const chunkNominal = chunkItems.reduce((s, it) => s + it.jumlah, 0);
-                if (chunkNominal <= 0) continue;
-
-                // Day offset for daily split
-                const dayOffsetStr = c === 0 ? startDateStr : dateStr;
-                const dayOffsetFormatted = c === 0 ? formattedDateStart : formattedDateEnd;
-                const seqNo = targetWeek * 2 + dIdx + c;
-                const kwMatBukti = `${String(seqNo).padStart(2, '0')}/1MD/${yearStr}`;
-                const spbBukti = `${String(seqNo).padStart(2, '0')}/01MD/${yearStr}`;
-
-                const isTaxable = chunkNominal >= 2000000;
-                const ppn = isTaxable ? Math.round((chunkNominal / 1.11) * 0.11 * 100) / 100 : 0;
-                const pph22 = isTaxable ? Math.round((chunkNominal / 1.11) * 0.015 * 100) / 100 : 0;
-
-                const matKwDoc: KwitansiDocument = {
-                  id: `kw-mat-m${targetWeek}-${dIdx}-${c}-${Date.now()}`,
-                  noBukti: kwMatBukti,
-                  noSpb: spbBukti,
-                  tipe: div.uraian.includes('MEBELER') || div.uraian.includes('PERABOT') ? 'PERABOT' : 'MATERIAL',
-                  tanggal: dayOffsetStr,
-                  tanggalFormatted: dayOffsetFormatted,
-                  bulan: bulan,
-                  uraian: `Pembayaran Lunas Biaya Pembelian Material/Bahan (${chunkItems.map((i) => i.namaBarang).slice(0, 3).join(', ')}), Untuk Pekerjaan ${div.uraian} Revitalisasi ${appState.school.namaSekolah}, Tahun ${yearStr}, Daftar Terlampir.`,
-                  penerimaNama: tokoVendor?.pemilikNama || (defaultToko === 'USAHA FAMILY' ? 'Ridwan Hasan' : defaultToko === 'ALUE SEURIBE' ? 'Muhammad Tantawi' : defaultToko === 'TEXAS' ? 'Faisal Razi' : defaultToko === 'NABIL HOME' ? 'Asmarani' : 'Pemilik Toko'),
-                  penerimaPekerjaan: `Pemilik Toko ${defaultToko}`,
-                  penerimaAlamat: tokoVendor?.alamat || appState.school.kabKota,
-                  namaToko: defaultToko,
-                  items: chunkItems,
-                  nominal: chunkNominal,
-                  isPpn: isTaxable,
-                  isPph22: isTaxable,
-                  isPph23: false,
-                  ppnAmount: ppn,
-                  pph22Amount: pph22,
-                  pph23Amount: 0,
-                  kategoriBiayaPajak: 'Konstruksi',
-                  keteranganSpb: `Surat Pesanan Bahan Material ${div.uraian} Minggu Ke-${targetWeek} (${formattedDateStart} - ${formattedDateEnd})`,
-                  mingguKeRef: targetWeek,
+              const tokoItems = rpdCandidates.map((it) => {
+                const volRatio = div.bobotTotal > 0 ? (div.prestasiMingguIni / div.bobotTotal) : 0.1;
+                const volProp = Math.max(1, Math.round(volRatio * it.volume100 * 100) / 100);
+                return {
+                  namaBarang: it.uraian,
+                  volume: volProp,
+                  satuan: it.satuan,
+                  hargaSatuan: it.hargaSatuan,
+                  jumlah: Math.round(volProp * it.hargaSatuan),
                 };
+              });
 
-                const existingMatIdx = newKwitansiList.findIndex((k) => k.noBukti === kwMatBukti);
-                if (existingMatIdx >= 0) {
-                  newKwitansiList[existingMatIdx] = matKwDoc;
-                } else {
-                  newKwitansiList.unshift(matKwDoc);
+              const nominalMaterial = tokoItems.reduce((s, it) => s + it.jumlah, 0);
+              if (nominalMaterial > 0) {
+                const chunkCount = splitDays && tokoItems.length > 1 ? 2 : 1;
+                const halfIndex = Math.ceil(tokoItems.length / chunkCount);
+
+                for (let c = 0; c < chunkCount; c++) {
+                  const chunkItems = chunkCount === 1 ? tokoItems : c === 0 ? tokoItems.slice(0, halfIndex) : tokoItems.slice(halfIndex);
+                  const chunkNominal = chunkItems.reduce((s, it) => s + it.jumlah, 0);
+                  if (chunkNominal <= 0) continue;
+
+                  // Tanggal mulai pencatatan jangan kurang dari tanggal mulai Laporan Mingguan
+                  // Hari kerja aktif 0 (Mulai/Senin), 2 (Rabu), 4 (Jumat), selalu >= startDate
+                  const offsetDayNum = Math.min(5, Math.max(0, (dIdx * 2 + c) % 6));
+                  const sBase = new Date(`${weekDates.startDate}T00:00:00`);
+                  const chunkDateObj = new Date(sBase.getTime() + offsetDayNum * 86400000);
+                  const cDay = String(chunkDateObj.getDate()).padStart(2, '0');
+                  const cMonth = chunkDateObj.getMonth();
+                  const cYear = chunkDateObj.getFullYear();
+                  const indShortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                  const indFullMonths = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+                  const dayOffsetStr = `${cDay}/${String(cMonth + 1).padStart(2, '0')}/${cYear}`;
+                  const dayOffsetFormatted = `${cDay} ${indShortMonths[cMonth]} ${cYear}`;
+                  const dayOffsetBulan = `${indFullMonths[cMonth]} ${cYear}`;
+                  const seqNo = targetWeek * 2 + dIdx + c;
+                  const kwMatBukti = `${String(seqNo).padStart(2, '0')}/1MD/${yearStr}`;
+                  const spbBukti = `${String(seqNo).padStart(2, '0')}/01MD/${yearStr}`;
+
+                  const isTaxable = chunkNominal >= 2000000;
+                  const ppn = isTaxable ? Math.round((chunkNominal / 1.11) * 0.11 * 100) / 100 : 0;
+                  const pph22 = isTaxable ? Math.round((chunkNominal / 1.11) * 0.015 * 100) / 100 : 0;
+
+                  const matKwDoc: KwitansiDocument = {
+                    id: `kw-mat-m${targetWeek}-${dIdx}-${c}-${Date.now()}`,
+                    noBukti: kwMatBukti,
+                    noSpb: spbBukti,
+                    tipe: div.uraian.includes('MEBELER') || div.uraian.includes('PERABOT') ? 'PERABOT' : 'MATERIAL',
+                    tanggal: dayOffsetStr,
+                    tanggalFormatted: dayOffsetFormatted,
+                    bulan: dayOffsetBulan,
+                    uraian: `Pembayaran Lunas Biaya Pembelian Material/Bahan (${chunkItems.map((i) => i.namaBarang).slice(0, 3).join(', ')}), Untuk Pekerjaan ${div.uraian} Revitalisasi ${appState.school.namaSekolah}, Tahun ${yearStr}, Daftar Terlampir.`,
+                    penerimaNama: tokoVendor?.pemilikNama || (defaultToko === 'USAHA FAMILY' ? 'Ridwan Hasan' : defaultToko === 'ALUE SEURIBE' ? 'Muhammad Tantawi' : defaultToko === 'TEXAS' ? 'Faisal Razi' : defaultToko === 'NABIL HOME' ? 'Asmarani' : 'Pemilik Toko'),
+                    penerimaPekerjaan: `Pemilik Toko ${defaultToko}`,
+                    penerimaAlamat: tokoVendor?.alamat || appState.school.kabKota,
+                    namaToko: defaultToko,
+                    items: chunkItems,
+                    nominal: chunkNominal,
+                    isPpn: isTaxable,
+                    isPph22: isTaxable,
+                    isPph23: false,
+                    ppnAmount: ppn,
+                    pph22Amount: pph22,
+                    pph23Amount: 0,
+                    kategoriBiayaPajak: 'Konstruksi',
+                    keteranganSpb: `Surat Pesanan Bahan Material ${div.uraian} Minggu Ke-${targetWeek} (${formattedDateStart} - ${formattedDateEnd})`,
+                    mingguKeRef: targetWeek,
+                  };
+
+                  const existingMatIdx = newKwitansiList.findIndex((k) => k.noBukti === kwMatBukti);
+                  if (existingMatIdx >= 0) {
+                    newKwitansiList[existingMatIdx] = matKwDoc;
+                  } else {
+                    newKwitansiList.unshift(matKwDoc);
+                  }
                 }
               }
             }
+          } else if (div.prestasiMingguIni > 0 && div.kategori === 'MANAJEMEN') {
+            const volRatio = div.bobotTotal > 0 ? div.prestasiMingguIni / div.bobotTotal : 0.1;
+            const nomBiaya = Math.max(150000, Math.round(volRatio * (appState.school.totalAnggaran || 750000000) * (div.bobotTotal / 100)));
+            const kwBukti = `OP/${targetWeek < 10 ? '0' + targetWeek : targetWeek}-${dIdx + 1}/${yearStr}`;
+            const opKwDoc: KwitansiDocument = {
+              id: `kw-op-m${targetWeek}-${dIdx}-${Date.now()}`,
+              noBukti: kwBukti,
+              noSpb: `SPB-${kwBukti}`,
+              tipe: 'OPERASIONAL',
+              tanggal: startDateStr,
+              tanggalFormatted: formattedDateStart,
+              bulan: bulan,
+              uraian: `Pembayaran Biaya ${div.uraian} Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Revitalisasi ${appState.school.namaSekolah}`,
+              penerimaNama: appState.school.namaKepalaSekolah || 'Kepala Sekolah / Panitia',
+              penerimaPekerjaan: 'Ketua Tim Pelaksana',
+              penerimaAlamat: appState.school.kabKota,
+              items: [{ namaBarang: div.uraian, volume: 1, satuan: 'Kegiatan', hargaSatuan: nomBiaya, jumlah: nomBiaya }],
+              nominal: nomBiaya,
+              isPpn: false,
+              isPph22: false,
+              isPph23: false,
+              ppnAmount: 0,
+              pph22Amount: 0,
+              pph23Amount: 0,
+              kategoriBiayaPajak: 'Perencanaan_Pengelolaan',
+              mingguKeRef: targetWeek,
+            };
+            const existingOpIdx = newKwitansiList.findIndex((k) => k.noBukti === kwBukti);
+            if (existingOpIdx >= 0) {
+              newKwitansiList[existingOpIdx] = opKwDoc;
+            } else {
+              newKwitansiList.unshift(opKwDoc);
+            }
           }
-        }
-      });
-    }
+        });
+      }
 
-    // Ensure BKB (Buku Bank) records include corresponding cash withdrawal if required
-    const currentBkb = [...appState.bkbRecords];
-    const withdrawalTxBukti = `TARIK-M${targetWeek}`;
-    const hasTarik = currentBkb.some((b) => b.noBukti === withdrawalTxBukti);
-    if (!hasTarik) {
-      currentBkb.push({
-        id: `bkb-tarik-m${targetWeek}-${Date.now()}`,
-        tanggal: dateStr,
-        tanggalObj: weekDates.endDate,
-        bulan: bulan,
-        uraian: `Penarikan Tunai Kas Operasional & Upah Fisik Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd})`,
-        noBukti: withdrawalTxBukti,
-        penerimaan: 0,
-        pengeluaran: totalWage + 5000000,
-      });
-    }
+      // 3. Ensure BKB penarikan tunai operasional
+      const withdrawalTxBukti = `TARIK-M${targetWeek}`;
+      const hasTarik = currentBkb.some((b) => b.noBukti === withdrawalTxBukti);
+      if (!hasTarik) {
+        currentBkb.push({
+          id: `bkb-tarik-m${targetWeek}-${Date.now()}`,
+          tanggal: startDateStr,
+          tanggalObj: weekDates.startDate,
+          bulan: bulan,
+          uraian: `Penarikan Tunai Kas Operasional & Upah Fisik Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd})`,
+          noBukti: withdrawalTxBukti,
+          penerimaan: 0,
+          pengeluaran: totalWage + 5000000,
+        });
+      }
+    });
 
     isDirtyRef.current = true;
     setAppState((prev) => ({
       ...prev,
+      progressWeeks: overrideWeeks || prev.progressWeeks,
       kwitansiList: newKwitansiList,
       wageReports: updatedWageReports,
       bkbRecords: currentBkb,
@@ -704,10 +883,55 @@ export default function App() {
     } catch {}
   };
 
+  const handleAutoGenerateFromProgress = (
+    targetWeek: number,
+    splitDays = true,
+    overrideWeeks?: ProjectProgressWeek[]
+  ) => {
+    generateTransactionsForWeeks([targetWeek], splitDays, overrideWeeks);
+  };
+
   const handleAutoGenerateDailyAndWeekly = (selectedWeeks: number[], splitDays: boolean) => {
-    selectedWeeks.forEach((wNum) => {
-      handleAutoGenerateFromProgress(wNum, splitDays);
-    });
+    generateTransactionsForWeeks(selectedWeeks, splitDays);
+  };
+
+  const handleAutoGenerateAllWeeks = () => {
+    // Collect all weeks that have realisasi > 0 or divisions with progress > 0
+    const activeWeeks = appState.progressWeeks
+      .filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => d.prestasiMingguIni > 0))
+      .map((w) => w.mingguKe);
+
+    const targetList = activeWeeks.length > 0 ? activeWeeks : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    generateTransactionsForWeeks(targetList, true);
+  };
+
+  // BKB Handlers
+  const handleAddBkbRecord = (tx: Omit<BkbTransaction, 'id'>) => {
+    const newTx: BkbTransaction = {
+      ...tx,
+      id: `bkb-manual-${Date.now()}`,
+    };
+    isDirtyRef.current = true;
+    setAppState((prev) => ({
+      ...prev,
+      bkbRecords: [...(prev.bkbRecords || []), newTx],
+    }));
+  };
+
+  const handleUpdateBkbRecord = (updatedTx: BkbTransaction) => {
+    isDirtyRef.current = true;
+    setAppState((prev) => ({
+      ...prev,
+      bkbRecords: (prev.bkbRecords || []).map((b) => (b.id === updatedTx.id ? updatedTx : b)),
+    }));
+  };
+
+  const handleDeleteBkbRecord = (txToDelete: BkbTransaction) => {
+    isDirtyRef.current = true;
+    setAppState((prev) => ({
+      ...prev,
+      bkbRecords: (prev.bkbRecords || []).filter((b) => b.id !== txToDelete.id),
+    }));
   };
 
   const handleResetData = () => {
@@ -864,7 +1088,13 @@ export default function App() {
             school={appState.school}
             onUpdateWeeks={handleUpdateProgressWeeks}
             onAutoGenerateFromProgress={handleAutoGenerateFromProgress}
+            onAutoGenerateAllWeeks={handleAutoGenerateAllWeeks}
             onOpenPrintModal={(weekNum) => handleOpenPrint('PROGRESS', undefined, weekNum)}
+            bkuList={bkuList}
+            kwitansiList={appState.kwitansiList}
+            onAddTransaction={(tx, weekNum) => handleAddManualBku(tx, weekNum)}
+            onUpdateTransaction={handleUpdateBku}
+            onDeleteTransaction={handleDeleteBku}
           />
         )}
 
@@ -872,7 +1102,11 @@ export default function App() {
           <BkuManager
             bkuList={bkuList}
             school={appState.school}
+            progressWeeks={appState.progressWeeks}
             onOpenPrintModal={(month) => handleOpenPrint('BKU', month)}
+            onAddTransaction={handleAddManualBku}
+            onUpdateTransaction={handleUpdateBku}
+            onDeleteTransaction={handleDeleteBku}
           />
         )}
 
@@ -880,7 +1114,11 @@ export default function App() {
           <BktManager
             bktList={bktList}
             school={appState.school}
+            progressWeeks={appState.progressWeeks}
             onOpenPrintModal={(month) => handleOpenPrint('BKT', month)}
+            onAddTransaction={handleAddManualBku}
+            onUpdateTransaction={handleUpdateBku}
+            onDeleteTransaction={handleDeleteBku}
           />
         )}
 
@@ -888,7 +1126,11 @@ export default function App() {
           <BkbManager
             bkbList={appState.bkbRecords}
             school={appState.school}
+            progressWeeks={appState.progressWeeks}
             onOpenPrintModal={(period) => handleOpenPrint('BKB', period)}
+            onAddBkbRecord={handleAddBkbRecord}
+            onUpdateBkbRecord={handleUpdateBkbRecord}
+            onDeleteBkbRecord={handleDeleteBkbRecord}
           />
         )}
 

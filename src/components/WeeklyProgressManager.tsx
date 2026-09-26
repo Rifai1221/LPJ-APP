@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   TrendingUp,
   Sparkles,
@@ -23,6 +23,7 @@ import {
   X,
   Camera,
   CheckCircle2,
+  DollarSign,
 } from 'lucide-react';
 import {
   ProjectProgressWeek,
@@ -31,6 +32,8 @@ import {
   RpdItem,
   SchoolMasterData,
   ProgressPhotoItem,
+  BkuTransaction,
+  KwitansiDocument,
 } from '../types';
 import { formatNumber, formatRupiah } from '../utils/formatters';
 import { DEFAULT_DIVISIONS, toRoman, renumberDivisions } from '../utils/divisionHelper';
@@ -43,8 +46,14 @@ interface WeeklyProgressManagerProps {
   rpdItems: RpdItem[];
   school: SchoolMasterData;
   onUpdateWeeks: (weeks: ProjectProgressWeek[]) => void;
-  onAutoGenerateFromProgress: (targetWeek: number) => void;
+  onAutoGenerateFromProgress: (targetWeek: number, splitDays?: boolean, overrideWeeks?: ProjectProgressWeek[]) => void;
+  onAutoGenerateAllWeeks?: () => void;
   onOpenPrintModal: (weekNum?: number) => void;
+  bkuList?: BkuTransaction[];
+  kwitansiList?: KwitansiDocument[];
+  onAddTransaction?: (tx: Omit<BkuTransaction, 'id'>, weekNum?: number) => void;
+  onUpdateTransaction?: (tx: BkuTransaction) => void;
+  onDeleteTransaction?: (tx: BkuTransaction) => void;
 }
 
 export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
@@ -54,7 +63,13 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   school,
   onUpdateWeeks,
   onAutoGenerateFromProgress,
+  onAutoGenerateAllWeeks,
   onOpenPrintModal,
+  bkuList,
+  kwitansiList,
+  onAddTransaction,
+  onUpdateTransaction,
+  onDeleteTransaction,
 }) => {
   const [selectedWeekNum, setSelectedWeekNum] = useState<number>(1);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
@@ -208,6 +223,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     });
 
     onUpdateWeeks(updatedAllWeeks);
+    onAutoGenerateFromProgress(selectedWeekNum, true, updatedAllWeeks);
   };
 
   // Add new division to either FISIK or MANAJEMEN category
@@ -356,6 +372,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     });
 
     onUpdateWeeks(updatedAllWeeks);
+    onAutoGenerateFromProgress(selectedWeekNum, true, updatedAllWeeks);
     setSyncSuccessMsg(`Total Bobot berhasil diseimbangkan tepat 100,00% (penyesuaian ${diff > 0 ? '+' : ''}${formatNumber(diff, 2, 2)}% pada ${divisions[divisions.length - 1]?.uraian || 'divisi terakhir'}).`);
     setTimeout(() => setSyncSuccessMsg(null), 4000);
   };
@@ -433,6 +450,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     });
 
     onUpdateWeeks(updatedAllWeeks);
+    onAutoGenerateFromProgress(selectedWeekNum, true, updatedAllWeeks);
   };
 
   const handleApplyAndSync = () => {
@@ -487,6 +505,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       return w;
     });
     onUpdateWeeks(updated);
+    onAutoGenerateFromProgress(selectedWeekNum, true, updated);
   };
 
   const handleEndDateChange = (newEndIso: string) => {
@@ -515,6 +534,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       return w;
     });
     onUpdateWeeks(updated);
+    onAutoGenerateFromProgress(selectedWeekNum, true, updated);
   };
 
   const handlePeriodeTextChange = (text: string) => {
@@ -525,6 +545,194 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       return w;
     });
     onUpdateWeeks(updated);
+  };
+
+  // States for manual input, edit, and delete of week transactions
+  const [isTxModalOpen, setIsTxModalOpen] = useState<boolean>(false);
+  const [editingTx, setEditingTx] = useState<BkuTransaction | null>(null);
+  const [txFormError, setTxFormError] = useState<string | null>(null);
+  const [confirmDeleteTx, setConfirmDeleteTx] = useState<BkuTransaction | null>(null);
+
+  const [txFormData, setTxFormData] = useState({
+    tanggal: weekResolved.startDate,
+    jenis: 'PENGELUARAN' as 'PENERIMAAN' | 'PENGELUARAN',
+    uraian: '',
+    noBukti: '',
+    nominal: 0,
+    kategoriBiaya: 'Konstruksi',
+  });
+
+  // Filter transactions belonging to selectedWeekNum
+  const currentWeekTransactions = useMemo(() => {
+    if (!bkuList) return [];
+    return bkuList.filter((tx) => {
+      // 1. Linked kwitansi with mingguKeRef
+      if (tx.kwitansiIdRef && kwitansiList) {
+        const linkedKw = kwitansiList.find((k) => k.id === tx.kwitansiIdRef);
+        if (linkedKw?.mingguKeRef === selectedWeekNum) return true;
+      }
+      // 2. Proof number matches week
+      const padWeek = selectedWeekNum < 10 ? `0${selectedWeekNum}` : `${selectedWeekNum}`;
+      if (
+        tx.noBukti.includes(`/UK/${padWeek}/`) ||
+        tx.noBukti.includes(`UK/${padWeek}/`) ||
+        tx.noBukti.includes(`M${selectedWeekNum}-`) ||
+        tx.noBukti.includes(`TARIK-M${selectedWeekNum}`)
+      ) {
+        return true;
+      }
+      // 3. Description mentions week
+      const lowUraian = tx.uraian.toLowerCase();
+      if (
+        lowUraian.includes(`minggu ke-${selectedWeekNum}`) ||
+        lowUraian.includes(`minggu ${selectedWeekNum} `) ||
+        lowUraian.includes(`minggu ${selectedWeekNum}(`) ||
+        lowUraian.includes(`minggu ${selectedWeekNum},`) ||
+        lowUraian.includes(`minggu ${selectedWeekNum} (${weekResolved.startDateFormatted}`)
+      ) {
+        return true;
+      }
+      // 4. Initial Termin 1 in Week 1
+      if (selectedWeekNum === 1 && (tx.id === 'bku-init-1' || tx.noBukti === 'BKT-01')) {
+        return true;
+      }
+      // 5. Initial Termin 2 in Week 8
+      if (selectedWeekNum === 8 && (tx.id === 'bku-init-2' || tx.noBukti === 'BKT-02')) {
+        return true;
+      }
+      // 6. Transaction date falls between week startDate and endDate
+      if (tx.tanggalObj && tx.tanggalObj >= weekResolved.startDate && tx.tanggalObj <= weekResolved.endDate) {
+        return true;
+      }
+      return false;
+    });
+  }, [bkuList, kwitansiList, selectedWeekNum, weekResolved]);
+
+  const hasTriggeredRef = useRef<Record<number, boolean>>({});
+
+  // Auto-breakdown from Weekly Progress & Bobot inputs if no transactions exist yet for the selected week
+  useEffect(() => {
+    if (currentWeekTransactions.length === 0 && !hasTriggeredRef.current[selectedWeekNum]) {
+      hasTriggeredRef.current[selectedWeekNum] = true;
+      onAutoGenerateFromProgress(selectedWeekNum, true, progressWeeks);
+    }
+  }, [selectedWeekNum, currentWeekTransactions.length]);
+
+  const totalPengeluaranWeek = currentWeekTransactions
+    .filter((t) => t.jenis === 'PENGELUARAN')
+    .reduce((s, t) => s + t.pengeluaran, 0);
+
+  const totalPenerimaanWeek = currentWeekTransactions
+    .filter((t) => t.jenis === 'PENERIMAAN')
+    .reduce((s, t) => s + t.penerimaan, 0);
+
+  const handleOpenAddTx = () => {
+    setEditingTx(null);
+    setTxFormError(null);
+    const seq = currentWeekTransactions.length + 1;
+    setTxFormData({
+      tanggal: weekResolved.startDate,
+      jenis: 'PENGELUARAN',
+      uraian: `Belanja Material Tambahan Minggu Ke-${selectedWeekNum}`,
+      noBukti: `M${selectedWeekNum}-${String(seq).padStart(2, '0')}/${schoolYear}`,
+      nominal: 0,
+      kategoriBiaya: 'Konstruksi',
+    });
+    setIsTxModalOpen(true);
+  };
+
+  const handleOpenEditTx = (tx: BkuTransaction) => {
+    setEditingTx(tx);
+    setTxFormError(null);
+
+    let dateInput = weekResolved.startDate;
+    if (tx.tanggalObj && tx.tanggalObj.includes('-')) {
+      dateInput = tx.tanggalObj;
+    } else if (tx.tanggal && tx.tanggal.includes('/')) {
+      const [d, m, y] = tx.tanggal.split('/');
+      dateInput = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+
+    setTxFormData({
+      tanggal: dateInput,
+      jenis: tx.jenis,
+      uraian: tx.uraian,
+      noBukti: tx.noBukti === '-' ? '' : tx.noBukti,
+      nominal: tx.jenis === 'PENERIMAAN' ? tx.penerimaan : tx.pengeluaran,
+      kategoriBiaya: tx.kategoriBiaya || 'Konstruksi',
+    });
+    setIsTxModalOpen(true);
+  };
+
+  const handleSaveTx = (e: React.FormEvent) => {
+    e.preventDefault();
+    setTxFormError(null);
+
+    if (!txFormData.uraian.trim()) {
+      setTxFormError('Uraian transaksi tidak boleh kosong.');
+      return;
+    }
+
+    if (!txFormData.nominal || txFormData.nominal <= 0) {
+      setTxFormError('Nominal transaksi harus lebih dari Rp 0.');
+      return;
+    }
+
+    // Tanggal mulai pencatatan jangan kurang dari tanggal yang di-input dari Laporan Mingguan & Bobot
+    if (txFormData.tanggal < weekResolved.startDate) {
+      setTxFormError(
+        `Tanggal transaksi (${txFormData.tanggal}) tidak boleh kurang dari tanggal mulai Minggu Ke-${selectedWeekNum} (${weekResolved.startDateFormatted}).`
+      );
+      return;
+    }
+
+    const [y, m, d] = txFormData.tanggal.split('-');
+    const indMonths = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const bulanStr = `${indMonths[parseInt(m, 10) - 1]} ${y}`;
+    const displayTanggal = `${d}/${m}/${y}`;
+
+    if (editingTx) {
+      if (onUpdateTransaction) {
+        onUpdateTransaction({
+          ...editingTx,
+          tanggal: displayTanggal,
+          tanggalObj: txFormData.tanggal,
+          bulan: bulanStr,
+          jenis: txFormData.jenis,
+          uraian: txFormData.uraian.trim(),
+          noBukti: txFormData.noBukti.trim() || '-',
+          penerimaan: txFormData.jenis === 'PENERIMAAN' ? txFormData.nominal : 0,
+          pengeluaran: txFormData.jenis === 'PENGELUARAN' ? txFormData.nominal : 0,
+          kategoriBiaya: txFormData.kategoriBiaya,
+        });
+      }
+    } else {
+      if (onAddTransaction) {
+        onAddTransaction({
+          tanggal: displayTanggal,
+          tanggalObj: txFormData.tanggal,
+          bulan: bulanStr,
+          jenis: txFormData.jenis,
+          uraian: txFormData.uraian.trim(),
+          noBukti: txFormData.noBukti.trim() || '-',
+          penerimaan: txFormData.jenis === 'PENERIMAAN' ? txFormData.nominal : 0,
+          pengeluaran: txFormData.jenis === 'PENGELUARAN' ? txFormData.nominal : 0,
+          kategoriBiaya: txFormData.kategoriBiaya,
+        }, selectedWeekNum);
+      }
+    }
+
+    setIsTxModalOpen(false);
+  };
+
+  const handleConfirmDeleteTx = () => {
+    if (confirmDeleteTx && onDeleteTransaction) {
+      onDeleteTransaction(confirmDeleteTx);
+      setConfirmDeleteTx(null);
+    }
   };
 
   return (
@@ -725,18 +933,27 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Success alert message if any (kept inside div 3 to preserve stable layout) */}
+        {syncSuccessMsg && (
+          <div className="p-3 bg-emerald-100/90 border border-emerald-300 rounded-lg text-xs font-semibold text-emerald-950 flex items-center justify-between gap-2.5 shadow-xs animate-fade-in">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span>{syncSuccessMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSyncSuccessMsg(null)}
+              className="text-emerald-700 hover:text-emerald-900 p-0.5 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Success alert message */}
-      {syncSuccessMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-medium text-emerald-900 flex items-center gap-2.5 shadow-xs animate-fade-in">
-          <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-          <span>{syncSuccessMsg}</span>
-        </div>
-      )}
-
-      {/* Main Table: REKAPITULASI (Matches user uploaded template exactly) */}
-      <div className="bg-white rounded-xl border border-slate-300 shadow-md overflow-hidden">
+      {/* Main Table: REKAPITULASI & PENCATATAN OTOMATIS TRANSAKSI (Div 4) */}
+      <div className="bg-white rounded-2xl border border-slate-300 shadow-md ring-1 ring-slate-900/5 overflow-hidden">
         {/* Document Header Table Header */}
         <div className="p-6 text-center border-b border-slate-200 bg-slate-50/70 space-y-1">
           <h3 className="text-sm font-extrabold uppercase tracking-widest text-slate-900">
@@ -795,6 +1012,50 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             </div>
           </div>
         )}
+
+        {/* Quick Action & Invariant Toolbar for Pencatatan Otomatis & Transaksi (Div 4) */}
+        <div className="bg-slate-900 text-white px-5 py-3 border-b border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+              Pencatatan Otomatis dari Bobot: {currentWeek.bobotRealisasi || 0}%
+            </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Tgl Mulai: ≥ {weekResolved.startDateFormatted} (Invarian Terkunci)
+            </span>
+            <span className="text-xs text-slate-300 font-mono">
+              ({currentWeekTransactions.length} transaksi • {formatRupiah(totalPengeluaranWeek)})
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleOpenAddTx}
+              className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+              title="Input transaksi kas/belanja baru secara manual"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Input Manual</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleApplyAndSync}
+              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+              title="Pecah ulang otomatis dari inputan bobot minggu ini"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>⚡ Pecah Otomatis</span>
+            </button>
+            <a
+              href="#rekap-transaksi-mingguan"
+              className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+            >
+              <span>Lihat Detail Transaksi ↓</span>
+            </a>
+          </div>
+        </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
@@ -965,6 +1226,14 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                       placeholder="0,00"
                       className="w-full text-right font-mono font-bold text-blue-900 px-2 py-1 bg-white border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                     />
+                    {item.prestasiMingguIni > 0 && (
+                      <span
+                        className="text-[9px] text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-1 py-0.5 rounded font-bold block mt-1 text-center whitespace-nowrap"
+                        title={`Pencatatan otomatis memecah belanja material & kas mulai ${weekResolved.startDateFormatted}`}
+                      >
+                        ⚡ Pecah ke Kas (≥ {weekResolved.startDateFormatted})
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 px-3 border border-slate-300 text-right font-mono font-bold text-slate-900">
                     {item.prestasiSdMingguIni > 0 ? formatNumber(item.prestasiSdMingguIni, 2, 2) : ''}
@@ -1169,6 +1438,14 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                       placeholder="0,00"
                       className="w-full text-right font-mono font-bold text-indigo-900 px-2 py-1 bg-white border border-indigo-300 rounded focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                     />
+                    {item.prestasiMingguIni > 0 && (
+                      <span
+                        className="text-[9px] text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-1 py-0.5 rounded font-bold block mt-1 text-center whitespace-nowrap"
+                        title={`Pencatatan otomatis memecah biaya manajemen & kas mulai ${weekResolved.startDateFormatted}`}
+                      >
+                        ⚡ Pecah ke Kas (≥ {weekResolved.startDateFormatted})
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 px-3 border border-slate-300 text-right font-mono font-bold text-slate-900">
                     {item.prestasiSdMingguIni > 0 ? formatNumber(item.prestasiSdMingguIni, 2, 2) : ''}
@@ -1449,6 +1726,251 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             </button>
           </div>
         </div>
+
+        {/* PENCATATAN OTOMATIS PECAHAN TRANSAKSI DARI BOBOT MINGGUAN (TERINTEGRASI DI DALAM KARTU LAPORAN MINGGUAN & BOBOT) */}
+        <div id="rekap-transaksi-mingguan" className="border-t-2 border-slate-300 bg-white space-y-0 scroll-mt-6">
+        {/* Section Header */}
+        <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                <Receipt className="w-3 h-3" />
+                Pencatatan Otomatis & SPJ Kas
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                Tgl Mulai: {weekResolved.startDateFormatted} (Invarian Terkunci)
+              </span>
+            </div>
+            <h3 className="text-base font-bold flex items-center gap-2 text-white">
+              <span>Hasil Pecahan Transaksi Otomatis Minggu Ke-{selectedWeekNum}</span>
+              <span className="text-xs font-semibold text-slate-300 font-mono">
+                ({weekResolved.startDateFormatted} s.d {weekResolved.endDateFormatted})
+              </span>
+            </h3>
+            <p className="text-xs text-slate-300 max-w-3xl">
+              Pencatatan otomatis memecah dari hasil inputan Laporan Mingguan & Bobot menjadi kwitansi pembelian material toko harian, upah kerja fisik, dan kas operasional. Anda juga dapat melakukan <strong>input manual, edit, dan hapus</strong> transaksi secara langsung.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleOpenAddTx}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-600/30 transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Input Transaksi Manual</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleApplyAndSync}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-emerald-600/30 transition cursor-pointer"
+              title="Pecah dan sinkronkan otomatis bobot minggu ini ke kwitansi, SPB, BKU, BKT, dan BKB"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>Pecah Otomatis dari Bobot</span>
+            </button>
+
+            {onAutoGenerateAllWeeks && (
+              <button
+                type="button"
+                onClick={onAutoGenerateAllWeeks}
+                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
+                title="Pecah otomatis seluruh 12-14 minggu sekaligus"
+              >
+                <Layers className="w-3.5 h-3.5 text-blue-400" />
+                <span>Pecah Semua Minggu</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Metric Highlights */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-200 bg-slate-50/70 border-b border-slate-200 text-xs">
+          <div className="p-3.5 space-y-0.5">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+              Prestasi Bobot Minggu Ini
+            </span>
+            <p className="text-base font-extrabold text-blue-900 font-mono">
+              {formatNumber(currentWeek.bobotRealisasi || 0, 2)}%
+            </p>
+          </div>
+
+          <div className="p-3.5 space-y-0.5">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+              Total Pengeluaran Minggu Ini
+            </span>
+            <p className="text-base font-extrabold text-rose-700 font-mono">
+              {formatRupiah(totalPengeluaranWeek)}
+            </p>
+          </div>
+
+          <div className="p-3.5 space-y-0.5">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+              Penerimaan / Kas Masuk
+            </span>
+            <p className="text-base font-extrabold text-emerald-700 font-mono">
+              {formatRupiah(totalPenerimaanWeek)}
+            </p>
+          </div>
+
+          <div className="p-3.5 space-y-0.5">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+              Total Transaksi Tercatat
+            </span>
+            <p className="text-base font-extrabold text-slate-900 font-mono">
+              {currentWeekTransactions.length} Transaksi
+            </p>
+          </div>
+        </div>
+
+        {/* Date Invariant Notice Bar */}
+        <div className="bg-amber-50/80 border-b border-amber-200 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-amber-950">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <span>
+              <strong>Ketentuan Invarian Tanggal:</strong> Tanggal mulai pencatatan transaksi kas tidak boleh kurang dari tanggal mulai yang di-input dari Laporan Mingguan & Bobot (<strong>{weekResolved.startDateFormatted}</strong>).
+            </span>
+          </div>
+          <span className="text-amber-800 font-semibold text-[10px] bg-amber-100 px-2 py-0.5 rounded border border-amber-300 shrink-0">
+            Terproteksi Otomatis
+          </span>
+        </div>
+
+        {/* Transactions Table */}
+        <div className="overflow-x-auto">
+          {currentWeekTransactions.length === 0 ? (
+            <div className="p-10 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                <Receipt className="w-6 h-6" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h4 className="text-sm font-bold text-slate-800">
+                  Belum Ada Transaksi Pecahan Untuk Minggu Ke-{selectedWeekNum}
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Gunakan tombol <strong>"Pecah Otomatis dari Bobot"</strong> untuk menghasilkan kwitansi upah & material secara otomatis sesuai input bobot fisik ({formatNumber(currentWeek.bobotRealisasi || 0, 2)}%), atau klik <strong>"+ Input Transaksi Manual"</strong>.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleApplyAndSync}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Pecah Otomatis dari Bobot Minggu {selectedWeekNum}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddTx}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Input Manual</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="py-2.5 px-3 text-center w-10">No</th>
+                  <th className="py-2.5 px-3 w-28">Tanggal</th>
+                  <th className="py-2.5 px-3 w-32">No. Bukti</th>
+                  <th className="py-2.5 px-3 w-24">Jenis</th>
+                  <th className="py-2.5 px-3 w-28">Kategori</th>
+                  <th className="py-2.5 px-3">Uraian Transaksi</th>
+                  <th className="py-2.5 px-3 text-right w-36">Nominal (Rp)</th>
+                  <th className="py-2.5 px-3 text-center w-28">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-sans">
+                {currentWeekTransactions.map((tx, idx) => {
+                  const isStartDate = tx.tanggal === weekResolved.startDateSlash || tx.tanggalObj === weekResolved.startDate;
+                  return (
+                    <tr key={tx.id || idx} className="hover:bg-slate-50/80 transition group">
+                      <td className="py-2.5 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-slate-900 whitespace-nowrap">
+                        <div className="flex items-center gap-1">
+                          <span>{tx.tanggal}</span>
+                          {isStartDate && (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded" title="Tanggal Mulai Minggu Ini">
+                              Mulai
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-bold text-blue-900 whitespace-nowrap">
+                        {tx.noBukti}
+                      </td>
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            tx.jenis === 'PENERIMAAN'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
+                          }`}
+                        >
+                          {tx.jenis}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                        <span className="text-[11px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-medium">
+                          {tx.kategoriBiaya || (tx.uraian.toLowerCase().includes('upah') ? 'Upah Tukang' : 'Material')}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-800 font-medium leading-relaxed max-w-md">
+                        {tx.uraian}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold whitespace-nowrap">
+                        <span className={tx.jenis === 'PENERIMAAN' ? 'text-emerald-700' : 'text-slate-900'}>
+                          {formatRupiah(tx.pengeluaran || tx.penerimaan)}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditTx(tx)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition cursor-pointer shadow-2xs"
+                            title="Edit data transaksi ini"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteTx(tx)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition cursor-pointer shadow-2xs"
+                            title="Hapus transaksi ini dari pembukuan"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Hapus</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100/90 border-t-2 border-slate-300 font-bold text-slate-900">
+                  <td colSpan={6} className="py-2.5 px-3 text-right">
+                    Total Pengeluaran Minggu Ke-{selectedWeekNum}:
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono text-rose-700">
+                    {formatRupiah(totalPengeluaranWeek)}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+        </div>
       </div>
 
       {/* DOKUMENTASI FOTO PROGRES MINGGUAN */}
@@ -1458,6 +1980,242 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
         onUpdatePhotos={handleUpdatePhotosForCurrentWeek}
         onOpenPrintModal={onOpenPrintModal}
       />
+
+      {/* Modal Input & Edit Transaksi Manual Minggu Ini */}
+      {isTxModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in backdrop-blur-2xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
+                  {editingTx ? <Edit3 className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {editingTx ? `Edit Transaksi Minggu Ke-${selectedWeekNum}` : `Input Transaksi Manual Minggu Ke-${selectedWeekNum}`}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Tersinkronisasi langsung ke BKU, Kwitansi, SPB, dan Buku Kas
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTxModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {txFormError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <p className="font-semibold">{txFormError}</p>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveTx} className="space-y-3.5 text-xs">
+              {/* Tanggal with Minimum Date Protection */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">
+                  Tanggal Transaksi <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  min={weekResolved.startDate}
+                  value={txFormData.tanggal}
+                  onChange={(e) => setTxFormData({ ...txFormData, tanggal: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  required
+                />
+                <p className="text-[11px] text-amber-800 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 mt-1 flex items-center gap-1 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    Tanggal tidak boleh kurang dari tanggal mulai Laporan Mingguan: <strong>{weekResolved.startDateFormatted}</strong>.
+                  </span>
+                </p>
+              </div>
+
+              {/* Jenis Transaksi */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">Jenis Transaksi</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTxFormData({ ...txFormData, jenis: 'PENGELUARAN' })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      txFormData.jenis === 'PENGELUARAN'
+                        ? 'bg-rose-50 border-rose-500 text-rose-800'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>🔴 Pengeluaran (Belanja / Kas Keluar)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTxFormData({ ...txFormData, jenis: 'PENERIMAAN' })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      txFormData.jenis === 'PENERIMAAN'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>🟢 Penerimaan (Kas Masuk / Bank)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* No Bukti & Kategori */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block">No. Bukti / Kuitansi</label>
+                  <input
+                    type="text"
+                    value={txFormData.noBukti}
+                    onChange={(e) => setTxFormData({ ...txFormData, noBukti: e.target.value })}
+                    placeholder="misal: M1-01/2026"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block">Kategori Biaya</label>
+                  <select
+                    value={txFormData.kategoriBiaya}
+                    onChange={(e) => setTxFormData({ ...txFormData, kategoriBiaya: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden bg-white"
+                  >
+                    <option value="Konstruksi">Pekerjaan Fisik Konstruksi</option>
+                    <option value="Material">Pembelian Bahan Bangunan</option>
+                    <option value="Upah">Upah Tukang & Pekerja</option>
+                    <option value="Perabot">Perabot & Mebeler</option>
+                    <option value="Operasional">Persiapan & Operasional</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Uraian */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">
+                  Uraian Transaksi <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={txFormData.uraian}
+                  onChange={(e) => setTxFormData({ ...txFormData, uraian: e.target.value })}
+                  placeholder="Keterangan lengkap transaksi..."
+                  rows={2}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  required
+                />
+              </div>
+
+              {/* Nominal */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">
+                  Nominal Transaksi (Rp) <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400">Rp</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={txFormData.nominal || ''}
+                    onChange={(e) => setTxFormData({ ...txFormData, nominal: parseFloat(e.target.value) || 0 })}
+                    placeholder="0"
+                    className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-xl font-mono text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    required
+                  />
+                </div>
+                {txFormData.nominal > 0 && (
+                  <p className="text-[11px] font-mono font-bold text-blue-700 pt-0.5">
+                    Preview: {formatRupiah(txFormData.nominal)}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsTxModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-xl font-semibold transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{editingTx ? 'Simpan Perubahan' : 'Tambahkan Transaksi'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Deleting Transaction */}
+      {confirmDeleteTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in backdrop-blur-2xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-red-100 text-red-600 rounded-full flex-shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Hapus Transaksi Ini?
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Transaksi akan dihapus dari BKU, Buku Pembantu Kas, dan SPJ.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5 font-sans">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">No. Bukti:</span>
+                <span className="font-mono font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {confirmDeleteTx.noBukti}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Tanggal:</span>
+                <span className="font-mono font-semibold text-slate-800">{confirmDeleteTx.tanggal}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Nominal:</span>
+                <span className="font-mono font-extrabold text-rose-700">
+                  {formatRupiah(confirmDeleteTx.pengeluaran || confirmDeleteTx.penerimaan)}
+                </span>
+              </div>
+              <div className="pt-1 border-t border-slate-200">
+                <p className="text-slate-700 font-medium line-clamp-2">{confirmDeleteTx.uraian}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteTx(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteTx}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Transaksi</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Modal for Deleting Division Item */}
       {confirmDeleteDivision && (

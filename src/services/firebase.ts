@@ -30,7 +30,7 @@ try {
   firestoreDb = initializeFirestore(
     app,
     {
-      experimentalAutoDetectLongPolling: true,
+      experimentalForceLongPolling: true,
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
       }),
@@ -42,7 +42,7 @@ try {
     firestoreDb = initializeFirestore(
       app,
       {
-        experimentalAutoDetectLongPolling: true,
+        experimentalForceLongPolling: true,
         localCache: memoryLocalCache(),
       },
       firestoreDatabaseId
