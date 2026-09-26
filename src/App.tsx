@@ -33,7 +33,7 @@ import {
   registerNewSchoolTenant,
   deleteSchoolTenant,
 } from './services/schoolTenantService';
-import { getMonthFromPeriodString } from './utils/monthHelper';
+import { getMonthFromPeriodString, resolveWeekDates } from './utils/monthHelper';
 import { firestoreDatabaseId } from './services/firebase';
 
 import { Header } from './components/Header';
@@ -482,9 +482,14 @@ export default function App() {
     const weekObj = appState.progressWeeks.find((w) => w.mingguKe === targetWeek);
     if (!weekObj) return;
 
-    const bulan = getMonthFromPeriodString(weekObj.periode, appState.school.tahunAnggaran);
-    const dateStr = weekObj.periode.includes(' - ') ? weekObj.periode.split(' - ')[1] : '26/10/2025';
-    const startDateStr = weekObj.periode.includes(' - ') ? weekObj.periode.split(' - ')[0] : '20/10/2025';
+    const yearStr = appState.school.tahunAnggaran?.trim() || '2026';
+    const weekDates = resolveWeekDates(weekObj, yearStr);
+
+    const bulan = weekDates.bulan;
+    const dateStr = weekDates.endDateSlash; // e.g. '07/07/2026'
+    const startDateStr = weekDates.startDateSlash; // e.g. '01/07/2026'
+    const formattedDateEnd = weekDates.endDateFormatted; // e.g. '07 Juli 2026'
+    const formattedDateStart = weekDates.startDateFormatted; // e.g. '01 Juli 2026'
     
     // 1. Generate/Ensure UK Upah Kwitansi & Sync Weekly Wage Report
     let currentWageReport = appState.wageReports.find((r) => r.mingguKe === targetWeek);
@@ -513,10 +518,10 @@ export default function App() {
         id: `wage-rep-m${targetWeek}`,
         mingguKe: targetWeek,
         bulan,
-        periodeStart: startDateStr,
-        periodeEnd: dateStr,
-        tanggalKwitansi: dateStr,
-        noBuktiKwitansi: `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/2025`,
+        periodeStart: formattedDateStart,
+        periodeEnd: formattedDateEnd,
+        tanggalKwitansi: formattedDateEnd,
+        noBuktiKwitansi: `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
         penerimaNama: 'Budiman',
         penerimaJabatan: 'Kepala Tukang',
         attendance: defaultAttendance,
@@ -525,10 +530,24 @@ export default function App() {
         bobotKumulatif: weekObj.bobotRealisasi || 0,
       };
       updatedWageReports.push(currentWageReport);
+    } else {
+      // Sync dates on existing wage report
+      const wageIdx = updatedWageReports.findIndex((r) => r.mingguKe === targetWeek);
+      if (wageIdx >= 0) {
+        updatedWageReports[wageIdx] = {
+          ...updatedWageReports[wageIdx],
+          bulan,
+          periodeStart: formattedDateStart,
+          periodeEnd: formattedDateEnd,
+          tanggalKwitansi: formattedDateEnd,
+          noBuktiKwitansi: `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
+        };
+        currentWageReport = updatedWageReports[wageIdx];
+      }
     }
 
     const totalWage = currentWageReport.totalUpah;
-    const kwUpahBukti = `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/2025`;
+    const kwUpahBukti = `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`;
 
     let newKwitansiList: KwitansiDocument[] = [...appState.kwitansiList];
 
@@ -537,17 +556,17 @@ export default function App() {
     const upahKwDoc: KwitansiDocument = {
       id: upahKwIdx >= 0 ? newKwitansiList[upahKwIdx].id : `kw-wage-m${targetWeek}-${Date.now()}`,
       noBukti: kwUpahBukti,
-      noSpb: `SPB-UPAH/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/2025`,
+      noSpb: `SPB-UPAH/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
       tipe: 'UPAH',
       tanggal: dateStr,
-      tanggalFormatted: `${dateStr} ${bulan}`,
+      tanggalFormatted: formattedDateEnd,
       bulan: bulan,
-      uraian: `Pembayaran Lunas Biaya Upah Tukang & Pekerja Minggu ${targetWeek}, Untuk Pekerjaan Revitalisasi ${appState.school.namaSekolah}, Tahun ${appState.school.tahunAnggaran}, Daftar Terlampir.`,
+      uraian: `Pembayaran Lunas Biaya Upah Tukang & Pekerja Minggu ${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Untuk Pekerjaan Revitalisasi ${appState.school.namaSekolah}, Tahun ${yearStr}, Daftar Terlampir.`,
       penerimaNama: currentWageReport.penerimaNama || 'Budiman',
       penerimaPekerjaan: currentWageReport.penerimaJabatan || 'Kepala Tukang',
       penerimaAlamat: appState.school.kabKota,
       nominal: totalWage,
-      items: [{ namaBarang: `Upah Tukang & Pekerja Minggu ${targetWeek}`, volume: 1, satuan: 'Minggu', hargaSatuan: totalWage, jumlah: totalWage }],
+      items: [{ namaBarang: `Upah Tukang & Pekerja Minggu ${targetWeek} (${formattedDateStart} - ${formattedDateEnd})`, volume: 1, satuan: 'Minggu', hargaSatuan: totalWage, jumlah: totalWage }],
       isPpn: false,
       isPph22: false,
       isPph23: false,
@@ -555,7 +574,7 @@ export default function App() {
       pph22Amount: 0,
       pph23Amount: 0,
       kategoriBiayaPajak: 'Konstruksi',
-      keteranganSpb: `Pembayaran Upah Kerja Fisik Minggu Ke-${targetWeek} Sesuai Laporan Progres`,
+      keteranganSpb: `Pembayaran Upah Kerja Fisik Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}) Sesuai Laporan Progres`,
       mingguKeRef: targetWeek,
     };
 
@@ -605,11 +624,12 @@ export default function App() {
                 const chunkNominal = chunkItems.reduce((s, it) => s + it.jumlah, 0);
                 if (chunkNominal <= 0) continue;
 
-                // Day offset for daily split (e.g. 20/10/2025 vs 22/10/2025)
+                // Day offset for daily split
                 const dayOffsetStr = c === 0 ? startDateStr : dateStr;
+                const dayOffsetFormatted = c === 0 ? formattedDateStart : formattedDateEnd;
                 const seqNo = targetWeek * 2 + dIdx + c;
-                const kwMatBukti = `${String(seqNo).padStart(2, '0')}/1MD/2025`;
-                const spbBukti = `${String(seqNo).padStart(2, '0')}/01MD/2025`;
+                const kwMatBukti = `${String(seqNo).padStart(2, '0')}/1MD/${yearStr}`;
+                const spbBukti = `${String(seqNo).padStart(2, '0')}/01MD/${yearStr}`;
 
                 const isTaxable = chunkNominal >= 2000000;
                 const ppn = isTaxable ? Math.round((chunkNominal / 1.11) * 0.11 * 100) / 100 : 0;
@@ -621,9 +641,9 @@ export default function App() {
                   noSpb: spbBukti,
                   tipe: div.uraian.includes('MEBELER') || div.uraian.includes('PERABOT') ? 'PERABOT' : 'MATERIAL',
                   tanggal: dayOffsetStr,
-                  tanggalFormatted: `${dayOffsetStr} ${bulan}`,
+                  tanggalFormatted: dayOffsetFormatted,
                   bulan: bulan,
-                  uraian: `Pembayaran Lunas Biaya Pembelian Material/Bahan (${chunkItems.map((i) => i.namaBarang).slice(0, 3).join(', ')}), Untuk Pekerjaan ${div.uraian} Revitalisasi ${appState.school.namaSekolah}, Tahun ${appState.school.tahunAnggaran}, Daftar Terlampir.`,
+                  uraian: `Pembayaran Lunas Biaya Pembelian Material/Bahan (${chunkItems.map((i) => i.namaBarang).slice(0, 3).join(', ')}), Untuk Pekerjaan ${div.uraian} Revitalisasi ${appState.school.namaSekolah}, Tahun ${yearStr}, Daftar Terlampir.`,
                   penerimaNama: tokoVendor?.pemilikNama || (defaultToko === 'USAHA FAMILY' ? 'Ridwan Hasan' : defaultToko === 'ALUE SEURIBE' ? 'Muhammad Tantawi' : defaultToko === 'TEXAS' ? 'Faisal Razi' : defaultToko === 'NABIL HOME' ? 'Asmarani' : 'Pemilik Toko'),
                   penerimaPekerjaan: `Pemilik Toko ${defaultToko}`,
                   penerimaAlamat: tokoVendor?.alamat || appState.school.kabKota,
@@ -637,7 +657,7 @@ export default function App() {
                   pph22Amount: pph22,
                   pph23Amount: 0,
                   kategoriBiayaPajak: 'Konstruksi',
-                  keteranganSpb: `Surat Pesanan Bahan Material ${div.uraian} Minggu Ke-${targetWeek}`,
+                  keteranganSpb: `Surat Pesanan Bahan Material ${div.uraian} Minggu Ke-${targetWeek} (${formattedDateStart} - ${formattedDateEnd})`,
                   mingguKeRef: targetWeek,
                 };
 
@@ -662,9 +682,9 @@ export default function App() {
       currentBkb.push({
         id: `bkb-tarik-m${targetWeek}-${Date.now()}`,
         tanggal: dateStr,
-        tanggalObj: dateStr.includes('/') ? `${dateStr.split('/')[2]}-${dateStr.split('/')[1]}-${dateStr.split('/')[0]}` : '2025-10-26',
+        tanggalObj: weekDates.endDate,
         bulan: bulan,
-        uraian: `Penarikan Tunai Kas Operasional & Upah Fisik Minggu Ke-${targetWeek}`,
+        uraian: `Penarikan Tunai Kas Operasional & Upah Fisik Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd})`,
         noBukti: withdrawalTxBukti,
         penerimaan: 0,
         pengeluaran: totalWage + 5000000,

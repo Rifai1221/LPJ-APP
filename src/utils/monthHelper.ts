@@ -186,3 +186,71 @@ export function getAvailableMonthsForSchool(
 
   return ['ALL', ...monthArray];
 }
+
+/**
+ * Resolve week dates into ISO, Indonesian formatted text, slash formatted dates, and month strings.
+ */
+export function resolveWeekDates(
+  week: { mingguKe: number; periode?: string; startDate?: string; endDate?: string },
+  schoolYear = '2026'
+): {
+  startDate: string;
+  endDate: string;
+  startDateFormatted: string;
+  endDateFormatted: string;
+  startDateSlash: string;
+  endDateSlash: string;
+  bulan: string;
+  periodeText: string;
+} {
+  const yearNum = parseInt(schoolYear, 10) || 2026;
+
+  let startIso = week.startDate;
+  let endIso = week.endDate;
+
+  if (!startIso) {
+    const baseDate = new Date(`${yearNum}-07-01T00:00:00`);
+    const sDate = new Date(baseDate.getTime() + (week.mingguKe - 1) * 7 * 86400000);
+    startIso = sDate.toISOString().split('T')[0];
+  }
+
+  if (!endIso) {
+    const sDate = new Date(`${startIso}T00:00:00`);
+    const eDate = new Date(sDate.getTime() + 6 * 86400000);
+    endIso = eDate.toISOString().split('T')[0];
+  }
+
+  const sObj = new Date(`${startIso}T00:00:00`);
+  const eObj = new Date(`${endIso}T00:00:00`);
+
+  const sDay = String(sObj.getDate()).padStart(2, '0');
+  const sMonth = sObj.getMonth();
+  const sYear = sObj.getFullYear();
+
+  const eDay = String(eObj.getDate()).padStart(2, '0');
+  const eMonth = eObj.getMonth();
+  const eYear = eObj.getFullYear();
+
+  const startDateFormatted = `${sDay} ${indonesianMonths[sMonth]} ${sYear}`;
+  const endDateFormatted = `${eDay} ${indonesianMonths[eMonth]} ${eYear}`;
+
+  const startDateSlash = `${sDay}/${String(sMonth + 1).padStart(2, '0')}/${sYear}`;
+  const endDateSlash = `${eDay}/${String(eMonth + 1).padStart(2, '0')}/${eYear}`;
+
+  const bulan = `${indonesianMonths[eMonth]} ${eYear}`;
+
+  const shortMonthS = indonesianMonths[sMonth].substring(0, 3);
+  const shortMonthE = indonesianMonths[eMonth].substring(0, 3);
+  const periodeText = week.periode || `${sDay} ${shortMonthS} - ${eDay} ${shortMonthE} ${eYear}`;
+
+  return {
+    startDate: startIso,
+    endDate: endIso,
+    startDateFormatted,
+    endDateFormatted,
+    startDateSlash,
+    endDateSlash,
+    bulan,
+    periodeText,
+  };
+}

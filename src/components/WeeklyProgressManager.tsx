@@ -22,6 +22,7 @@ import {
   Check,
   X,
   Camera,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   ProjectProgressWeek,
@@ -33,6 +34,7 @@ import {
 } from '../types';
 import { formatNumber, formatRupiah } from '../utils/formatters';
 import { DEFAULT_DIVISIONS, toRoman, renumberDivisions } from '../utils/divisionHelper';
+import { resolveWeekDates } from '../utils/monthHelper';
 import { WeeklyPhotoDocumentation } from './WeeklyPhotoDocumentation';
 
 interface WeeklyProgressManagerProps {
@@ -452,6 +454,79 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     onUpdateWeeks(updatedAllWeeks);
   };
 
+  // Weekly Date Range Handlers
+  const schoolYear = school?.tahunAnggaran?.trim() || '2026';
+  const weekResolved = resolveWeekDates(currentWeek, schoolYear);
+
+  const handleStartDateChange = (newStartIso: string) => {
+    if (!newStartIso) return;
+    const sDate = new Date(`${newStartIso}T00:00:00`);
+    const eDate = new Date(sDate.getTime() + 6 * 86400000);
+    const newEndIso = eDate.toISOString().split('T')[0];
+
+    const indShort = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const sParts = newStartIso.split('-');
+    const eParts = newEndIso.split('-');
+    const sDay = sParts[2];
+    const eDay = eParts[2];
+    const sMonth = indShort[parseInt(sParts[1], 10) - 1];
+    const eMonth = indShort[parseInt(eParts[1], 10) - 1];
+    const year = sParts[0];
+
+    const formattedPeriode = `${sDay} ${sMonth} - ${eDay} ${eMonth} ${year}`;
+
+    const updated = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          startDate: newStartIso,
+          endDate: newEndIso,
+          periode: formattedPeriode,
+        };
+      }
+      return w;
+    });
+    onUpdateWeeks(updated);
+  };
+
+  const handleEndDateChange = (newEndIso: string) => {
+    if (!newEndIso) return;
+    const sIso = weekResolved.startDate;
+    const indShort = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const sParts = sIso.split('-');
+    const eParts = newEndIso.split('-');
+    const sDay = sParts[2];
+    const eDay = eParts[2];
+    const sMonth = indShort[parseInt(sParts[1], 10) - 1];
+    const eMonth = indShort[parseInt(eParts[1], 10) - 1];
+    const year = eParts[0];
+
+    const formattedPeriode = `${sDay} ${sMonth} - ${eDay} ${eMonth} ${year}`;
+
+    const updated = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          startDate: sIso,
+          endDate: newEndIso,
+          periode: formattedPeriode,
+        };
+      }
+      return w;
+    });
+    onUpdateWeeks(updated);
+  };
+
+  const handlePeriodeTextChange = (text: string) => {
+    const updated = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return { ...w, periode: text };
+      }
+      return w;
+    });
+    onUpdateWeeks(updated);
+  };
+
   return (
     <div className="space-y-6 font-sans">
       {/* Top Banner */}
@@ -550,7 +625,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             Pilih Periode Minggu Kerja (14 Minggu):
           </span>
           <span className="text-xs font-semibold text-blue-600">
-            Aktif: Minggu {currentWeek.mingguKe} ({currentWeek.periode})
+            Aktif: Minggu {currentWeek.mingguKe} ({currentWeek.periode || weekResolved.periodeText})
           </span>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -583,6 +658,72 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Manual Date Range Settings for Current Selected Week */}
+      <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/80 to-slate-50 p-4 rounded-xl border border-blue-200 shadow-xs space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                <span>Rentang Tanggal Minggu Ke-{selectedWeekNum}</span>
+                <span className="text-[10px] text-blue-700 bg-blue-100/80 border border-blue-300 px-2 py-0.5 rounded-full font-extrabold normal-case">
+                  Bisa Pilih Tanggal Manual
+                </span>
+              </h4>
+              <p className="text-[11px] text-slate-600 mt-0.5">
+                Pilih tanggal mulai & selesai. Tanggal ini terintegrasi otomatis ke Absen 7 Hari, Kwitansi Upah UK, Kwitansi Bahan Toko, SPB, Bon Toko, BKU, BKT, BKB, dan Pajak.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-300 shadow-xs flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700 uppercase">Mulai:</label>
+              <input
+                type="date"
+                value={weekResolved.startDate}
+                onChange={(e) => handleStartDateChange(e.target.value)}
+                className="px-2.5 py-1 text-xs font-mono font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+              />
+            </div>
+
+            <span className="text-slate-400 font-extrabold text-xs">s.d</span>
+
+            <div className="flex items-center gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700 uppercase">Selesai:</label>
+              <input
+                type="date"
+                value={weekResolved.endDate}
+                onChange={(e) => handleEndDateChange(e.target.value)}
+                className="px-2.5 py-1 text-xs font-mono font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/90 text-[11px]">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-700">Teks Periode:</span>
+            <input
+              type="text"
+              value={currentWeek.periode || weekResolved.periodeText}
+              onChange={(e) => handlePeriodeTextChange(e.target.value)}
+              placeholder="misal: 01 Jul - 07 Jul 2026"
+              className="px-2.5 py-1 text-xs font-bold text-blue-900 bg-white border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden min-w-[240px]"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 font-bold text-emerald-900 bg-emerald-100/80 border border-emerald-300 px-3 py-1 rounded-lg">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+            <span>
+              Otomatis memecah Absen 7 hari ({weekResolved.startDateFormatted} s.d {weekResolved.endDateFormatted}), SPJ & Buku Kas
+            </span>
+          </div>
         </div>
       </div>
 
