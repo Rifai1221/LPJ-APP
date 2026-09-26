@@ -16,6 +16,25 @@ import {
 } from '../types';
 import { resolveWeekDates } from '../utils/monthHelper';
 
+export function getDateInWeek(startDateIso: string, dayOffset: number) {
+  const sBase = new Date(`${startDateIso}T00:00:00`);
+  const clampedOffset = Math.min(6, Math.max(0, dayOffset));
+  const targetDate = new Date(sBase.getTime() + clampedOffset * 86400000);
+
+  const d = String(targetDate.getDate()).padStart(2, '0');
+  const m = targetDate.getMonth();
+  const y = targetDate.getFullYear();
+  const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const fullMonths = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+  return {
+    dateSlash: `${d}/${String(m + 1).padStart(2, '0')}/${y}`,
+    dateFormatted: `${d} ${shortMonths[m]} ${y}`,
+    bulan: `${fullMonths[m]} ${y}`,
+    dateIso: `${y}-${String(m + 1).padStart(2, '0')}-${d}`,
+  };
+}
+
 export function calculateBkuFromTransactions(
   kwitansiList: KwitansiDocument[],
   school: SchoolMasterData,
@@ -114,25 +133,30 @@ export function calculateBkuFromTransactions(
     }
 
     // Enforce business rules:
-    // 1. Pembayaran upah tukang, perencana, pengawas, dan administrasi dibayarkan pada setiap tanggal AKHIR MINGGU
-    // 2. Tanggal transaksi belanja/material jangan pernah kurang dari tanggal mulai Laporan Mingguan & Bobot
+    // 1. Pembayaran upah tukang & konsultan dibayarkan pada tanggal akhir minggu (Sabtu / endDate)
+    // 2. Transaksi belanja material, persiapan, SMKK, alat, dan administrasi disebar proporsional dan tidak menumpuk
+    // 3. Seluruh tanggal transaksi dijaga agar selalu berada di dalam rentang minggu (startDate s.d endDate)
     if (kw.mingguKeRef && progressWeeks && progressWeeks.length > 0) {
       const matchW = progressWeeks.find((w) => w.mingguKe === kw.mingguKeRef);
       if (matchW) {
         const resolvedW = resolveWeekDates(matchW, yearStr);
-        const isAkhirMingguPayment =
+        const isStrictAkhirMingguPayment =
           kw.tipe === 'UPAH' ||
-          kw.tipe === 'KONSULTAN' ||
-          /upah|tukang|pekerja|perencana|pengawas|administrasi|pengelolaan/i.test(kw.uraian) ||
-          /uk\/|kons-p|kons-w|adm\//i.test(kw.noBukti || '') ||
-          /upah|tukang|pekerja|perencana|pengawas|administrasi|pengelolaan/i.test(kw.keteranganSpb || '');
+          /uk\//i.test(kw.noBukti || '') ||
+          /upah tukang|upah pekerja|daftar hadir/i.test(kw.uraian);
 
-        if (isAkhirMingguPayment) {
+        if (isStrictAkhirMingguPayment) {
           sortDate = resolvedW.endDate;
           displayTanggal = resolvedW.endDateSlash;
-        } else if (sortDate < resolvedW.startDate) {
-          sortDate = resolvedW.startDate;
-          displayTanggal = resolvedW.startDateSlash;
+        } else {
+          // If transaction has its own designated date within the week range, preserve it!
+          if (sortDate < resolvedW.startDate) {
+            sortDate = resolvedW.startDate;
+            displayTanggal = resolvedW.startDateSlash;
+          } else if (sortDate > resolvedW.endDate) {
+            sortDate = resolvedW.endDate;
+            displayTanggal = resolvedW.endDateSlash;
+          }
         }
       }
     }
@@ -480,18 +504,9 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
           const chunkNominal = chunkItems.reduce((s, it) => s + it.jumlah, 0);
           if (chunkNominal <= 0) continue;
 
-          const offsetDayNum = Math.min(5, Math.max(0, (dIdx * 2 + c) % 6));
-          const sBase = new Date(`${weekDates.startDate}T00:00:00`);
-          const chunkDateObj = new Date(sBase.getTime() + offsetDayNum * 86400000);
-          const cDay = String(chunkDateObj.getDate()).padStart(2, '0');
-          const cMonth = chunkDateObj.getMonth();
-          const cYear = chunkDateObj.getFullYear();
-          const indShortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-          const indFullMonths = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-
-          const dayOffsetStr = `${cDay}/${String(cMonth + 1).padStart(2, '0')}/${cYear}`;
-          const dayOffsetFormatted = `${cDay} ${indShortMonths[cMonth]} ${cYear}`;
-          const dayOffsetBulan = `${indFullMonths[cMonth]} ${cYear}`;
+          // Sebar jadwal belanja material di hari kerja aktif (Selasa s.d Jumat) sesuai urutan divisi dan batch pengiriman
+          const matDayOffset = Math.min(4, Math.max(1, 1 + ((dIdx * 2 + c) % 4)));
+          const matDateInfo = getDateInWeek(weekDates.startDate, matDayOffset);
           const seqNo = targetWeek * 10 + dIdx * 2 + c + 1;
           const kwMatBukti = `${String(seqNo).padStart(2, '0')}/KW-MAT/${yearStr}`;
           const spbBukti = `SPB-${String(seqNo).padStart(2, '0')}/MAT/${yearStr}`;
@@ -508,9 +523,9 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             noBukti: kwMatBukti,
             noSpb: spbBukti,
             tipe: isPerabot ? 'PERABOT' : 'MATERIAL',
-            tanggal: dayOffsetStr,
-            tanggalFormatted: dayOffsetFormatted,
-            bulan: dayOffsetBulan,
+            tanggal: matDateInfo.dateSlash,
+            tanggalFormatted: matDateInfo.dateFormatted,
+            bulan: matDateInfo.bulan,
             uraian: `Pembayaran Lunas Biaya Pembelian Material/Bahan (${chunkItems.map((i) => i.namaBarang).slice(0, 3).join(', ')}), Untuk Pekerjaan ${div.uraian} Revitalisasi ${school.namaSekolah}, Tahun ${yearStr}, Daftar Terlampir.`,
             penerimaNama: targetStore.pemilikNama || 'Pemilik Toko',
             penerimaPekerjaan: `Pemilik ${targetStore.namaToko}`,
@@ -525,7 +540,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             pph22Amount: pph22,
             pph23Amount: 0,
             kategoriBiayaPajak: isPerabot ? 'Perabot' : 'Konstruksi',
-            keteranganSpb: `Surat Perintah Bayar Pembelian Bahan Material ${div.uraian} Minggu Ke-${targetWeek} (${formattedDateStart} - ${formattedDateEnd})`,
+            keteranganSpb: `Surat Perintah Bayar Pembelian Bahan Material ${div.uraian} Minggu Ke-${targetWeek} (${matDateInfo.dateFormatted})`,
             mingguKeRef: targetWeek,
           };
 
@@ -548,14 +563,18 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
           const spbAlatBukti = `SPB-${String(seqAlat).padStart(2, '0')}/ALAT/${yearStr}`;
           const pph23 = Math.round(alatNominal * 0.02 * 100) / 100;
 
+          // Sewa / penggunaan alat di pertengahan minggu (Rabu atau Kamis)
+          const alatDayOffset = Math.min(3, Math.max(1, 2 + (dIdx % 2)));
+          const alatDateInfo = getDateInWeek(weekDates.startDate, alatDayOffset);
+
           const alatDoc: KwitansiDocument = {
             id: `kw-alat-m${targetWeek}-${dIdx}-${Date.now()}`,
             noBukti: kwAlatBukti,
             noSpb: spbAlatBukti,
             tipe: 'OPERASIONAL',
-            tanggal: dateEndStr,
-            tanggalFormatted: formattedDateEnd,
-            bulan: bulan,
+            tanggal: alatDateInfo.dateSlash,
+            tanggalFormatted: alatDateInfo.dateFormatted,
+            bulan: alatDateInfo.bulan,
             uraian: `Pembayaran Lunas Biaya Sewa/Pengadaan Alat Bantu Kerja (${alatItems.map((i) => i.namaBarang).join(', ')}), Untuk Pekerjaan ${div.uraian} Revitalisasi ${school.namaSekolah}, Tahun ${yearStr}.`,
             penerimaNama: defaultMaterialStore.pemilikNama || 'Penyedia Sewa Alat',
             penerimaPekerjaan: `Penyedia Alat & Perlengkapan`,
@@ -570,7 +589,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             pph22Amount: 0,
             pph23Amount: pph23,
             kategoriBiayaPajak: 'Peralatan',
-            keteranganSpb: `Surat Perintah Bayar Sewa/Alat Bantu Kerja ${div.uraian} Minggu Ke-${targetWeek}`,
+            keteranganSpb: `Surat Perintah Bayar Sewa/Alat Bantu Kerja ${div.uraian} Minggu Ke-${targetWeek} (${alatDateInfo.dateFormatted})`,
             mingguKeRef: targetWeek,
           };
 
@@ -595,14 +614,17 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
           const ppn = isTaxable ? Math.round((smkkNominal / 1.11) * 0.11 * 100) / 100 : 0;
           const pph22 = isTaxable ? Math.round((smkkNominal / 1.11) * 0.015 * 100) / 100 : 0;
 
+          // Perlengkapan SMKK / K3 (Helm, Rompi, P3K, Papan Nama) disiapkan pada hari pertama minggu (Senin / Day 0)
+          const smkkDateInfo = getDateInWeek(weekDates.startDate, 0);
+
           const smkkDoc: KwitansiDocument = {
             id: `kw-smkk-m${targetWeek}-${dIdx}-${Date.now()}`,
             noBukti: kwSmkkBukti,
             noSpb: spbSmkkBukti,
             tipe: 'OPERASIONAL',
-            tanggal: dateEndStr,
-            tanggalFormatted: formattedDateEnd,
-            bulan: bulan,
+            tanggal: smkkDateInfo.dateSlash,
+            tanggalFormatted: smkkDateInfo.dateFormatted,
+            bulan: smkkDateInfo.bulan,
             uraian: `Pembayaran Lunas Pengadaan Perlengkapan SMKK & K3 Lapangan (${smkkItems.map((i) => i.namaBarang).slice(0, 3).join(', ')}), Revitalisasi ${school.namaSekolah}, Tahun ${yearStr}.`,
             penerimaNama: defaultMaterialStore.pemilikNama || 'Penyedia SMKK',
             penerimaPekerjaan: `Penyedia APD & Keselamatan Kerja`,
@@ -617,7 +639,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             pph22Amount: pph22,
             pph23Amount: 0,
             kategoriBiayaPajak: 'Peralatan',
-            keteranganSpb: `Surat Perintah Bayar Pengadaan SMKK & K3 Minggu Ke-${targetWeek}`,
+            keteranganSpb: `Surat Perintah Bayar Pengadaan SMKK & K3 Minggu Ke-${targetWeek} (${smkkDateInfo.dateFormatted})`,
             mingguKeRef: targetWeek,
           };
 
@@ -655,6 +677,8 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
 
         const nominalMaterial = tokoItems.reduce((s, it) => s + it.jumlah, 0);
         if (nominalMaterial > 0) {
+          const rpdMatDayOffset = Math.min(4, Math.max(1, 1 + (dIdx % 4)));
+          const rpdDateInfo = getDateInWeek(weekDates.startDate, rpdMatDayOffset);
           const seqNo = targetWeek * 10 + dIdx + 1;
           const kwMatBukti = `${String(seqNo).padStart(2, '0')}/KW-MAT/${yearStr}`;
           const spbBukti = `SPB-${String(seqNo).padStart(2, '0')}/MAT/${yearStr}`;
@@ -667,9 +691,9 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             noBukti: kwMatBukti,
             noSpb: spbBukti,
             tipe: 'MATERIAL',
-            tanggal: dateEndStr,
-            tanggalFormatted: formattedDateEnd,
-            bulan: bulan,
+            tanggal: rpdDateInfo.dateSlash,
+            tanggalFormatted: rpdDateInfo.dateFormatted,
+            bulan: rpdDateInfo.bulan,
             uraian: `Pembayaran Lunas Biaya Pembelian Material (${tokoItems.map((i) => i.namaBarang).join(', ')}), Pekerjaan ${div.uraian} Revitalisasi ${school.namaSekolah}`,
             penerimaNama: defaultMaterialStore.pemilikNama || 'Pemilik Toko',
             penerimaPekerjaan: `Pemilik ${defaultMaterialStore.namaToko}`,
@@ -684,7 +708,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             pph22Amount: pph22,
             pph23Amount: 0,
             kategoriBiayaPajak: 'Konstruksi',
-            keteranganSpb: `Surat Perintah Bayar Bahan Material ${div.uraian} Minggu Ke-${targetWeek}`,
+            keteranganSpb: `Surat Perintah Bayar Bahan Material ${div.uraian} Minggu Ke-${targetWeek} (${rpdDateInfo.dateFormatted})`,
             mingguKeRef: targetWeek,
           };
 
@@ -733,14 +757,19 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
         pph23Amount = Math.round(nomBiaya * 0.02 * 100) / 100;
       }
 
+      // Administrasi LPJ dibayarkan pada hari Jumat (Day 4) saat penyusunan laporan mingguan & dokumentasi selesai
+      // Honor Konsultan Perencana & Pengawas pada hari Sabtu (Day 5 / Akhir Minggu)
+      const opDayOffset = isAdm ? 4 : 5;
+      const opDateInfo = getDateInWeek(weekDates.startDate, opDayOffset);
+
       const manKwDoc: KwitansiDocument = {
         id: `kw-man-m${targetWeek}-${dIdx}-${Date.now()}`,
         noBukti: kwBukti,
         noSpb: `SPB-${kwBukti}`,
         tipe: tipeKw,
-        tanggal: dateEndStr,
-        tanggalFormatted: formattedDateEnd,
-        bulan: bulan,
+        tanggal: opDateInfo.dateSlash,
+        tanggalFormatted: opDateInfo.dateFormatted,
+        bulan: opDateInfo.bulan,
         uraian: isPerencana
           ? `Pembayaran Lunas Honorarium Jasa Perencana Teknis Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd}), Revitalisasi ${school.namaSekolah}`
           : isPengawas
@@ -752,7 +781,9 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
         nominal: nomBiaya,
         items: [
           {
-            namaBarang: `Honorarium Jasa / Pengelolaan Minggu Ke-${targetWeek}`,
+            namaBarang: isAdm
+              ? `Biaya Pengelolaan Administrasi, ATK & Dokumentasi Minggu Ke-${targetWeek}`
+              : `Honorarium Jasa / Pengelolaan Minggu Ke-${targetWeek}`,
             volume: 1,
             satuan: 'Minggu',
             hargaSatuan: nomBiaya,
@@ -766,7 +797,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
         pph22Amount: 0,
         pph23Amount,
         kategoriBiayaPajak: 'Perencanaan_Pengelolaan',
-        keteranganSpb: `Surat Perintah Bayar Jasa/Honor Minggu Ke-${targetWeek} (${formattedDateStart} s.d ${formattedDateEnd})`,
+        keteranganSpb: `Surat Perintah Bayar ${isAdm ? 'Biaya Administrasi' : 'Honor Jasa'} Minggu Ke-${targetWeek} (${opDateInfo.dateFormatted})`,
         mingguKeRef: targetWeek,
       };
 
