@@ -6,10 +6,16 @@ import {
   persistentMultipleTabManager,
   memoryLocalCache,
   disableNetwork,
+  setLogLevel,
   type Firestore,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import firebaseConfigData from '../../firebase-applet-config.json';
+
+// Suppress Firestore verbose SDK warnings when daily write quota is reached
+try {
+  setLogLevel('silent');
+} catch {}
 
 const firebaseConfig = {
   projectId: firebaseConfigData.projectId,
