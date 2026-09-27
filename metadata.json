@@ -1,0 +1,6 @@
+{
+  "name": "Aplikasi LPJ Revitalisasi Sekolah Otomatis & Terintegrasi",
+  "description": "Sistem penyusunan Laporan Pertanggungjawaban (LPJ) Revitalisasi Sekolah otomatis dan terintegrasi: BKU, BKT, BKB, Rekapitulasi Pajak, Kwitansi Material & Upah Kerja Harian, Surat Pesanan Barang, Faktur Toko, RPD/RAB, dan Laporan Progres Mingguan Siap Cetak Standar Dinas Pendidikan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
