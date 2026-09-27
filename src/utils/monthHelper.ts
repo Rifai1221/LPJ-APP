@@ -188,6 +188,24 @@ export function getAvailableMonthsForSchool(
 }
 
 /**
+ * Format start and end date ISO strings to standard Indonesian period text (e.g., '06 Jul - 12 Jul 2026')
+ */
+export function formatWeekPeriodString(startDateIso: string, endDateIso: string): string {
+  if (!startDateIso || !endDateIso) return '';
+  const sObj = new Date(`${startDateIso}T00:00:00`);
+  const eObj = new Date(`${endDateIso}T00:00:00`);
+  if (isNaN(sObj.getTime()) || isNaN(eObj.getTime())) return '';
+
+  const sDay = String(sObj.getDate()).padStart(2, '0');
+  const eDay = String(eObj.getDate()).padStart(2, '0');
+  const shortMonthS = indonesianMonths[sObj.getMonth()].substring(0, 3);
+  const shortMonthE = indonesianMonths[eObj.getMonth()].substring(0, 3);
+  const eYear = eObj.getFullYear();
+
+  return `${sDay} ${shortMonthS} - ${eDay} ${shortMonthE} ${eYear}`;
+}
+
+/**
  * Resolve week dates into ISO, Indonesian formatted text, slash formatted dates, and month strings.
  */
 export function resolveWeekDates(
@@ -241,7 +259,8 @@ export function resolveWeekDates(
 
   const shortMonthS = indonesianMonths[sMonth].substring(0, 3);
   const shortMonthE = indonesianMonths[eMonth].substring(0, 3);
-  const periodeText = week.periode || `${sDay} ${shortMonthS} - ${eDay} ${shortMonthE} ${eYear}`;
+  const calculatedPeriode = `${sDay} ${shortMonthS} - ${eDay} ${shortMonthE} ${eYear}`;
+  const periodeText = week.startDate && week.endDate ? calculatedPeriode : (week.periode || calculatedPeriode);
 
   return {
     startDate: startIso,

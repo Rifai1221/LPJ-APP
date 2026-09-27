@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   TrendingUp,
   Sparkles,
@@ -37,7 +37,7 @@ import {
 } from '../types';
 import { formatNumber, formatRupiah } from '../utils/formatters';
 import { DEFAULT_DIVISIONS, toRoman, renumberDivisions } from '../utils/divisionHelper';
-import { resolveWeekDates } from '../utils/monthHelper';
+import { resolveWeekDates, formatWeekPeriodString } from '../utils/monthHelper';
 import { WeeklyPhotoDocumentation } from './WeeklyPhotoDocumentation';
 
 interface WeeklyProgressManagerProps {
@@ -95,11 +95,102 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   const [txFormError, setTxFormError] = useState<string | null>(null);
   const [confirmDeleteTx, setConfirmDeleteTx] = useState<BkuTransaction | null>(null);
 
+  // States for manual date range customization per week
+  const [isEditingDates, setIsEditingDates] = useState<boolean>(false);
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+
   const currentWeek =
     progressWeeks.find((w) => w.mingguKe === selectedWeekNum) || progressWeeks[0] || { mingguKe: 1 };
 
   const schoolYear = school?.tahunAnggaran?.trim() || '2026';
   const weekResolved = resolveWeekDates(currentWeek, schoolYear);
+
+  // Synchronize date input fields when selected week changes
+  useEffect(() => {
+    setCustomStartDate(currentWeek.startDate || weekResolved.startDate);
+    setCustomEndDate(currentWeek.endDate || weekResolved.endDate);
+  }, [selectedWeekNum, currentWeek.startDate, currentWeek.endDate, weekResolved.startDate, weekResolved.endDate]);
+
+  // Handler to save manually adjusted week dates with optional cascading to subsequent weeks
+  const handleSaveWeekDate = (cascadeToNext = false) => {
+    const sDate = customStartDate || weekResolved.startDate;
+    const eDate = customEndDate || weekResolved.endDate;
+    if (!sDate || !eDate) return;
+
+    const formattedPeriode = formatWeekPeriodString(sDate, eDate);
+
+    let updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          startDate: sDate,
+          endDate: eDate,
+          periode: formattedPeriode,
+        };
+      }
+      return w;
+    });
+
+    if (cascadeToNext) {
+      let prevEndDate = new Date(`${eDate}T00:00:00`);
+      updatedAllWeeks = updatedAllWeeks.map((w) => {
+        if (w.mingguKe > selectedWeekNum) {
+          const nextStart = new Date(prevEndDate.getTime() + 1 * 86400000);
+          const nextEnd = new Date(nextStart.getTime() + 6 * 86400000);
+          const nextStartIso = nextStart.toISOString().split('T')[0];
+          const nextEndIso = nextEnd.toISOString().split('T')[0];
+          const nextPeriode = formatWeekPeriodString(nextStartIso, nextEndIso);
+          prevEndDate = nextEnd;
+          return {
+            ...w,
+            startDate: nextStartIso,
+            endDate: nextEndIso,
+            periode: nextPeriode,
+          };
+        }
+        return w;
+      });
+    }
+
+    onUpdateWeeks(updatedAllWeeks);
+    setIsEditingDates(false);
+    setSyncSuccessMsg(
+      cascadeToNext
+        ? `Rentang tanggal Minggu ${selectedWeekNum} (${formattedPeriode}) dan seluruh minggu berikutnya berhasil diperbarui & disinkronkan ke seluruh sistem!`
+        : `Rentang tanggal Minggu ${selectedWeekNum} (${formattedPeriode}) berhasil diperbarui & disinkronkan ke seluruh sistem!`
+    );
+    setTimeout(() => setSyncSuccessMsg(null), 5000);
+  };
+
+  // Handler to reset week dates back to defaults
+  const handleResetWeekDateToDefault = () => {
+    const yearNum = parseInt(schoolYear, 10) || 2026;
+    const baseDate = new Date(`${yearNum}-07-01T00:00:00`);
+    const sDate = new Date(baseDate.getTime() + (selectedWeekNum - 1) * 7 * 86400000);
+    const eDate = new Date(sDate.getTime() + 6 * 86400000);
+    const sIso = sDate.toISOString().split('T')[0];
+    const eIso = eDate.toISOString().split('T')[0];
+    const defPeriode = formatWeekPeriodString(sIso, eIso);
+
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          startDate: sIso,
+          endDate: eIso,
+          periode: defPeriode,
+        };
+      }
+      return w;
+    });
+
+    setCustomStartDate(sIso);
+    setCustomEndDate(eIso);
+    onUpdateWeeks(updatedAllWeeks);
+    setSyncSuccessMsg(`Rentang tanggal Minggu ${selectedWeekNum} berhasil dikembalikan ke default: ${defPeriode}`);
+    setTimeout(() => setSyncSuccessMsg(null), 4000);
+  };
 
   const [txFormData, setTxFormData] = useState({
     tanggal: weekResolved.startDate,
@@ -869,15 +960,128 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       </div>
 
       {/* Week Selector Tabs */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
-        <div className="flex items-center justify-between">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
             Pilih Periode Minggu Kerja ({progressWeeks.length} Minggu):
           </span>
-          <span className="text-xs font-semibold text-blue-600">
-            Aktif: Minggu {currentWeek.mingguKe} ({currentWeek.periode || weekResolved.periodeText})
-          </span>
+          <button
+            type="button"
+            onClick={() => setIsEditingDates(!isEditingDates)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border ${
+              isEditingDates
+                ? 'bg-blue-600 text-white border-blue-700 shadow-xs ring-2 ring-blue-400/40'
+                : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
+            }`}
+            title="Klik untuk mengatur rentang tanggal minggu ini secara manual"
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Aktif: Minggu {currentWeek.mingguKe} ({currentWeek.periode || weekResolved.periodeText})</span>
+            <Edit3 className={`w-3 h-3 ml-0.5 ${isEditingDates ? 'text-white' : 'text-blue-500'}`} />
+          </button>
         </div>
+
+        {/* Inline Date Range Editor Panel */}
+        {isEditingDates && (
+          <div className="p-3.5 bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-slate-50 rounded-xl border border-blue-200 space-y-3 animate-fade-in shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-200/70 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                  M{currentWeek.mingguKe}
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900">
+                    Atur Rentang Tanggal Manual: Minggu Ke-{currentWeek.mingguKe}
+                  </h4>
+                  <p className="text-[11px] text-slate-600">
+                    Perubahan tanggal otomatis terintegrasi ke Rekap Mingguan, BKU, BKT, BKB, Kwitansi, Absensi Upah, dan Dokumen Cetak SPJ.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditingDates(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-md self-end sm:self-auto cursor-pointer"
+                title="Tutup panel pengaturan tanggal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  📅 Tanggal Mulai (Awal Minggu):
+                </label>
+                <input
+                  type="date"
+                  value={customStartDate || weekResolved.startDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  📅 Tanggal Selesai (Akhir Minggu):
+                </label>
+                <input
+                  type="date"
+                  value={customEndDate || weekResolved.endDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  🔍 Format Periode Terintegrasi:
+                </label>
+                <div className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs font-bold text-blue-900 flex items-center justify-between shadow-2xs">
+                  <span>
+                    {formatWeekPeriodString(customStartDate || weekResolved.startDate, customEndDate || weekResolved.endDate) || currentWeek.periode}
+                  </span>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded font-bold">
+                    {weekResolved.bulan}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-blue-200/50">
+              <button
+                type="button"
+                onClick={handleResetWeekDateToDefault}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-red-700 transition cursor-pointer"
+                title="Kembalikan tanggal minggu ini ke hitungan jadwal baku standar"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset ke Tanggal Standar</span>
+              </button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSaveWeekDate(false)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Simpan Minggu Ini Saja</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveWeekDate(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+                  title="Otomatis memperbarui seluruh minggu setelahnya (+7 hari berurutan)"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>⚡ Simpan & Urutkan Minggu Berikutnya (+7 Hari)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-1.5 items-center">
           {progressWeeks.map((w) => {
             const isSelected = selectedWeekNum === w.mingguKe;
