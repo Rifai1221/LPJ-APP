@@ -47,6 +47,33 @@ function safeToIsoDate(d: Date, fallbackIso: string): string {
 }
 
 /**
+ * Convert any Indonesian date string (DD/MM/YYYY, YYYY-MM-DD, or DD Bulan YYYY) to YYYY-MM-DD ISO format
+ */
+export function parseTxDateToIso(dateStr?: string, defaultYear = 2026): string {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  const trimmed = dateStr.trim();
+  // Case 1: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  // Case 2: DD/MM/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
+    const [d, m, y] = trimmed.split('/');
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  // Case 3: DD Month YYYY (e.g. 06 Juli 2026)
+  const parts = trimmed.split(/\s+/);
+  if (parts.length >= 3) {
+    const day = parts[0].replace(/\D/g, '').padStart(2, '0');
+    const monthName = parts[1].toLowerCase();
+    const year = sanitizeYear(parts[2], defaultYear);
+    const monthNum = monthOrderMap[monthName] || 7;
+    return `${year}-${String(monthNum).padStart(2, '0')}-${day}`;
+  }
+  return '';
+}
+
+/**
  * Dynamically expand range of Indonesian months from a period string like
  * "01 Juli 2026 sampai 31 Oktober 2026" or "Juli - November"
  * strictly anchored to defaultYear (from Data Master Sekolah's tahunAnggaran).

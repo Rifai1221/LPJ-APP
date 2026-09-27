@@ -11,16 +11,21 @@ import {
   Edit3,
   Trash2,
   AlertCircle,
+  Filter,
+  CalendarRange,
+  Clock,
+  Layers,
+  RotateCcw,
 } from 'lucide-react';
-import { BkuTransaction, SchoolMasterData, ProjectProgressWeek } from '../types';
+import { BkuTransaction, SchoolMasterData, ProjectProgressWeek, TransactionFilterOptions } from '../types';
 import { formatRupiah } from '../utils/formatters';
-import { getAvailableMonthsForSchool, resolveWeekDates } from '../utils/monthHelper';
+import { getAvailableMonthsForSchool, resolveWeekDates, parseTxDateToIso } from '../utils/monthHelper';
 
 interface BkuManagerProps {
   bkuList: BkuTransaction[];
   school: SchoolMasterData;
   progressWeeks?: ProjectProgressWeek[];
-  onOpenPrintModal: (month?: string) => void;
+  onOpenPrintModal: (month?: string, filterOptions?: TransactionFilterOptions) => void;
   onAddTransaction?: (tx: Omit<BkuTransaction, 'id'>) => void;
   onUpdateTransaction?: (tx: BkuTransaction) => void;
   onDeleteTransaction?: (tx: BkuTransaction) => void;
@@ -29,13 +34,18 @@ interface BkuManagerProps {
 export const BkuManager: React.FC<BkuManagerProps> = ({
   bkuList,
   school,
-  progressWeeks,
+  progressWeeks = [],
   onOpenPrintModal,
   onAddTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
 }) => {
+  // Filter Mode: 'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'
+  const [filterMode, setFilterMode] = useState<'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'>('ALL');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [selectedWeekNum, setSelectedWeekNum] = useState<number>(1);
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modal state for manual input & editing
@@ -43,8 +53,9 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
   const [editingTx, setEditingTx] = useState<BkuTransaction | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Determine starting date strictly from Laporan Mingguan & Bobot
   const schoolYear = school?.tahunAnggaran?.trim() || '2026';
+
+  // Determine starting date strictly from Laporan Mingguan & Bobot
   const minStartDateInfo = useMemo(() => {
     if (progressWeeks && progressWeeks.length > 0) {
       const w1 = progressWeeks.find((w) => w.mingguKe === 1) || progressWeeks[0];
@@ -54,10 +65,30 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
       startDate: `${schoolYear}-07-01`,
       startDateFormatted: `01 Juli ${schoolYear}`,
       startDateSlash: `01/07/${schoolYear}`,
+      endDate: `${schoolYear}-10-31`,
     };
   }, [progressWeeks, schoolYear]);
 
-  // Form states
+  // Available weeks list with formatted dates
+  const weekOptions = useMemo(() => {
+    return progressWeeks.map((w) => {
+      const resolved = resolveWeekDates(w, schoolYear);
+      return {
+        mingguKe: w.mingguKe,
+        startDate: resolved.startDate,
+        endDate: resolved.endDate,
+        periodeText: resolved.periodeText,
+        bulan: resolved.bulan,
+      };
+    });
+  }, [progressWeeks, schoolYear]);
+
+  // Available months
+  const months = useMemo(() => {
+    return getAvailableMonthsForSchool(school, [bkuList]);
+  }, [school, bkuList]);
+
+  // Form states for Add/Edit
   const [formData, setFormData] = useState({
     tanggal: minStartDateInfo.startDate,
     jenis: 'PENGELUARAN' as 'PENERIMAAN' | 'PENGELUARAN',
@@ -67,21 +98,157 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
     kategoriBiaya: 'Konstruksi',
   });
 
-  const months = getAvailableMonthsForSchool(school, [bkuList]);
-  const activeSelectedMonth = (selectedMonth === 'ALL' || months.includes(selectedMonth)) ? selectedMonth : 'ALL';
+  // Active Week Date Range
+  const activeWeekInfo = useMemo(() => {
+    return weekOptions.find((w) => w.mingguKe === selectedWeekNum) || weekOptions[0] || null;
+  }, [weekOptions, selectedWeekNum]);
 
-  const filteredBku = bkuList.filter((tx) => {
-    const matchMonth = activeSelectedMonth === 'ALL' || tx.bulan === activeSelectedMonth;
-    const matchQuery =
-      tx.uraian.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.noBukti.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchMonth && matchQuery;
-  });
+  // Filter Transactions Engine
+  const filteredBku = useMemo(() => {
+    return bkuList.filter((tx) => {
+      const txIso = parseTxDateToIso(tx.tanggalObj || tx.tanggal, parseInt(schoolYear, 10));
 
-  const totalPenerimaan = filteredBku.reduce((sum, tx) => sum + tx.penerimaan, 0);
-  const totalPengeluaran = filteredBku.reduce((sum, tx) => sum + tx.pengeluaran, 0);
+      // 1. Filter Mode Matching
+      if (filterMode === 'MONTH') {
+        if (selectedMonth !== 'ALL' && tx.bulan !== selectedMonth) {
+          return false;
+        }
+      } else if (filterMode === 'WEEK') {
+        if (activeWeekInfo) {
+          if (txIso) {
+            if (txIso < activeWeekInfo.startDate || txIso > activeWeekInfo.endDate) {
+              return false;
+            }
+          } else if (tx.bulan && !tx.bulan.toLowerCase().includes(activeWeekInfo.bulan.toLowerCase())) {
+            return false;
+          }
+        }
+      } else if (filterMode === 'CUSTOM') {
+        if (customStartDate && txIso && txIso < customStartDate) {
+          return false;
+        }
+        if (customEndDate && txIso && txIso > customEndDate) {
+          return false;
+        }
+      }
+
+      // 2. Search Query Matching
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchUraian = tx.uraian.toLowerCase().includes(q);
+        const matchBukti = tx.noBukti.toLowerCase().includes(q);
+        const matchTanggal = tx.tanggal.includes(q);
+        if (!matchUraian && !matchBukti && !matchTanggal) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [bkuList, filterMode, selectedMonth, selectedWeekNum, activeWeekInfo, customStartDate, customEndDate, searchQuery, schoolYear]);
+
+  // Recalculate dynamic totals for filtered data
+  const totalPenerimaan = useMemo(() => filteredBku.reduce((sum, tx) => sum + tx.penerimaan, 0), [filteredBku]);
+  const totalPengeluaran = useMemo(() => filteredBku.reduce((sum, tx) => sum + tx.pengeluaran, 0), [filteredBku]);
   const lastItem = filteredBku[filteredBku.length - 1];
-  const saldoAkhir = lastItem ? lastItem.saldo || 0 : 0;
+  const saldoAkhir = lastItem ? lastItem.saldo || (totalPenerimaan - totalPengeluaran) : 0;
+
+  // Active filter readable description label
+  const activeFilterLabel = useMemo(() => {
+    if (filterMode === 'ALL') {
+      return 'Semua Transaksi (Lengkap)';
+    }
+    if (filterMode === 'MONTH') {
+      return selectedMonth === 'ALL' ? 'Semua Bulan' : `Bulan ${selectedMonth}`;
+    }
+    if (filterMode === 'WEEK') {
+      return activeWeekInfo
+        ? `Minggu Ke-${activeWeekInfo.mingguKe} (${activeWeekInfo.periodeText})`
+        : `Minggu Ke-${selectedWeekNum}`;
+    }
+    if (filterMode === 'CUSTOM') {
+      if (customStartDate && customEndDate) {
+        return `Rentang ${customStartDate} s/d ${customEndDate}`;
+      }
+      if (customStartDate) {
+        return `Mulai Tanggal ${customStartDate}`;
+      }
+      if (customEndDate) {
+        return `Sampai Tanggal ${customEndDate}`;
+      }
+      return 'Rentang Tanggal Khusus';
+    }
+    return 'Semua';
+  }, [filterMode, selectedMonth, selectedWeekNum, activeWeekInfo, customStartDate, customEndDate]);
+
+  // Trigger Print with current active filter
+  const handlePrintCurrentFilter = () => {
+    if (filterMode === 'MONTH') {
+      onOpenPrintModal(selectedMonth === 'ALL' ? undefined : selectedMonth, {
+        filterMode: 'MONTH',
+        month: selectedMonth === 'ALL' ? undefined : selectedMonth,
+        label: activeFilterLabel,
+      });
+    } else if (filterMode === 'WEEK') {
+      onOpenPrintModal(undefined, {
+        filterMode: 'WEEK',
+        weekNum: selectedWeekNum,
+        startDate: activeWeekInfo?.startDate,
+        endDate: activeWeekInfo?.endDate,
+        label: activeFilterLabel,
+      });
+    } else if (filterMode === 'CUSTOM') {
+      onOpenPrintModal(undefined, {
+        filterMode: 'CUSTOM',
+        startDate: customStartDate,
+        endDate: customEndDate,
+        label: activeFilterLabel,
+      });
+    } else {
+      onOpenPrintModal(undefined, {
+        filterMode: 'ALL',
+        label: 'Buku Kas Umum Lengkap',
+      });
+    }
+  };
+
+  // Quick preset dates for custom filter
+  const handleApplyQuickPreset = (preset: '7D' | '14D' | '30D' | 'ALL_PROJECT') => {
+    setFilterMode('CUSTOM');
+    const now = new Date();
+    const endIso = now.toISOString().split('T')[0];
+
+    if (preset === '7D') {
+      const start = new Date(now.getTime() - 7 * 86400000);
+      setCustomStartDate(start.toISOString().split('T')[0]);
+      setCustomEndDate(endIso);
+    } else if (preset === '14D') {
+      const start = new Date(now.getTime() - 14 * 86400000);
+      setCustomStartDate(start.toISOString().split('T')[0]);
+      setCustomEndDate(endIso);
+    } else if (preset === '30D') {
+      const start = new Date(now.getTime() - 30 * 86400000);
+      setCustomStartDate(start.toISOString().split('T')[0]);
+      setCustomEndDate(endIso);
+    } else if (preset === 'ALL_PROJECT') {
+      if (weekOptions.length > 0) {
+        setCustomStartDate(weekOptions[0].startDate);
+        setCustomEndDate(weekOptions[weekOptions.length - 1].endDate);
+      } else {
+        setCustomStartDate(`${schoolYear}-07-01`);
+        setCustomEndDate(`${schoolYear}-10-31`);
+      }
+    }
+  };
+
+  const handleResetFilter = () => {
+    setFilterMode('ALL');
+    setSelectedMonth('ALL');
+    setSelectedWeekNum(1);
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setSearchQuery('');
+  };
 
   // Handlers for Add / Edit modal
   const handleOpenAdd = () => {
@@ -102,7 +269,6 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
     setEditingTx(tx);
     setFormError(null);
 
-    // Convert tanggal into YYYY-MM-DD for <input type="date">
     let dateInput = minStartDateInfo.startDate;
     if (tx.tanggalObj && tx.tanggalObj.includes('-')) {
       dateInput = tx.tanggalObj;
@@ -136,7 +302,6 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
       return;
     }
 
-    // Tanggal mulai pencatatan jangan kurang dari tanggal yang di-input dari Laporan Mingguan & Bobot
     if (formData.tanggal < minStartDateInfo.startDate) {
       setFormError(
         `Tanggal transaksi (${formData.tanggal}) tidak boleh kurang dari tanggal mulai Laporan Mingguan & Bobot (${minStartDateInfo.startDateFormatted}).`
@@ -213,47 +378,256 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={() => onOpenPrintModal(selectedMonth === 'ALL' ? undefined : selectedMonth)}
-          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer"
-        >
-          <Printer className="w-4 h-4 text-emerald-400" />
-          <span>Cetak BKU {selectedMonth !== 'ALL' ? selectedMonth : 'Lengkap'}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handlePrintCurrentFilter}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-black text-white px-4 py-2 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer border border-slate-800"
+            title="Cetak Buku Kas Umum sesuai filter yang aktif saat ini"
+          >
+            <Printer className="w-4 h-4 text-emerald-400" />
+            <span>Cetak Sesuai Filter ({activeFilterLabel})</span>
+          </button>
+        </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Cari BKU / no bukti / uraian..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-          />
+      {/* FILTER PANEL UTAMA (Mingguan, Bulanan, Rentang Tanggal) */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-blue-600" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+              PILIHAN FILTER TRANSAKSI BKU :
+            </h3>
+          </div>
+
+          {/* Filter Mode Selector Buttons */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setFilterMode('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                filterMode === 'ALL'
+                  ? 'bg-white text-blue-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Semua</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFilterMode('MONTH');
+                if (selectedMonth === 'ALL' && months.length > 1) {
+                  setSelectedMonth(months[1]);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                filterMode === 'MONTH'
+                  ? 'bg-white text-blue-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Bulanan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('WEEK')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                filterMode === 'WEEK'
+                  ? 'bg-white text-blue-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Mingguan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('CUSTOM')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                filterMode === 'CUSTOM'
+                  ? 'bg-white text-blue-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarRange className="w-3.5 h-3.5" />
+              <span>Rentang Tanggal</span>
+            </button>
+          </div>
         </div>
-        {searchQuery !== '' && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-xs"
-            title="Bersihkan Pencarian"
-          >
-            <X className="w-3.5 h-3.5 text-rose-600" />
-            <span>Bersihkan</span>
-          </button>
+
+        {/* Dynamic Controls Based on Active Filter Mode */}
+        {filterMode === 'MONTH' && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 animate-fade-in">
+            <span className="text-xs font-semibold text-slate-700 mr-1">Pilih Bulan:</span>
+            {months.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setSelectedMonth(m)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  selectedMonth === m
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                {m === 'ALL' ? 'Semua Bulan' : m}
+              </button>
+            ))}
+          </div>
         )}
+
+        {filterMode === 'WEEK' && (
+          <div className="space-y-2 pt-1 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-700">
+                Pilih Periode Minggu Kerja (Total {weekOptions.length} Minggu):
+              </span>
+              {activeWeekInfo && (
+                <span className="text-xs font-bold text-blue-700 font-mono bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  Periode: {activeWeekInfo.periodeText} ({activeWeekInfo.startDate} s.d. {activeWeekInfo.endDate})
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-slate-50 rounded-xl border border-slate-200">
+              {weekOptions.map((w) => (
+                <button
+                  key={w.mingguKe}
+                  type="button"
+                  onClick={() => setSelectedWeekNum(w.mingguKe)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                    selectedWeekNum === w.mingguKe
+                      ? 'bg-blue-600 text-white font-bold shadow-2xs'
+                      : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  <span>M{w.mingguKe}</span>
+                  <span className={`text-[10px] ${selectedWeekNum === w.mingguKe ? 'text-blue-100' : 'text-slate-500'}`}>
+                    ({w.periodeText})
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {filterMode === 'CUSTOM' && (
+          <div className="space-y-3 pt-1 animate-fade-in">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Dari Tanggal:</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sampai Tanggal:</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+
+              <div className="sm:col-span-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-slate-500 w-full mb-0.5">Pilihan Cepat:</span>
+                <button
+                  type="button"
+                  onClick={() => handleApplyQuickPreset('7D')}
+                  className="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium transition cursor-pointer"
+                >
+                  7 Hari
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyQuickPreset('14D')}
+                  className="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium transition cursor-pointer"
+                >
+                  14 Hari
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyQuickPreset('30D')}
+                  className="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium transition cursor-pointer"
+                >
+                  30 Hari
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyQuickPreset('ALL_PROJECT')}
+                  className="px-2.5 py-1 text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md font-medium border border-blue-200 transition cursor-pointer"
+                >
+                  Sepanjang Proyek
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Search Bar & Reset Row */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+          <div className="relative flex-1 w-full max-w-md">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Cari uraian, nomor bukti, atau tanggal..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            {(filterMode !== 'ALL' || searchQuery !== '') && (
+              <button
+                type="button"
+                onClick={handleResetFilter}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                title="Reset seluruh filter kembali ke Semua Transaksi"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Filter</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Active Filter Indicator Badge */}
+        <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+            <span className="font-semibold text-slate-700">Filter Aktif:</span>
+            <strong className="text-blue-900 font-bold bg-white px-2.5 py-0.5 rounded border border-blue-200 shadow-2xs">
+              {activeFilterLabel}
+            </strong>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-slate-600">
+            <span>Ditemukan: <strong className="text-slate-900 font-bold">{filteredBku.length}</strong> transaksi</span>
+            <span>•</span>
+            <span className="text-blue-800 font-bold">Saldo: {formatRupiah(saldoAkhir)}</span>
+          </div>
+        </div>
       </div>
 
       {/* Summary KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Penerimaan</span>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Penerimaan (Filter)</span>
           <p className="text-lg font-bold text-blue-700 mt-1">{formatRupiah(totalPenerimaan)}</p>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Pengeluaran</span>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Pengeluaran (Filter)</span>
           <p className="text-lg font-bold text-rose-700 mt-1">{formatRupiah(totalPengeluaran)}</p>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -264,15 +638,26 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
 
       {/* BKU Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+        <div className="p-4 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider">
-              BUKU KAS UMUM (BKU) {selectedMonth !== 'ALL' && `- ${selectedMonth.toUpperCase()}`}
+            <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+              <span>BUKU KAS UMUM (BKU)</span>
+              <span className="text-emerald-400 font-mono">• {activeFilterLabel}</span>
             </h3>
             <p className="text-[11px] text-slate-400">{school.namaSekolah} • {school.pekerjaan}</p>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrintCurrentFilter}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-xs transition cursor-pointer"
+              title="Cetak hasil filter BKU saat ini"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Cetak Hasil Filter</span>
+            </button>
+
             <button
               type="button"
               onClick={handleOpenAdd}
@@ -301,8 +686,12 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredBku.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
-                    Tidak ada transaksi BKU pada filter saat ini.
+                  <td colSpan={8} className="py-10 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center space-y-1">
+                      <AlertCircle className="w-6 h-6 text-slate-300" />
+                      <p className="font-semibold text-slate-600">Tidak ada transaksi BKU pada filter saat ini.</p>
+                      <p className="text-[11px] text-slate-400">Coba ubah opsi filter mingguan, bulanan, atau rentang tanggal di atas.</p>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -349,7 +738,9 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
             </tbody>
             <tfoot>
               <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
-                <td colSpan={4} className="py-3 px-4 text-right uppercase text-xs">Total Bulan Terpilih:</td>
+                <td colSpan={4} className="py-3 px-4 text-right uppercase text-xs">
+                  Total Filter ({activeFilterLabel}):
+                </td>
                 <td className="py-3 px-4 text-right font-mono text-blue-900 bg-blue-100/50">
                   {formatRupiah(totalPenerimaan, false)}
                 </td>
@@ -368,8 +759,11 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
         {/* Closing Position Box */}
         <div className="p-5 bg-slate-50 border-t border-slate-200">
           <div className="max-w-md bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2 text-xs">
-            <h4 className="font-bold text-slate-800 border-b border-slate-100 pb-1">
-              Posisi Penutupan Kas Akhir Bulan
+            <h4 className="font-bold text-slate-800 border-b border-slate-100 pb-1 flex items-center justify-between">
+              <span>Posisi Penutupan Kas ({activeFilterLabel})</span>
+              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                Sesuai Filter
+              </span>
             </h4>
             <div className="flex justify-between text-slate-600">
               <span>Saldo Buku Kas Umum:</span>
@@ -398,171 +792,138 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
             {/* Modal Header */}
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-base flex items-center gap-2">
-                  <DollarSign className="w-5 h-5 text-emerald-400" />
-                  <span>{editingTx ? 'Edit Transaksi BKU' : 'Input Transaksi Kas Manual'}</span>
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-blue-400" />
+                  <span>{editingTx ? 'Edit Transaksi BKU' : 'Tambah Transaksi Manual BKU'}</span>
                 </h3>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Buku Kas Umum • {school.namaSekolah}
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Transaksi akan otomatis disinkronkan ke Buku Pembantu Kas Tunai (BKT) dan perhitungan Saldo.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveTransaction} className="p-6 space-y-4">
+            <form onSubmit={handleSaveTransaction} className="p-6 space-y-4 text-xs">
               {formError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 flex items-center gap-2 font-medium">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
                   <span>{formError}</span>
                 </div>
               )}
 
-              {/* Tanggal Constraint Info Banner */}
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-blue-950">
-                  <Calendar className="w-4 h-4 text-blue-600" />
-                  <span>Aturan Tanggal Sesuai Juknis DAK:</span>
-                </div>
-                <p className="text-[11px] text-blue-800">
-                  Tanggal mulai pencatatan tidak boleh kurang dari tanggal awal Laporan Mingguan & Bobot (minimal: <strong>{minStartDateInfo.startDateFormatted}</strong>).
-                </p>
-              </div>
-
-              {/* Jenis Transaksi */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Jenis Transaksi:
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, jenis: 'PENERIMAAN' })}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                      formData.jenis === 'PENERIMAAN'
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>Penerimaan (Kas Masuk)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, jenis: 'PENGELUARAN' })}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                      formData.jenis === 'PENGELUARAN'
-                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>Pengeluaran (Kas Keluar)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Tanggal & No Bukti */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Tanggal & Jenis Transaksi */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Tanggal Transaksi <span className="text-rose-500">*</span>:
-                  </label>
+                  <label className="block font-semibold text-slate-700 mb-1">Tanggal Transaksi</label>
                   <input
                     type="date"
                     min={minStartDateInfo.startDate}
                     value={formData.tanggal}
                     onChange={(e) => setFormData({ ...formData, tanggal: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-mono font-bold"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white font-mono"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Nomor Bukti Transaksi:
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="misal: 01/1MD/2026 atau BKT-01"
-                    value={formData.noBukti}
-                    onChange={(e) => setFormData({ ...formData, noBukti: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-mono"
-                  />
+                  <label className="block font-semibold text-slate-700 mb-1">Jenis Arus Kas</label>
+                  <select
+                    value={formData.jenis}
+                    onChange={(e) => setFormData({ ...formData, jenis: e.target.value as 'PENERIMAAN' | 'PENGELUARAN' })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white font-semibold"
+                  >
+                    <option value="PENGELUARAN">PENGELUARAN (Kredit)</option>
+                    <option value="PENERIMAAN">PENERIMAAN (Debet / Dana Termin)</option>
+                  </select>
                 </div>
               </div>
 
               {/* Uraian Transaksi */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Uraian Transaksi <span className="text-rose-500">*</span>:
-                </label>
+                <label className="block font-semibold text-slate-700 mb-1">Uraian Transaksi / Keperluan</label>
                 <textarea
                   rows={2}
-                  placeholder="misal: Pembelian Cat & Kuas untuk Ruang Kelas, atau Penarikan Termin II"
                   value={formData.uraian}
                   onChange={(e) => setFormData({ ...formData, uraian: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  placeholder="Contoh: Pembelian Semen Gresik 50 Sak untuk Pekerjaan Dinding"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
                   required
                 />
+              </div>
+
+              {/* No. Bukti & Kategori */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Nomor Bukti (Kwitansi / Nota)</label>
+                  <input
+                    type="text"
+                    value={formData.noBukti}
+                    onChange={(e) => setFormData({ ...formData, noBukti: e.target.value })}
+                    placeholder="Contoh: BM-01/2026 atau KW-05"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Kategori Biaya</label>
+                  <select
+                    value={formData.kategoriBiaya}
+                    onChange={(e) => setFormData({ ...formData, kategoriBiaya: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
+                  >
+                    <option value="Konstruksi">Material / Bahan Konstruksi</option>
+                    <option value="Upah">Upah Kerja & Tukang</option>
+                    <option value="Peralatan">Sewa / Beli Alat Kerja</option>
+                    <option value="SMKK">Biaya Penerapan SMKK</option>
+                    <option value="Perabot">Pengadaan Perabot</option>
+                    <option value="Perencanaan_Pengelolaan">Operasional & Administrasi</option>
+                    <option value="Termin">Penerimaan Dana Termin</option>
+                  </select>
+                </div>
               </div>
 
               {/* Nominal Transaksi */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nominal Transaksi (Rp) <span className="text-rose-500">*</span>:
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1000"
-                  placeholder="0"
-                  value={formData.nominal || ''}
-                  onChange={(e) => setFormData({ ...formData, nominal: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-mono"
-                  required
-                />
-                <p className="text-xs text-slate-500 mt-1 font-mono">
-                  Terbilang format rupiah: <strong className="text-emerald-700">{formatRupiah(formData.nominal)}</strong>
+                <label className="block font-semibold text-slate-700 mb-1">Nominal Transaksi (Rp)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-500">Rp</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={100}
+                    value={formData.nominal || ''}
+                    onChange={(e) => setFormData({ ...formData, nominal: Number(e.target.value) || 0 })}
+                    placeholder="0"
+                    className="w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white font-mono font-bold text-sm text-slate-900"
+                    required
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 font-mono">
+                  Terbaca: {formatRupiah(formData.nominal || 0)}
                 </p>
               </div>
 
-              {/* Kategori Biaya */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Kategori Biaya:
-                </label>
-                <select
-                  value={formData.kategoriBiaya}
-                  onChange={(e) => setFormData({ ...formData, kategoriBiaya: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                >
-                  <option value="Konstruksi">Pekerjaan Fisik Konstruksi (Bahan & Upah)</option>
-                  <option value="Perabot">Pekerjaan Pengadaan Mebeler / Perabot</option>
-                  <option value="Konsultan">Jasa Perencana / Pengawas / Administrasi</option>
-                  <option value="Operasional">Biaya Operasional P2SP / Bintek</option>
-                  <option value="Umum">Umum / Lainnya</option>
-                </select>
-              </div>
-
-              {/* Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                  className="px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 font-medium transition cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition cursor-pointer"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-xs transition cursor-pointer"
                 >
-                  {editingTx ? 'Simpan Perubahan' : 'Simpan Transaksi Kas'}
+                  {editingTx ? 'Simpan Perubahan' : 'Tambahkan ke BKU'}
                 </button>
               </div>
             </form>
@@ -572,4 +933,3 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
     </div>
   );
 };
-

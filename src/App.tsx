@@ -85,6 +85,7 @@ export default function App() {
   const [printMonth, setPrintMonth] = useState<string | undefined>(undefined);
   const [printWeekNum, setPrintWeekNum] = useState<number | undefined>(undefined);
   const [printKwitansiId, setPrintKwitansiId] = useState<string | undefined>(undefined);
+  const [printFilterOptions, setPrintFilterOptions] = useState<any | undefined>(undefined);
 
   // Quick Receipt modal state
   const [isQuickReceiptOpen, setIsQuickReceiptOpen] = useState(false);
@@ -888,11 +889,18 @@ Lanjutkan pengosongan data transaksi?`)
     input.click();
   };
 
-  const handleOpenPrint = (docType = 'ALL', month?: string, week?: number, kwId?: string) => {
+  const handleOpenPrint = (
+    docType = 'ALL',
+    month?: string,
+    week?: number,
+    kwId?: string,
+    filterOptions?: any
+  ) => {
     setPrintDocType(docType);
     setPrintMonth(month);
     setPrintWeekNum(week);
     setPrintKwitansiId(kwId);
+    setPrintFilterOptions(filterOptions);
     setIsPrintModalOpen(true);
   };
 
@@ -1019,7 +1027,9 @@ Lanjutkan pengosongan data transaksi?`)
             bkuList={bkuList}
             school={appState.school}
             progressWeeks={appState.progressWeeks}
-            onOpenPrintModal={(month) => handleOpenPrint('BKU', month)}
+            onOpenPrintModal={(month, filterOpts) =>
+              handleOpenPrint('BKU', month, filterOpts?.weekNum, undefined, filterOpts)
+            }
             onAddTransaction={handleAddManualBku}
             onUpdateTransaction={handleUpdateBku}
             onDeleteTransaction={handleDeleteBku}
@@ -1031,7 +1041,9 @@ Lanjutkan pengosongan data transaksi?`)
             bktList={bktList}
             school={appState.school}
             progressWeeks={appState.progressWeeks}
-            onOpenPrintModal={(month) => handleOpenPrint('BKT', month)}
+            onOpenPrintModal={(month, filterOpts) =>
+              handleOpenPrint('BKT', month, filterOpts?.weekNum, undefined, filterOpts)
+            }
             onAddTransaction={handleAddManualBku}
             onUpdateTransaction={handleUpdateBku}
             onDeleteTransaction={handleDeleteBku}
@@ -1142,6 +1154,7 @@ Lanjutkan pengosongan data transaksi?`)
         selectedMonth={printMonth}
         selectedWeekNum={printWeekNum}
         selectedKwitansiId={printKwitansiId}
+        filterOptions={printFilterOptions}
         school={appState.school}
         rpdItems={appState.rpdItems}
         kwitansiList={appState.kwitansiList}

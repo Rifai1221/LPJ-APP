@@ -367,3 +367,12 @@ export interface AppStateData {
   deletedBkuIds?: string[];
   realSchoolData?: RealSchoolData;
 }
+
+export interface TransactionFilterOptions {
+  filterMode: 'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM';
+  month?: string;
+  weekNum?: number;
+  startDate?: string;
+  endDate?: string;
+  label?: string;
+}

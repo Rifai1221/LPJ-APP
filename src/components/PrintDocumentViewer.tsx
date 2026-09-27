@@ -10,11 +10,12 @@ import {
   BkbTransaction,
   TaxRecord,
   ProjectProgressWeek,
+  TransactionFilterOptions,
 } from '../types';
 import { formatRupiah, formatNumber } from '../utils/formatters';
 import { terbilangRupiah } from '../utils/terbilang';
 import { toRoman } from '../utils/divisionHelper';
-import { getAvailableMonthsForSchool } from '../utils/monthHelper';
+import { getAvailableMonthsForSchool, parseTxDateToIso, resolveWeekDates } from '../utils/monthHelper';
 
 import { SkTimTeknisDocument } from './SkTimTeknisDocument';
 
@@ -25,6 +26,7 @@ interface PrintDocumentViewerProps {
   selectedMonth?: string;
   selectedWeekNum?: number;
   selectedKwitansiId?: string;
+  filterOptions?: TransactionFilterOptions;
   school: SchoolMasterData;
   rpdItems: RpdItem[];
   kwitansiList: KwitansiDocument[];
@@ -128,6 +130,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
   selectedMonth,
   selectedWeekNum,
   selectedKwitansiId,
+  filterOptions,
   school,
   rpdItems,
   kwitansiList,
@@ -823,11 +826,164 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
           )}
 
           {/* ========================================================
-              4. BUKU KAS UMUM (BKU) BULANAN
+              4. BUKU KAS UMUM (BKU)
              ======================================================== */}
-          {(docType === 'ALL' || docType === 'BKU') &&
-            months.map((monthName) => {
-              if (selectedMonth && selectedMonth !== 'ALL' && selectedMonth !== monthName) {
+          {(docType === 'ALL' || docType === 'BKU') && (() => {
+            // Case A: Custom Filter Active (WEEK or CUSTOM date range)
+            if (filterOptions && (filterOptions.filterMode === 'WEEK' || filterOptions.filterMode === 'CUSTOM')) {
+              const targetBku = bkuList.filter((b) => {
+                const txIso = parseTxDateToIso(b.tanggalObj || b.tanggal, parseInt(school.tahunAnggaran || '2026', 10));
+                if (filterOptions.startDate && txIso && txIso < filterOptions.startDate) return false;
+                if (filterOptions.endDate && txIso && txIso > filterOptions.endDate) return false;
+                return true;
+              });
+
+              const totalPenerimaan = targetBku.reduce((s, b) => s + b.penerimaan, 0);
+              const totalPengeluaran = targetBku.reduce((s, b) => s + b.pengeluaran, 0);
+              const lastBku = targetBku[targetBku.length - 1];
+              const saldoPeriode = lastBku?.saldo || (totalPenerimaan - totalPengeluaran);
+
+              const headerSubtitle = filterOptions.filterMode === 'WEEK'
+                ? `MINGGU KE-${filterOptions.weekNum || selectedWeekNum || 1} (PERIODE: ${filterOptions.startDate || ''} S.D. ${filterOptions.endDate || ''})`
+                : `PERIODE : ${filterOptions.startDate || ''} S.D. ${filterOptions.endDate || ''}`;
+
+              return (
+                <div
+                  key="bku-custom-filter-sheet"
+                  className="page-break bg-white p-8 min-h-[297mm] font-sans text-[10px] space-y-4 border border-slate-300 print:border-none"
+                >
+                  <div className="text-center font-bold uppercase space-y-0.5">
+                    <h3 className="text-xs">BUKU KAS UMUM (BKU)</h3>
+                    <h4 className="text-xs font-mono">{headerSubtitle}</h4>
+                  </div>
+
+                  <div className="space-y-0.5 text-[9px]">
+                    <p>NAMA SEKOLAH : <strong>{school.namaSekolah}</strong></p>
+                    <p>PEKERJAAN : {school.pekerjaan}</p>
+                    <p>LOKASI : {school.lokasi}</p>
+                    <p>KOTA / PROPINSI : {school.kabKota} / {school.provinsi}</p>
+                  </div>
+
+                  <table className="w-full border-collapse border border-black text-[9px]">
+                    <thead>
+                      <tr className="bg-slate-100 text-center font-bold">
+                        <th colSpan={3} className="border border-black p-1 bg-slate-200">PENERIMAAN</th>
+                        <th colSpan={4} className="border border-black p-1 bg-slate-200">PENARIKAN / PENGELUARAN</th>
+                        <th rowSpan={2} className="border border-black p-1 w-24">Saldo (Rp)</th>
+                      </tr>
+                      <tr className="bg-slate-100 text-center font-bold">
+                        <th className="border border-black p-1 w-16">Tanggal</th>
+                        <th className="border border-black p-1">Uraian</th>
+                        <th className="border border-black p-1 w-20">Jumlah (Rp)</th>
+                        <th className="border border-black p-1 w-16">Tanggal</th>
+                        <th className="border border-black p-1">Uraian</th>
+                        <th className="border border-black p-1 w-16">No. Bukti</th>
+                        <th className="border border-black p-1 w-20">Jumlah (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {targetBku.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="border border-black p-4 text-center text-slate-500 italic">
+                            Tidak ada transaksi BKU pada periode ini.
+                          </td>
+                        </tr>
+                      ) : (
+                        targetBku.map((b) => (
+                          <tr key={b.id}>
+                            <td className="border border-black p-1 text-center font-mono">
+                              {b.jenis === 'PENERIMAAN' ? b.tanggal : '-'}
+                            </td>
+                            <td className="border border-black p-1">
+                              {b.jenis === 'PENERIMAAN' ? b.uraian : '-'}
+                            </td>
+                            <td className="border border-black p-1 text-right font-mono">
+                              {b.penerimaan > 0 ? formatRupiah(b.penerimaan, false) : '-'}
+                            </td>
+                            <td className="border border-black p-1 text-center font-mono">
+                              {b.jenis === 'PENGELUARAN' ? b.tanggal : '-'}
+                            </td>
+                            <td className="border border-black p-1">
+                              {b.jenis === 'PENGELUARAN' ? b.uraian : '-'}
+                            </td>
+                            <td className="border border-black p-1 text-center font-mono text-[8px]">
+                              {b.noBukti || '-'}
+                            </td>
+                            <td className="border border-black p-1 text-right font-mono">
+                              {b.pengeluaran > 0 ? formatRupiah(b.pengeluaran, false) : '-'}
+                            </td>
+                            <td className="border border-black p-1 text-right font-mono font-bold">
+                              {formatRupiah(b.saldo || 0, false)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="font-bold bg-slate-100">
+                        <td colSpan={2} className="border border-black p-1 text-right">TOTAL PENERIMAAN:</td>
+                        <td className="border border-black p-1 text-right font-mono">{formatRupiah(totalPenerimaan, false)}</td>
+                        <td colSpan={3} className="border border-black p-1 text-right">TOTAL PENGELUARAN:</td>
+                        <td className="border border-black p-1 text-right font-mono">{formatRupiah(totalPengeluaran, false)}</td>
+                        <td className="border border-black p-1 text-right font-mono font-bold">{formatRupiah(saldoPeriode, false)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  {/* Closing Box & Signatures */}
+                  <div className="border border-black p-3 text-[9px] space-y-1">
+                    <p>Pada hari ini Buku Kas Umum ditutup dengan keadaan/posisi buku sebagai berikut :</p>
+                    <div className="grid grid-cols-12 gap-1 font-semibold">
+                      <span className="col-span-4">Saldo buku Kas Umum</span>
+                      <span className="col-span-1">:</span>
+                      <span className="col-span-7 font-mono">{formatRupiah(saldoPeriode)}</span>
+                    </div>
+                    <div className="grid grid-cols-12 gap-1">
+                      <span className="col-span-4">Terdiri dari :</span>
+                    </div>
+                    <div className="grid grid-cols-12 gap-1 pl-4">
+                      <span className="col-span-4">- Saldo BANK</span>
+                      <span className="col-span-1">:</span>
+                      <span className="col-span-7 font-mono">-</span>
+                    </div>
+                    <div className="grid grid-cols-12 gap-1 pl-4">
+                      <span className="col-span-4">- Saldo Kas Tunai</span>
+                      <span className="col-span-1">:</span>
+                      <span className="col-span-7 font-mono">{formatRupiah(saldoPeriode)}</span>
+                    </div>
+                  </div>
+
+                  {/* 3 Signatures */}
+                  <div className="grid grid-cols-3 gap-4 pt-6 text-center text-[9px] font-sans">
+                    <div>
+                      <p>Menyetujui:</p>
+                      <p className="font-bold">Kepala Sekolah</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline">{school.namaKepalaSekolah}</p>
+                      <p>NIP. {school.nipKepalaSekolah}</p>
+                    </div>
+                    <div>
+                      <p>&nbsp;</p>
+                      <p className="font-bold">Ketua P2SP</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline uppercase">{school.namaKetuaP2SP}</p>
+                    </div>
+                    <div>
+                      <p>{school.kabKota}, Periode Penutupan Kas</p>
+                      <p className="font-bold">Bendahara</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline uppercase">{school.namaBendahara}</p>
+                      <p>NIP. {school.nipBendahara}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Case B: Standard Monthly / All Months View
+            const targetMonth = filterOptions?.month || selectedMonth;
+            return months.map((monthName) => {
+              if (targetMonth && targetMonth !== 'ALL' && targetMonth !== monthName) {
                 return null;
               }
               const monthlyBku = bkuList.filter((b) => b.bulan === monthName);
@@ -961,7 +1117,221 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                   </div>
                 </div>
               );
-            })}
+            });
+          })()}
+
+          {/* ========================================================
+              4B. BUKU PEMBANTU KAS TUNAI (BKT)
+             ======================================================== */}
+          {(docType === 'ALL' || docType === 'BKT') && (() => {
+            if (filterOptions && (filterOptions.filterMode === 'WEEK' || filterOptions.filterMode === 'CUSTOM')) {
+              const targetBkt = bktList.filter((b) => {
+                const txIso = parseTxDateToIso(b.tanggalObj || b.tanggal, parseInt(school.tahunAnggaran || '2026', 10));
+                if (filterOptions.startDate && txIso && txIso < filterOptions.startDate) return false;
+                if (filterOptions.endDate && txIso && txIso > filterOptions.endDate) return false;
+                return true;
+              });
+
+              const totalDebet = targetBkt.reduce((s, b) => s + b.pemasukan, 0);
+              const totalKredit = targetBkt.reduce((s, b) => s + b.pengeluaran, 0);
+              const lastBkt = targetBkt[targetBkt.length - 1];
+              const saldoPeriode = lastBkt?.saldo || (totalDebet - totalKredit);
+
+              const headerSubtitle = filterOptions.filterMode === 'WEEK'
+                ? `MINGGU KE-${filterOptions.weekNum || selectedWeekNum || 1} (PERIODE: ${filterOptions.startDate || ''} S.D. ${filterOptions.endDate || ''})`
+                : `PERIODE : ${filterOptions.startDate || ''} S.D. ${filterOptions.endDate || ''}`;
+
+              return (
+                <div
+                  key="bkt-custom-filter-sheet"
+                  className="page-break bg-white p-8 min-h-[297mm] font-sans text-[10px] space-y-4 border border-slate-300 print:border-none"
+                >
+                  <div className="text-center font-bold uppercase space-y-0.5">
+                    <h3 className="text-xs">BUKU PEMBANTU KAS TUNAI (BKT)</h3>
+                    <h4 className="text-xs font-mono">{headerSubtitle}</h4>
+                  </div>
+
+                  <div className="space-y-0.5 text-[9px]">
+                    <p>NAMA SEKOLAH : <strong>{school.namaSekolah}</strong></p>
+                    <p>PEKERJAAN : {school.pekerjaan}</p>
+                    <p>LOKASI : {school.lokasi}</p>
+                    <p>KOTA / PROPINSI : {school.kabKota} / {school.provinsi}</p>
+                  </div>
+
+                  <table className="w-full border-collapse border border-black text-[9px]">
+                    <thead>
+                      <tr className="bg-slate-100 text-center font-bold">
+                        <th className="border border-black p-1 w-8">No</th>
+                        <th className="border border-black p-1 w-16">Tanggal</th>
+                        <th className="border border-black p-1">Uraian Transaksi Kas</th>
+                        <th className="border border-black p-1 w-16">No. Bukti</th>
+                        <th className="border border-black p-1 w-24">Debet / Masuk (Rp)</th>
+                        <th className="border border-black p-1 w-24">Kredit / Keluar (Rp)</th>
+                        <th className="border border-black p-1 w-24">Saldo (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {targetBkt.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="border border-black p-4 text-center text-slate-500 italic">
+                            Tidak ada transaksi kas tunai pada periode ini.
+                          </td>
+                        </tr>
+                      ) : (
+                        targetBkt.map((b, idx) => (
+                          <tr key={b.id}>
+                            <td className="border border-black p-1 text-center font-mono">{idx + 1}</td>
+                            <td className="border border-black p-1 text-center font-mono">{b.tanggal}</td>
+                            <td className="border border-black p-1">{b.uraian}</td>
+                            <td className="border border-black p-1 text-center font-mono text-[8px]">{b.noBukti || '-'}</td>
+                            <td className="border border-black p-1 text-right font-mono">
+                              {b.pemasukan > 0 ? formatRupiah(b.pemasukan, false) : '-'}
+                            </td>
+                            <td className="border border-black p-1 text-right font-mono">
+                              {b.pengeluaran > 0 ? formatRupiah(b.pengeluaran, false) : '-'}
+                            </td>
+                            <td className="border border-black p-1 text-right font-mono font-bold">
+                              {formatRupiah(b.saldo || 0, false)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="font-bold bg-slate-100">
+                        <td colSpan={4} className="border border-black p-1 text-right">TOTAL:</td>
+                        <td className="border border-black p-1 text-right font-mono">{formatRupiah(totalDebet, false)}</td>
+                        <td className="border border-black p-1 text-right font-mono">{formatRupiah(totalKredit, false)}</td>
+                        <td className="border border-black p-1 text-right font-mono font-bold">{formatRupiah(saldoPeriode, false)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  {/* Signatures */}
+                  <div className="grid grid-cols-3 gap-4 pt-6 text-center text-[9px] font-sans">
+                    <div>
+                      <p>Menyetujui:</p>
+                      <p className="font-bold">Kepala Sekolah</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline">{school.namaKepalaSekolah}</p>
+                      <p>NIP. {school.nipKepalaSekolah}</p>
+                    </div>
+                    <div>
+                      <p>&nbsp;</p>
+                      <p className="font-bold">Ketua P2SP</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline uppercase">{school.namaKetuaP2SP}</p>
+                    </div>
+                    <div>
+                      <p>{school.kabKota}, Periode Kas</p>
+                      <p className="font-bold">Bendahara</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline uppercase">{school.namaBendahara}</p>
+                      <p>NIP. {school.nipBendahara}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            const targetMonth = filterOptions?.month || selectedMonth;
+            return months.map((monthName) => {
+              if (targetMonth && targetMonth !== 'ALL' && targetMonth !== monthName) {
+                return null;
+              }
+              const monthlyBkt = bktList.filter((b) => b.bulan === monthName);
+              if (monthlyBkt.length === 0) return null;
+
+              const totalDebet = monthlyBkt.reduce((s, b) => s + b.pemasukan, 0);
+              const totalKredit = monthlyBkt.reduce((s, b) => s + b.pengeluaran, 0);
+              const lastBkt = monthlyBkt[monthlyBkt.length - 1];
+              const saldoBulan = lastBkt?.saldo || 0;
+
+              return (
+                <div
+                  key={`bkt-${monthName}`}
+                  className="page-break bg-white p-8 min-h-[297mm] font-sans text-[10px] space-y-4 border border-slate-300 print:border-none"
+                >
+                  <div className="text-center font-bold uppercase space-y-0.5">
+                    <h3 className="text-xs">BUKU PEMBANTU KAS TUNAI (BKT)</h3>
+                    <h4 className="text-xs font-mono">BULAN : {monthName.toUpperCase()}</h4>
+                  </div>
+
+                  <div className="space-y-0.5 text-[9px]">
+                    <p>NAMA SEKOLAH : <strong>{school.namaSekolah}</strong></p>
+                    <p>PEKERJAAN : {school.pekerjaan}</p>
+                    <p>LOKASI : {school.lokasi}</p>
+                    <p>KOTA / PROPINSI : {school.kabKota} / {school.provinsi}</p>
+                  </div>
+
+                  <table className="w-full border-collapse border border-black text-[9px]">
+                    <thead>
+                      <tr className="bg-slate-100 text-center font-bold">
+                        <th className="border border-black p-1 w-8">No</th>
+                        <th className="border border-black p-1 w-16">Tanggal</th>
+                        <th className="border border-black p-1">Uraian Transaksi Kas</th>
+                        <th className="border border-black p-1 w-16">No. Bukti</th>
+                        <th className="border border-black p-1 w-24">Debet / Masuk (Rp)</th>
+                        <th className="border border-black p-1 w-24">Kredit / Keluar (Rp)</th>
+                        <th className="border border-black p-1 w-24">Saldo (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyBkt.map((b, idx) => (
+                        <tr key={b.id}>
+                          <td className="border border-black p-1 text-center font-mono">{idx + 1}</td>
+                          <td className="border border-black p-1 text-center font-mono">{b.tanggal}</td>
+                          <td className="border border-black p-1">{b.uraian}</td>
+                          <td className="border border-black p-1 text-center font-mono text-[8px]">{b.noBukti || '-'}</td>
+                          <td className="border border-black p-1 text-right font-mono">
+                            {b.pemasukan > 0 ? formatRupiah(b.pemasukan, false) : '-'}
+                          </td>
+                          <td className="border border-black p-1 text-right font-mono">
+                            {b.pengeluaran > 0 ? formatRupiah(b.pengeluaran, false) : '-'}
+                          </td>
+                          <td className="border border-black p-1 text-right font-mono font-bold">
+                            {formatRupiah(b.saldo || 0, false)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="font-bold bg-slate-100">
+                        <td colSpan={4} className="border border-black p-1 text-right">TOTAL BULAN {monthName.toUpperCase()}:</td>
+                        <td className="border border-black p-1 text-right font-mono">{formatRupiah(totalDebet, false)}</td>
+                        <td className="border border-black p-1 text-right font-mono">{formatRupiah(totalKredit, false)}</td>
+                        <td className="border border-black p-1 text-right font-mono font-bold">{formatRupiah(saldoBulan, false)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  {/* Signatures */}
+                  <div className="grid grid-cols-3 gap-4 pt-6 text-center text-[9px] font-sans">
+                    <div>
+                      <p>Menyetujui:</p>
+                      <p className="font-bold">Kepala Sekolah</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline">{school.namaKepalaSekolah}</p>
+                      <p>NIP. {school.nipKepalaSekolah}</p>
+                    </div>
+                    <div>
+                      <p>&nbsp;</p>
+                      <p className="font-bold">Ketua P2SP</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline uppercase">{school.namaKetuaP2SP}</p>
+                    </div>
+                    <div>
+                      <p>{school.kabKota}, Akhir {monthName}</p>
+                      <p className="font-bold">Bendahara</p>
+                      <div className="h-12" />
+                      <p className="font-bold underline uppercase">{school.namaBendahara}</p>
+                      <p>NIP. {school.nipBendahara}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            });
+          })()}
 
           {/* ========================================================
               5. REKAPITULASI PAJAK

@@ -1,14 +1,29 @@
 import React, { useState, useMemo } from 'react';
-import { Wallet, Printer, Calendar, Search, X, Plus, Edit3, Trash2, AlertCircle } from 'lucide-react';
-import { BktTransaction, BkuTransaction, SchoolMasterData, ProjectProgressWeek } from '../types';
+import {
+  Wallet,
+  Printer,
+  Calendar,
+  Search,
+  X,
+  Plus,
+  Edit3,
+  Trash2,
+  AlertCircle,
+  Filter,
+  CalendarRange,
+  Clock,
+  Layers,
+  RotateCcw,
+} from 'lucide-react';
+import { BktTransaction, BkuTransaction, SchoolMasterData, ProjectProgressWeek, TransactionFilterOptions } from '../types';
 import { formatRupiah } from '../utils/formatters';
-import { getAvailableMonthsForSchool, resolveWeekDates } from '../utils/monthHelper';
+import { getAvailableMonthsForSchool, resolveWeekDates, parseTxDateToIso } from '../utils/monthHelper';
 
 interface BktManagerProps {
   bktList: BktTransaction[];
   school: SchoolMasterData;
   progressWeeks?: ProjectProgressWeek[];
-  onOpenPrintModal: (month?: string) => void;
+  onOpenPrintModal: (month?: string, filterOptions?: TransactionFilterOptions) => void;
   onAddTransaction?: (tx: Omit<BkuTransaction, 'id'>) => void;
   onUpdateTransaction?: (tx: BkuTransaction) => void;
   onDeleteTransaction?: (tx: BkuTransaction) => void;
@@ -17,13 +32,18 @@ interface BktManagerProps {
 export const BktManager: React.FC<BktManagerProps> = ({
   bktList,
   school,
-  progressWeeks,
+  progressWeeks = [],
   onOpenPrintModal,
   onAddTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
 }) => {
+  // Filter Mode: 'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'
+  const [filterMode, setFilterMode] = useState<'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'>('ALL');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [selectedWeekNum, setSelectedWeekNum] = useState<number>(1);
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modal states for manual input & editing
@@ -31,8 +51,9 @@ export const BktManager: React.FC<BktManagerProps> = ({
   const [editingTx, setEditingTx] = useState<BktTransaction | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Determine starting date strictly from Laporan Mingguan & Bobot
   const schoolYear = school?.tahunAnggaran?.trim() || '2026';
+
+  // Determine starting date strictly from Laporan Mingguan & Bobot
   const minStartDateInfo = useMemo(() => {
     if (progressWeeks && progressWeeks.length > 0) {
       const w1 = progressWeeks.find((w) => w.mingguKe === 1) || progressWeeks[0];
@@ -42,8 +63,33 @@ export const BktManager: React.FC<BktManagerProps> = ({
       startDate: `${schoolYear}-07-01`,
       startDateFormatted: `01 Juli ${schoolYear}`,
       startDateSlash: `01/07/${schoolYear}`,
+      endDate: `${schoolYear}-10-31`,
     };
   }, [progressWeeks, schoolYear]);
+
+  // Available weeks list with formatted dates
+  const weekOptions = useMemo(() => {
+    return progressWeeks.map((w) => {
+      const resolved = resolveWeekDates(w, schoolYear);
+      return {
+        mingguKe: w.mingguKe,
+        startDate: resolved.startDate,
+        endDate: resolved.endDate,
+        periodeText: resolved.periodeText,
+        bulan: resolved.bulan,
+      };
+    });
+  }, [progressWeeks, schoolYear]);
+
+  // Available months
+  const months = useMemo(() => {
+    return getAvailableMonthsForSchool(school, [bktList]);
+  }, [school, bktList]);
+
+  // Active Week Date Range
+  const activeWeekInfo = useMemo(() => {
+    return weekOptions.find((w) => w.mingguKe === selectedWeekNum) || weekOptions[0] || null;
+  }, [weekOptions, selectedWeekNum]);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -55,21 +101,80 @@ export const BktManager: React.FC<BktManagerProps> = ({
     kategoriBiaya: 'Konstruksi',
   });
 
-  const months = getAvailableMonthsForSchool(school, [bktList]);
-  const activeSelectedMonth = (selectedMonth === 'ALL' || months.includes(selectedMonth)) ? selectedMonth : 'ALL';
+  // Filter Transactions Engine
+  const filteredBkt = useMemo(() => {
+    return bktList.filter((tx) => {
+      const txIso = parseTxDateToIso(tx.tanggalObj || tx.tanggal, parseInt(schoolYear, 10));
 
-  const filteredBkt = bktList.filter((tx) => {
-    const matchMonth = activeSelectedMonth === 'ALL' || tx.bulan === activeSelectedMonth;
-    const matchQuery =
-      tx.uraian.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.noBukti.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchMonth && matchQuery;
-  });
+      if (filterMode === 'MONTH') {
+        if (selectedMonth !== 'ALL' && tx.bulan !== selectedMonth) {
+          return false;
+        }
+      } else if (filterMode === 'WEEK') {
+        if (activeWeekInfo) {
+          if (txIso) {
+            if (txIso < activeWeekInfo.startDate || txIso > activeWeekInfo.endDate) {
+              return false;
+            }
+          } else if (tx.bulan && !tx.bulan.toLowerCase().includes(activeWeekInfo.bulan.toLowerCase())) {
+            return false;
+          }
+        }
+      } else if (filterMode === 'CUSTOM') {
+        if (customStartDate && txIso && txIso < customStartDate) {
+          return false;
+        }
+        if (customEndDate && txIso && txIso > customEndDate) {
+          return false;
+        }
+      }
 
-  const totalDebet = filteredBkt.reduce((sum, tx) => sum + tx.pemasukan, 0);
-  const totalKredit = filteredBkt.reduce((sum, tx) => sum + tx.pengeluaran, 0);
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchUraian = tx.uraian.toLowerCase().includes(q);
+        const matchBukti = tx.noBukti.toLowerCase().includes(q);
+        const matchTanggal = tx.tanggal.includes(q);
+        if (!matchUraian && !matchBukti && !matchTanggal) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [bktList, filterMode, selectedMonth, selectedWeekNum, activeWeekInfo, customStartDate, customEndDate, searchQuery, schoolYear]);
+
+  const totalDebet = useMemo(() => filteredBkt.reduce((sum, tx) => sum + tx.pemasukan, 0), [filteredBkt]);
+  const totalKredit = useMemo(() => filteredBkt.reduce((sum, tx) => sum + tx.pengeluaran, 0), [filteredBkt]);
   const lastItem = filteredBkt[filteredBkt.length - 1];
-  const saldoAkhir = lastItem ? lastItem.saldo || 0 : 0;
+  const saldoAkhir = lastItem ? lastItem.saldo || (totalDebet - totalKredit) : 0;
+
+  // Active filter readable description label
+  const activeFilterLabel = useMemo(() => {
+    if (filterMode === 'ALL') {
+      return 'Semua Transaksi (Lengkap)';
+    }
+    if (filterMode === 'MONTH') {
+      return selectedMonth === 'ALL' ? 'Semua Bulan' : `Bulan ${selectedMonth}`;
+    }
+    if (filterMode === 'WEEK') {
+      return activeWeekInfo
+        ? `Minggu Ke-${activeWeekInfo.mingguKe} (${activeWeekInfo.periodeText})`
+        : `Minggu Ke-${selectedWeekNum}`;
+    }
+    if (filterMode === 'CUSTOM') {
+      if (customStartDate && customEndDate) {
+        return `Rentang ${customStartDate} s/d ${customEndDate}`;
+      }
+      if (customStartDate) {
+        return `Mulai Tanggal ${customStartDate}`;
+      }
+      if (customEndDate) {
+        return `Sampai Tanggal ${customEndDate}`;
+      }
+      return 'Rentang Tanggal Khusus';
+    }
+    return 'Semua';
+  }, [filterMode, selectedMonth, selectedWeekNum, activeWeekInfo, customStartDate, customEndDate]);
 
   // Handlers
   const handleOpenAdd = () => {
@@ -123,7 +228,6 @@ export const BktManager: React.FC<BktManagerProps> = ({
       return;
     }
 
-    // Tanggal mulai pencatatan jangan kurang dari tanggal yang di-input dari Laporan Mingguan & Bobot
     if (formData.tanggal < minStartDateInfo.startDate) {
       setFormError(
         `Tanggal transaksi kas (${formData.tanggal}) tidak boleh kurang dari tanggal mulai Laporan Mingguan & Bobot (${minStartDateInfo.startDateFormatted}).`
@@ -141,10 +245,8 @@ export const BktManager: React.FC<BktManagerProps> = ({
 
     if (editingTx) {
       if (onUpdateTransaction) {
-        // Find underlying BKU ID (bkt- id format is `bkt-${bkuId}`)
-        const underlyingBkuId = editingTx.id.startsWith('bkt-') ? editingTx.id.replace('bkt-', '') : editingTx.id;
         onUpdateTransaction({
-          id: underlyingBkuId,
+          id: editingTx.id,
           tanggal: displayTanggal,
           tanggalObj: formData.tanggal,
           bulan: bulanStr,
@@ -176,18 +278,17 @@ export const BktManager: React.FC<BktManagerProps> = ({
   };
 
   const handleDelete = (tx: BktTransaction) => {
-    const nominalStr = formatRupiah(tx.pemasukan > 0 ? tx.pemasukan : tx.pengeluaran);
+    const nominal = tx.pemasukan > 0 ? tx.pemasukan : tx.pengeluaran;
     if (
       confirm(
-        `Apakah Anda yakin ingin MENGHAPUS transaksi ini dari Buku Kas Tunai & BKU?\n\nTanggal: ${tx.tanggal}\nUraian: "${tx.uraian}"\nNominal: ${nominalStr}`
+        `Apakah Anda yakin ingin MENGHAPUS transaksi ini dari Buku Kas Tunai?\n\nTanggal: ${tx.tanggal}\nUraian: "${tx.uraian}"\nNominal: ${formatRupiah(nominal)}`
       )
     ) {
       if (onDeleteTransaction) {
-        const underlyingBkuId = tx.id.startsWith('bkt-') ? tx.id.replace('bkt-', '') : tx.id;
         onDeleteTransaction({
-          id: underlyingBkuId,
+          id: tx.id,
           tanggal: tx.tanggal,
-          tanggalObj: tx.tanggalObj,
+          tanggalObj: tx.tanggalObj || tx.tanggal,
           bulan: tx.bulan,
           jenis: tx.pemasukan > 0 ? 'PENERIMAAN' : 'PENGELUARAN',
           uraian: tx.uraian,
@@ -199,8 +300,46 @@ export const BktManager: React.FC<BktManagerProps> = ({
     }
   };
 
+  const handleApplyQuickPreset = (preset: '7D' | '14D' | '30D' | 'ALL_PROJECT') => {
+    setFilterMode('CUSTOM');
+    const now = new Date();
+    const endIso = now.toISOString().split('T')[0];
+
+    if (preset === '7D') {
+      const start = new Date(now.getTime() - 7 * 86400000);
+      setCustomStartDate(start.toISOString().split('T')[0]);
+      setCustomEndDate(endIso);
+    } else if (preset === '14D') {
+      const start = new Date(now.getTime() - 14 * 86400000);
+      setCustomStartDate(start.toISOString().split('T')[0]);
+      setCustomEndDate(endIso);
+    } else if (preset === '30D') {
+      const start = new Date(now.getTime() - 30 * 86400000);
+      setCustomStartDate(start.toISOString().split('T')[0]);
+      setCustomEndDate(endIso);
+    } else if (preset === 'ALL_PROJECT') {
+      if (weekOptions.length > 0) {
+        setCustomStartDate(weekOptions[0].startDate);
+        setCustomEndDate(weekOptions[weekOptions.length - 1].endDate);
+      } else {
+        setCustomStartDate(`${schoolYear}-07-01`);
+        setCustomEndDate(`${schoolYear}-10-31`);
+      }
+    }
+  };
+
+  const handleResetFilter = () => {
+    setFilterMode('ALL');
+    setSelectedMonth('ALL');
+    setSelectedWeekNum(1);
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setSearchQuery('');
+  };
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -208,65 +347,260 @@ export const BktManager: React.FC<BktManagerProps> = ({
             Buku Pembantu Kas Tunai (BKT)
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Mencatat transaksi fisik kas tunai operasional harian sekolah setelah penarikan dari bank.
+            Mencatat transaksi fisik kas tunai yang ditarik dari rekening bank dan dibayarkan secara riil di lapangan.
           </p>
         </div>
 
         <button
+          type="button"
           onClick={() => onOpenPrintModal(selectedMonth === 'ALL' ? undefined : selectedMonth)}
-          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer"
+          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer"
         >
           <Printer className="w-4 h-4 text-emerald-400" />
-          <span>Cetak BKT {selectedMonth !== 'ALL' ? selectedMonth : 'Lengkap'}</span>
+          <span>Cetak BKT ({activeFilterLabel})</span>
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Cari transaksi kas tunai..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-          />
+      {/* FILTER PANEL UTAMA (Mingguan, Bulanan, Rentang Tanggal) */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-emerald-600" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+              PILIHAN FILTER KAS TUNAI :
+            </h3>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setFilterMode('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                filterMode === 'ALL' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Semua</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFilterMode('MONTH');
+                if (selectedMonth === 'ALL' && months.length > 1) {
+                  setSelectedMonth(months[1]);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                filterMode === 'MONTH' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Bulanan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('WEEK')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                filterMode === 'WEEK' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Mingguan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('CUSTOM')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                filterMode === 'CUSTOM' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarRange className="w-3.5 h-3.5" />
+              <span>Rentang Tanggal</span>
+            </button>
+          </div>
         </div>
-        {searchQuery !== '' && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-xs"
-            title="Bersihkan Pencarian"
-          >
-            <X className="w-3.5 h-3.5 text-rose-600" />
-            <span>Bersihkan</span>
-          </button>
+
+        {/* Dynamic Controls */}
+        {filterMode === 'MONTH' && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 animate-fade-in">
+            <span className="text-xs font-semibold text-slate-700 mr-1">Pilih Bulan:</span>
+            {months.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setSelectedMonth(m)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  selectedMonth === m
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                {m === 'ALL' ? 'Semua Bulan' : m}
+              </button>
+            ))}
+          </div>
         )}
+
+        {filterMode === 'WEEK' && (
+          <div className="space-y-2 pt-1 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-700">
+                Pilih Periode Minggu Kerja:
+              </span>
+              {activeWeekInfo && (
+                <span className="text-xs font-bold text-emerald-700 font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  {activeWeekInfo.periodeText} ({activeWeekInfo.startDate} s.d. {activeWeekInfo.endDate})
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-slate-50 rounded-xl border border-slate-200">
+              {weekOptions.map((w) => (
+                <button
+                  key={w.mingguKe}
+                  type="button"
+                  onClick={() => setSelectedWeekNum(w.mingguKe)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                    selectedWeekNum === w.mingguKe
+                      ? 'bg-emerald-600 text-white font-bold shadow-2xs'
+                      : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  <span>M{w.mingguKe}</span>
+                  <span className={`text-[10px] ${selectedWeekNum === w.mingguKe ? 'text-emerald-100' : 'text-slate-500'}`}>
+                    ({w.periodeText})
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {filterMode === 'CUSTOM' && (
+          <div className="space-y-3 pt-1 animate-fade-in">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Dari Tanggal:</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Sampai Tanggal:</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 font-mono"
+                />
+              </div>
+
+              <div className="sm:col-span-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-slate-500 w-full mb-0.5">Pilihan Cepat:</span>
+                <button
+                  type="button"
+                  onClick={() => handleApplyQuickPreset('7D')}
+                  className="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium transition cursor-pointer"
+                >
+                  7 Hari
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyQuickPreset('14D')}
+                  className="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium transition cursor-pointer"
+                >
+                  14 Hari
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyQuickPreset('30D')}
+                  className="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium transition cursor-pointer"
+                >
+                  30 Hari
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyQuickPreset('ALL_PROJECT')}
+                  className="px-2.5 py-1 text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md font-medium border border-emerald-200 transition cursor-pointer"
+                >
+                  Sepanjang Proyek
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Search & Reset */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+          <div className="relative flex-1 w-full max-w-md">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Cari transaksi kas tunai..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white"
+            />
+          </div>
+
+          {(filterMode !== 'ALL' || searchQuery !== '') && (
+            <button
+              type="button"
+              onClick={handleResetFilter}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Filter</span>
+            </button>
+          )}
+        </div>
+
+        {/* Badge */}
+        <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+            <span className="font-semibold text-slate-700">Filter Aktif:</span>
+            <strong className="text-emerald-900 font-bold bg-white px-2.5 py-0.5 rounded border border-emerald-200 shadow-2xs">
+              {activeFilterLabel}
+            </strong>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-slate-600">
+            <span>Ditemukan: <strong className="text-slate-900 font-bold">{filteredBkt.length}</strong> transaksi</span>
+            <span>•</span>
+            <span className="text-emerald-800 font-bold">Saldo: {formatRupiah(saldoAkhir)}</span>
+          </div>
+        </div>
       </div>
 
       {/* Summary KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Debet / Pemasukan Tunai</span>
-          <p className="text-lg font-bold text-blue-700 mt-1">{formatRupiah(totalDebet)}</p>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Debet / Penarikan</span>
+          <p className="text-lg font-bold text-emerald-700 mt-1">{formatRupiah(totalDebet)}</p>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Kredit / Pengeluaran Tunai</span>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Kredit / Pembayaran</span>
           <p className="text-lg font-bold text-rose-700 mt-1">{formatRupiah(totalKredit)}</p>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Saldo Kas Tunai</span>
-          <p className="text-lg font-bold text-emerald-700 mt-1">{formatRupiah(saldoAkhir)}</p>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Sisa Saldo Kas Tunai</span>
+          <p className="text-lg font-bold text-blue-700 mt-1">{formatRupiah(saldoAkhir)}</p>
         </div>
       </div>
 
-      {/* Table */}
+      {/* BKT Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+        <div className="p-4 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider">
-              BUKU PEMBANTU KAS TUNAI (BKT) {selectedMonth !== 'ALL' && `- ${selectedMonth.toUpperCase()}`}
+            <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+              <span>BUKU PEMBANTU KAS TUNAI (BKT)</span>
+              <span className="text-emerald-400 font-mono">• {activeFilterLabel}</span>
             </h3>
             <p className="text-[11px] text-slate-400">{school.namaSekolah} • {school.pekerjaan}</p>
           </div>
@@ -278,7 +612,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-xs transition cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>+ Input Transaksi Kas Tunai</span>
+              <span>+ Input Kas Tunai Manual</span>
             </button>
           </div>
         </div>
@@ -289,10 +623,10 @@ export const BktManager: React.FC<BktManagerProps> = ({
               <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] tracking-wider border-b border-slate-200">
                 <th className="py-2.5 px-3 w-10 text-center">No</th>
                 <th className="py-2.5 px-3">Tanggal</th>
-                <th className="py-2.5 px-4">Uraian Transaksi</th>
+                <th className="py-2.5 px-4">Uraian Transaksi Kas</th>
                 <th className="py-2.5 px-3 text-center">No. Bukti</th>
-                <th className="py-2.5 px-4 text-right text-blue-900 bg-blue-50/50">Debet / Pemasukan (Rp)</th>
-                <th className="py-2.5 px-4 text-right text-rose-900 bg-rose-50/50">Kredit / Pengeluaran (Rp)</th>
+                <th className="py-2.5 px-4 text-right text-emerald-900 bg-emerald-50/50">Debet / Masuk (Rp)</th>
+                <th className="py-2.5 px-4 text-right text-rose-900 bg-rose-50/50">Kredit / Keluar (Rp)</th>
                 <th className="py-2.5 px-4 text-right font-bold">Saldo (Rp)</th>
                 <th className="py-2.5 px-3 text-center w-24">Aksi</th>
               </tr>
@@ -300,8 +634,12 @@ export const BktManager: React.FC<BktManagerProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredBkt.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
-                    Tidak ada transaksi Kas Tunai pada filter saat ini.
+                  <td colSpan={8} className="py-10 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center space-y-1">
+                      <AlertCircle className="w-6 h-6 text-slate-300" />
+                      <p className="font-semibold text-slate-600">Tidak ada transaksi kas tunai pada filter ini.</p>
+                      <p className="text-[11px] text-slate-400">Coba ubah opsi filter di atas.</p>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -313,7 +651,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
                     <td className="py-2.5 px-3 text-center font-mono text-[11px] text-slate-600 bg-slate-50 rounded">
                       {tx.noBukti || '-'}
                     </td>
-                    <td className="py-2.5 px-4 text-right font-mono text-blue-700 bg-blue-50/30">
+                    <td className="py-2.5 px-4 text-right font-mono text-emerald-700 bg-emerald-50/30">
                       {tx.pemasukan > 0 ? formatRupiah(tx.pemasukan, false) : '-'}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono text-rose-700 bg-rose-50/30">
@@ -328,7 +666,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
                           type="button"
                           onClick={() => handleOpenEdit(tx)}
                           className="p-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-900 border border-amber-200 transition cursor-pointer"
-                          title="Edit Transaksi Kas Tunai"
+                          title="Edit Transaksi BKT"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
@@ -336,7 +674,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
                           type="button"
                           onClick={() => handleDelete(tx)}
                           className="p-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-800 border border-rose-200 transition cursor-pointer"
-                          title="Hapus Transaksi Kas Tunai"
+                          title="Hapus Transaksi BKT"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -348,14 +686,16 @@ export const BktManager: React.FC<BktManagerProps> = ({
             </tbody>
             <tfoot>
               <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
-                <td colSpan={4} className="py-3 px-4 text-right uppercase text-xs">Jumlah Total:</td>
-                <td className="py-3 px-4 text-right font-mono text-blue-900 bg-blue-100/50">
+                <td colSpan={4} className="py-3 px-4 text-right uppercase text-xs">
+                  Total Filter ({activeFilterLabel}):
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-emerald-900 bg-emerald-100/50">
                   {formatRupiah(totalDebet, false)}
                 </td>
                 <td className="py-3 px-4 text-right font-mono text-rose-900 bg-rose-100/50">
                   {formatRupiah(totalKredit, false)}
                 </td>
-                <td className="py-3 px-4 text-right font-mono font-extrabold text-emerald-900">
+                <td className="py-3 px-4 text-right font-mono font-extrabold text-blue-900">
                   {formatRupiah(saldoAkhir, false)}
                 </td>
                 <td className="py-3 px-3"></td>
@@ -365,160 +705,111 @@ export const BktManager: React.FC<BktManagerProps> = ({
         </div>
       </div>
 
-      {/* Modal for Input Manual & Edit Transaksi Kas Tunai */}
+      {/* Modal for Input Manual & Edit */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            {/* Modal Header */}
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-base flex items-center gap-2">
-                  <Wallet className="w-5 h-5 text-emerald-400" />
-                  <span>{editingTx ? 'Edit Transaksi Kas Tunai' : 'Input Transaksi Kas Tunai Manual'}</span>
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-emerald-400" />
+                  <span>{editingTx ? 'Edit Transaksi Kas Tunai' : 'Input Transaksi Kas Tunai'}</span>
                 </h3>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Buku Pembantu Kas Tunai (BKT) • {school.namaSekolah}
-                </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Modal Form */}
-            <form onSubmit={handleSaveTransaction} className="p-6 space-y-4">
+            <form onSubmit={handleSaveTransaction} className="p-6 space-y-4 text-xs">
               {formError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 flex items-center gap-2 font-medium">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
                   <span>{formError}</span>
                 </div>
               )}
 
-              {/* Tanggal Constraint Info Banner */}
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-emerald-950">
-                  <Calendar className="w-4 h-4 text-emerald-600" />
-                  <span>Aturan Tanggal Sesuai Juknis DAK:</span>
-                </div>
-                <p className="text-[11px] text-emerald-800">
-                  Tanggal mulai pencatatan tidak boleh kurang dari tanggal awal Laporan Mingguan & Bobot (minimal: <strong>{minStartDateInfo.startDateFormatted}</strong>).
-                </p>
-              </div>
-
-              {/* Jenis Transaksi Kas */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Jenis Transaksi Kas:
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, jenis: 'PENERIMAAN' })}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                      formData.jenis === 'PENERIMAAN'
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>Debet (Penerimaan Tunai)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, jenis: 'PENGELUARAN' })}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                      formData.jenis === 'PENGELUARAN'
-                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>Kredit (Pengeluaran Tunai)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Tanggal & No Bukti */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Tanggal Transaksi <span className="text-rose-500">*</span>:
-                  </label>
+                  <label className="block font-semibold text-slate-700 mb-1">Tanggal Transaksi</label>
                   <input
                     type="date"
                     min={minStartDateInfo.startDate}
                     value={formData.tanggal}
                     onChange={(e) => setFormData({ ...formData, tanggal: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-mono font-bold"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white font-mono"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Nomor Bukti:
-                  </label>
+                  <label className="block font-semibold text-slate-700 mb-1">Jenis Kas Tunai</label>
+                  <select
+                    value={formData.jenis}
+                    onChange={(e) => setFormData({ ...formData, jenis: e.target.value as 'PENERIMAAN' | 'PENGELUARAN' })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white font-semibold"
+                  >
+                    <option value="PENGELUARAN">PENGELUARAN (Kredit)</option>
+                    <option value="PENERIMAAN">PENERIMAAN / PENARIKAN (Debet)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Uraian Transaksi</label>
+                <textarea
+                  rows={2}
+                  value={formData.uraian}
+                  onChange={(e) => setFormData({ ...formData, uraian: e.target.value })}
+                  placeholder="Contoh: Pembayaran upah tukang minggu ke-2"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Nomor Bukti</label>
                   <input
                     type="text"
-                    placeholder="misal: 01/1MD/2026 atau BKT-01"
                     value={formData.noBukti}
                     onChange={(e) => setFormData({ ...formData, noBukti: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-mono"
+                    placeholder="Contoh: BKT-01"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Nominal (Rp)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={formData.nominal || ''}
+                    onChange={(e) => setFormData({ ...formData, nominal: Number(e.target.value) || 0 })}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white font-mono font-bold"
+                    required
                   />
                 </div>
               </div>
 
-              {/* Uraian Transaksi */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Uraian Transaksi <span className="text-rose-500">*</span>:
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="misal: Pembayaran Upah Pekerja & Tukang, Pembelian Pasir & Semen"
-                  value={formData.uraian}
-                  onChange={(e) => setFormData({ ...formData, uraian: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-                  required
-                />
-              </div>
-
-              {/* Nominal Transaksi */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nominal Transaksi (Rp) <span className="text-rose-500">*</span>:
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1000"
-                  placeholder="0"
-                  value={formData.nominal || ''}
-                  onChange={(e) => setFormData({ ...formData, nominal: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-mono"
-                  required
-                />
-                <p className="text-xs text-slate-500 mt-1 font-mono">
-                  Terbilang format rupiah: <strong className="text-emerald-700">{formatRupiah(formData.nominal)}</strong>
-                </p>
-              </div>
-
-              {/* Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                  className="px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 font-medium transition cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition cursor-pointer"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-xs transition cursor-pointer"
                 >
-                  {editingTx ? 'Simpan Perubahan' : 'Simpan Transaksi Kas Tunai'}
+                  {editingTx ? 'Simpan Perubahan' : 'Simpan ke BKT'}
                 </button>
               </div>
             </form>
@@ -528,4 +819,3 @@ export const BktManager: React.FC<BktManagerProps> = ({
     </div>
   );
 };
-
