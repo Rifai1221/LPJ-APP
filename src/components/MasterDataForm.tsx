@@ -779,14 +779,50 @@ export const MasterDataForm: React.FC<MasterDataFormProps> = ({ school, onSave, 
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Tahun Anggaran</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">Tahun Anggaran</label>
+                  <span className="text-[10px] text-slate-400 font-mono">Contoh: 2026</span>
+                </div>
                 <input
                   type="text"
-                  value={formData.tahunAnggaran}
-                  onChange={(e) => handleChange('tahunAnggaran', e.target.value)}
-                  placeholder="Contoh: 2025"
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
+                  list="tahun-anggaran-list"
+                  maxLength={4}
+                  value={formData.tahunAnggaran || ''}
+                  onChange={(e) => {
+                    const cleaned = e.target.value.replace(/\D/g, '').slice(0, 4);
+                    handleChange('tahunAnggaran', cleaned);
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value || e.target.value.length < 4) {
+                      handleChange('tahunAnggaran', '2026');
+                    }
+                  }}
+                  placeholder="2026"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white font-medium"
                 />
+                <datalist id="tahun-anggaran-list">
+                  <option value="2024" />
+                  <option value="2025" />
+                  <option value="2026" />
+                  <option value="2027" />
+                  <option value="2028" />
+                </datalist>
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {['2024', '2025', '2026', '2027', '2028'].map((yr) => (
+                    <button
+                      key={yr}
+                      type="button"
+                      onClick={() => handleChange('tahunAnggaran', yr)}
+                      className={`px-2 py-0.5 text-[10px] rounded font-mono font-medium transition cursor-pointer ${
+                        formData.tahunAnggaran === yr
+                          ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {yr}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

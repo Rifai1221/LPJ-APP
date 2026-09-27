@@ -37,7 +37,7 @@ import {
 } from '../types';
 import { formatNumber, formatRupiah } from '../utils/formatters';
 import { DEFAULT_DIVISIONS, toRoman, renumberDivisions } from '../utils/divisionHelper';
-import { resolveWeekDates, formatWeekPeriodString } from '../utils/monthHelper';
+import { resolveWeekDates, formatWeekPeriodString, sanitizeYear } from '../utils/monthHelper';
 import { WeeklyPhotoDocumentation } from './WeeklyPhotoDocumentation';
 
 interface WeeklyProgressManagerProps {
@@ -165,7 +165,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
 
   // Handler to reset week dates back to defaults
   const handleResetWeekDateToDefault = () => {
-    const yearNum = parseInt(schoolYear, 10) || 2026;
+    const yearNum = sanitizeYear(schoolYear, 2026);
     const baseDate = new Date(`${yearNum}-07-01T00:00:00`);
     const sDate = new Date(baseDate.getTime() + (selectedWeekNum - 1) * 7 * 86400000);
     const eDate = new Date(sDate.getTime() + 6 * 86400000);

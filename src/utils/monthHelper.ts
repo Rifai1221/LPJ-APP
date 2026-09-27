@@ -21,12 +21,38 @@ const monthOrderMap: Record<string, number> = {
 };
 
 /**
+ * Safely parse 4-digit year from string, falling back to 2026 if empty or invalid
+ */
+export function sanitizeYear(yearStr?: string | number, fallbackYear = 2026): number {
+  if (!yearStr) return fallbackYear;
+  const match = String(yearStr).match(/\b(19\d\d|20\d\d)\b/);
+  if (match) {
+    return parseInt(match[0], 10);
+  }
+  const parsed = parseInt(String(yearStr).replace(/\D/g, ''), 10);
+  if (parsed >= 1900 && parsed <= 2100) return parsed;
+  return fallbackYear;
+}
+
+/**
+ * Safely convert a Date to YYYY-MM-DD ISO string
+ */
+function safeToIsoDate(d: Date, fallbackIso: string): string {
+  if (!d || isNaN(d.getTime())) return fallbackIso;
+  try {
+    return d.toISOString().split('T')[0];
+  } catch {
+    return fallbackIso;
+  }
+}
+
+/**
  * Dynamically expand range of Indonesian months from a period string like
  * "01 Juli 2026 sampai 31 Oktober 2026" or "Juli - November"
  * strictly anchored to defaultYear (from Data Master Sekolah's tahunAnggaran).
  */
 export function expandMonthsFromPeriodeString(periodeStr: string, defaultYear = '2026'): string[] {
-  const targetYear = parseInt(defaultYear, 10) || 2026;
+  const targetYear = sanitizeYear(defaultYear, 2026);
 
   if (!periodeStr || typeof periodeStr !== 'string' || periodeStr.trim() === '') {
     // Default fallback: July to November of targetYear
@@ -57,10 +83,10 @@ export function expandMonthsFromPeriodeString(periodeStr: string, defaultYear = 
   let endYear = targetYear;
 
   if (yearMatches.length >= 2) {
-    startYear = parseInt(yearMatches[0][0], 10);
-    endYear = parseInt(yearMatches[yearMatches.length - 1][0], 10);
+    startYear = sanitizeYear(yearMatches[0][0], targetYear);
+    endYear = sanitizeYear(yearMatches[yearMatches.length - 1][0], targetYear);
   } else if (yearMatches.length === 1) {
-    startYear = parseInt(yearMatches[0][0], 10);
+    startYear = sanitizeYear(yearMatches[0][0], targetYear);
     endYear = startYear;
   }
 
@@ -103,13 +129,14 @@ export function expandMonthsFromPeriodeString(periodeStr: string, defaultYear = 
  * Parse Indonesian month name and year automatically from period date string (e.g., '20 Jul - 26 Jul 2026' -> 'Juli 2026')
  */
 export function getMonthFromPeriodString(periode: string, defaultYear = '2026'): string {
-  if (!periode) return `Juli ${defaultYear}`;
+  const safeYear = sanitizeYear(defaultYear, 2026);
+  if (!periode) return `Juli ${safeYear}`;
 
   const lower = periode.toLowerCase();
   
   // Extract year if present
   const yearMatch = periode.match(/20\d\d/);
-  const year = yearMatch ? yearMatch[0] : defaultYear;
+  const year = yearMatch ? sanitizeYear(yearMatch[0], safeYear) : safeYear;
 
   // Check month abbreviations / names
   if (lower.includes('jan')) return `Januari ${year}`;
@@ -146,7 +173,7 @@ export function getAvailableMonthsForSchool(
   lists?: Array<{ bulan?: string }[] | undefined>
 ): string[] {
   const monthSet = new Set<string>();
-  const schoolYear = school?.tahunAnggaran?.trim() || '2026';
+  const schoolYear = String(sanitizeYear(school?.tahunAnggaran, 2026));
 
   // 1. First Priority: Extract months from school.periodePenggunaan and school.tahunAnggaran
   if (school?.periodePenggunaan) {
@@ -177,7 +204,7 @@ export function getAvailableMonthsForSchool(
     const parseMonthYear = (str: string) => {
       const parts = str.split(' ');
       const mName = parts[0]?.toLowerCase() || '';
-      const year = parseInt(parts[1] || schoolYear, 10);
+      const year = sanitizeYear(parts[1] || schoolYear, 2026);
       const mIdx = monthOrderMap[mName] || 1;
       return year * 100 + mIdx;
     };
@@ -198,9 +225,9 @@ export function formatWeekPeriodString(startDateIso: string, endDateIso: string)
 
   const sDay = String(sObj.getDate()).padStart(2, '0');
   const eDay = String(eObj.getDate()).padStart(2, '0');
-  const shortMonthS = indonesianMonths[sObj.getMonth()].substring(0, 3);
-  const shortMonthE = indonesianMonths[eObj.getMonth()].substring(0, 3);
-  const eYear = eObj.getFullYear();
+  const shortMonthS = indonesianMonths[sObj.getMonth()]?.substring(0, 3) || 'Jul';
+  const shortMonthE = indonesianMonths[eObj.getMonth()]?.substring(0, 3) || 'Jul';
+  const eYear = eObj.getFullYear() || 2026;
 
   return `${sDay} ${shortMonthS} - ${eDay} ${shortMonthE} ${eYear}`;
 }
@@ -221,25 +248,52 @@ export function resolveWeekDates(
   bulan: string;
   periodeText: string;
 } {
-  const yearNum = parseInt(schoolYear, 10) || 2026;
+  const yearNum = sanitizeYear(schoolYear, 2026);
+  const fallbackStartIso = `${yearNum}-07-06`;
+  const fallbackEndIso = `${yearNum}-07-12`;
 
   let startIso = week.startDate;
   let endIso = week.endDate;
 
+  // Validate startIso if already provided
+  if (startIso) {
+    const testS = new Date(`${startIso}T00:00:00`);
+    if (isNaN(testS.getTime())) {
+      startIso = undefined;
+    }
+  }
+
+  // Validate endIso if already provided
+  if (endIso) {
+    const testE = new Date(`${endIso}T00:00:00`);
+    if (isNaN(testE.getTime())) {
+      endIso = undefined;
+    }
+  }
+
   if (!startIso) {
     const baseDate = new Date(`${yearNum}-07-01T00:00:00`);
-    const sDate = new Date(baseDate.getTime() + (week.mingguKe - 1) * 7 * 86400000);
-    startIso = sDate.toISOString().split('T')[0];
+    const sDate = new Date(baseDate.getTime() + (Math.max(1, week.mingguKe || 1) - 1) * 7 * 86400000);
+    startIso = safeToIsoDate(sDate, fallbackStartIso);
   }
 
   if (!endIso) {
     const sDate = new Date(`${startIso}T00:00:00`);
     const eDate = new Date(sDate.getTime() + 6 * 86400000);
-    endIso = eDate.toISOString().split('T')[0];
+    endIso = safeToIsoDate(eDate, fallbackEndIso);
   }
 
-  const sObj = new Date(`${startIso}T00:00:00`);
-  const eObj = new Date(`${endIso}T00:00:00`);
+  let sObj = new Date(`${startIso}T00:00:00`);
+  let eObj = new Date(`${endIso}T00:00:00`);
+
+  if (isNaN(sObj.getTime())) {
+    sObj = new Date(`${fallbackStartIso}T00:00:00`);
+    startIso = fallbackStartIso;
+  }
+  if (isNaN(eObj.getTime())) {
+    eObj = new Date(`${fallbackEndIso}T00:00:00`);
+    endIso = fallbackEndIso;
+  }
 
   const sDay = String(sObj.getDate()).padStart(2, '0');
   const sMonth = sObj.getMonth();
@@ -249,16 +303,16 @@ export function resolveWeekDates(
   const eMonth = eObj.getMonth();
   const eYear = eObj.getFullYear();
 
-  const startDateFormatted = `${sDay} ${indonesianMonths[sMonth]} ${sYear}`;
-  const endDateFormatted = `${eDay} ${indonesianMonths[eMonth]} ${eYear}`;
+  const startDateFormatted = `${sDay} ${indonesianMonths[sMonth] || 'Juli'} ${sYear}`;
+  const endDateFormatted = `${eDay} ${indonesianMonths[eMonth] || 'Juli'} ${eYear}`;
 
   const startDateSlash = `${sDay}/${String(sMonth + 1).padStart(2, '0')}/${sYear}`;
   const endDateSlash = `${eDay}/${String(eMonth + 1).padStart(2, '0')}/${eYear}`;
 
-  const bulan = `${indonesianMonths[eMonth]} ${eYear}`;
+  const bulan = `${indonesianMonths[eMonth] || 'Juli'} ${eYear}`;
 
-  const shortMonthS = indonesianMonths[sMonth].substring(0, 3);
-  const shortMonthE = indonesianMonths[eMonth].substring(0, 3);
+  const shortMonthS = (indonesianMonths[sMonth] || 'Juli').substring(0, 3);
+  const shortMonthE = (indonesianMonths[eMonth] || 'Juli').substring(0, 3);
   const calculatedPeriode = `${sDay} ${shortMonthS} - ${eDay} ${shortMonthE} ${eYear}`;
   const periodeText = week.startDate && week.endDate ? calculatedPeriode : (week.periode || calculatedPeriode);
 
