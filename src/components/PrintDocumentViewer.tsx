@@ -1576,17 +1576,23 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                               <div className="grid grid-cols-12 gap-1 pt-1 border-t border-slate-300">
                                 <span className="col-span-5">RENCANA WAKTU PELAKSANAAN</span>
                                 <span className="col-span-1">:</span>
-                                <span className="col-span-6 font-mono">{progressWeeks.length * 7} HK ({progressWeeks.length} Minggu)</span>
+                                <span className="col-span-6 font-mono">
+                                  {week.rencanaWaktuHK ?? progressWeeks.length * 7} HK ({week.rencanaWaktuMinggu ?? progressWeeks.length} Minggu)
+                                </span>
                               </div>
                               <div className="grid grid-cols-12 gap-1">
                                 <span className="col-span-5">WAKTU YANG SUDAH DILAKSANAKAN</span>
                                 <span className="col-span-1">:</span>
-                                <span className="col-span-6 font-mono">{week.mingguKe * 7} HK</span>
+                                <span className="col-span-6 font-mono">
+                                  {week.waktuTerlaksanaHK ?? week.mingguKe * 7} HK
+                                </span>
                               </div>
                               <div className="grid grid-cols-12 gap-1">
                                 <span className="col-span-5">SISA WAKTU PELAKSANAAN</span>
                                 <span className="col-span-1">:</span>
-                                <span className="col-span-6 font-mono font-bold">{Math.max(0, (progressWeeks.length * 7) - week.mingguKe * 7)} HK</span>
+                                <span className="col-span-6 font-mono font-bold">
+                                  {week.sisaWaktuHK ?? Math.max(0, (week.rencanaWaktuHK ?? progressWeeks.length * 7) - (week.waktuTerlaksanaHK ?? week.mingguKe * 7))} HK
+                                </span>
                               </div>
                             </div>
                           </div>

@@ -290,9 +290,12 @@ export interface ProjectProgressWeek {
   deviasi: number;
   keterangan: string;
   itemPekerjaan: string[];
-  rencanaWaktuHK?: number; // default 112
-  waktuTerlaksanaHK?: number; // e.g. 7, 14, 21...
-  sisaWaktuHK?: number; // e.g. 105, 98...
+  rencanaWaktuHK?: number; // e.g. 98 HK
+  rencanaWaktuMinggu?: number; // e.g. 14 Minggu
+  waktuTerlaksanaHK?: number; // e.g. 7 HK
+  waktuTerlaksanaMinggu?: number; // e.g. 1 Minggu
+  sisaWaktuHK?: number; // e.g. 91 HK
+  sisaWaktuMinggu?: number; // e.g. 13 Minggu
   divisions?: DivisionProgressItem[];
   photos?: ProgressPhotoItem[];
 }
