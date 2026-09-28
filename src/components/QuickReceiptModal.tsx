@@ -40,21 +40,41 @@ export const QuickReceiptModal: React.FC<QuickReceiptModalProps> = ({
   const [isPph22, setIsPph22] = useState(false);
   const [isPph23, setIsPph23] = useState(false);
 
-  // Extract all AHSP components for auto-completion
-  const ahspComponents = useMemo(() => {
-    if (!realSchoolData?.ahspList) return [];
-    const list: { id: string; pekerjaan: string; uraian: string; satuan: string; hargaSatuan: number }[] = [];
-    realSchoolData.ahspList.forEach((ah) => {
-      (ah.komponen || []).forEach((c) => {
-        list.push({
-          id: c.id || `c-${Math.random()}`,
-          pekerjaan: ah.namaPekerjaan,
-          uraian: c.uraian,
-          satuan: c.satuan || 'unit',
-          hargaSatuan: c.hargaSatuan || 0,
+  // Extract all RAB SubItems and AHSP components for auto-completion
+  const rabAndAhspItems = useMemo(() => {
+    const list: { id: string; pekerjaan: string; uraian: string; satuan: string; hargaSatuan: number; source: 'RAB' | 'AHSP' }[] = [];
+
+    // 1. RAB Items
+    if (realSchoolData?.divisions) {
+      realSchoolData.divisions.forEach((div) => {
+        (div.items || []).forEach((it) => {
+          list.push({
+            id: `rab-${it.id}`,
+            pekerjaan: div.uraian,
+            uraian: it.uraian,
+            satuan: it.satuan || 'unit',
+            hargaSatuan: it.hargaSatuan || 0,
+            source: 'RAB',
+          });
         });
       });
-    });
+    }
+
+    // 2. AHSP Components
+    if (realSchoolData?.ahspList) {
+      realSchoolData.ahspList.forEach((ah) => {
+        (ah.komponen || []).forEach((c) => {
+          list.push({
+            id: c.id || `c-${Math.random()}`,
+            pekerjaan: ah.namaPekerjaan,
+            uraian: c.uraian,
+            satuan: c.satuan || 'unit',
+            hargaSatuan: c.hargaSatuan || 0,
+            source: 'AHSP',
+          });
+        });
+      });
+    }
     return list;
   }, [realSchoolData]);
 
@@ -76,9 +96,9 @@ export const QuickReceiptModal: React.FC<QuickReceiptModalProps> = ({
     }
   };
 
-  const handleSelectAhspComponent = (index: number, ahspCompId: string) => {
-    if (!ahspCompId) return;
-    const matched = ahspComponents.find((c) => c.id === ahspCompId);
+  const handleSelectPredefinedItem = (index: number, itemId: string) => {
+    if (!itemId) return;
+    const matched = rabAndAhspItems.find((c) => c.id === itemId);
     if (matched) {
       const updated = [...items];
       const item = { ...updated[index] };
@@ -309,15 +329,15 @@ export const QuickReceiptModal: React.FC<QuickReceiptModalProps> = ({
                       className="w-full p-1.5 text-xs bg-white border border-slate-200 rounded font-medium"
                       required
                     />
-                    {ahspComponents.length > 0 && (
+                    {rabAndAhspItems.length > 0 && (
                       <select
-                        onChange={(e) => handleSelectAhspComponent(idx, e.target.value)}
-                        className="w-full text-[10px] text-indigo-700 bg-indigo-50/80 border border-indigo-200 rounded px-1.5 py-0.5"
+                        onChange={(e) => handleSelectPredefinedItem(idx, e.target.value)}
+                        className="w-full text-[10px] text-indigo-700 bg-indigo-50/80 border border-indigo-200 rounded px-1.5 py-0.5 cursor-pointer"
                       >
-                        <option value="">-- Pilih Komponen dari AHSP --</option>
-                        {ahspComponents.map((c) => (
+                        <option value="">-- Pilih dari RAB Real Sekolah / AHSP --</option>
+                        {rabAndAhspItems.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.uraian} ({c.satuan}) - {formatRupiah(c.hargaSatuan)} [{c.pekerjaan}]
+                            [{c.source}] {c.uraian} ({c.satuan}) - {formatRupiah(c.hargaSatuan)} [{c.pekerjaan}]
                           </option>
                         ))}
                       </select>

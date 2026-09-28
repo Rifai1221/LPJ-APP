@@ -458,15 +458,15 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
                   const isServiceOrLabor =
                     selectedKw.tipe === 'UPAH' ||
                     selectedKw.tipe === 'KONSULTAN' ||
-                    (selectedKw.tipe === 'OPERASIONAL' && !selectedKw.namaToko) ||
                     /upah|tukang|pekerja|jasa|konsultan|perencana|pengawas|honor|administrasi|adm\b/i.test(
-                      `${selectedKw.uraian} ${selectedKw.penerimaPekerjaan} ${selectedKw.penerimaNama}`
+                      `${selectedKw.noBukti} ${selectedKw.uraian} ${selectedKw.penerimaPekerjaan} ${selectedKw.penerimaNama}`
                     );
-                  const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Nama Barang';
+                  const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
+                  const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
 
                   return (
                     <div className="mt-3 border-t border-slate-200 pt-3">
-                      <p className="font-sans font-bold text-[11px] text-slate-700 mb-1.5">Rincian Barang / Layanan Terlampir:</p>
+                      <p className="font-sans font-bold text-[11px] text-slate-700 mb-1.5">{sectionHeader}</p>
                       <table className="w-full text-left font-sans text-[11px] border-collapse">
                         <thead>
                           <tr className="bg-slate-100 border-b border-slate-200">

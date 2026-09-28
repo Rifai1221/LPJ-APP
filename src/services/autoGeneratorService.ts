@@ -52,62 +52,62 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
     const rawSatuan = (item.satuan || '').toLowerCase().trim();
     const rawName = (item.namaBarang || '').toLowerCase();
 
-    // 1. Identify discrete units that must strictly be integers (lembar, batang, sak/zak, buah, dus, klg, set, roll, unit)
-    const isStrictIntegerUnit =
-      /lbr|lembar|btg|batang|zak|sak|buah|bh|dus|box|kotak|ktk|unit|set|roll|rol|klg|kaleng|pail|drum|rit|bh/i.test(rawSatuan) ||
-      /triplek|multiplex|papan|kaso|balok|besi|semen|helm|rompi|sepatu|sarung tangan|p3k|rambu|tali/i.test(rawName);
-
-    // 2. Determine realistic rounded volume
     let realisticVolume: number;
     let realisticSatuan = item.satuan;
 
-    if (isStrictIntegerUnit) {
+    // 1. Convert Semen in Kg / kg -> Zak
+    if (/semen|pc\b|portland/i.test(rawName) && /kg|kilogram/i.test(rawSatuan)) {
+      realisticVolume = Math.max(1, Math.round(rawVol / 40));
+      realisticSatuan = 'Zak';
+    }
+    // 2. Commercialize Pasir, Batu, Tanah in m3/m2 -> Integer m3/m2 (e.g. 0.7 m3 or 0.8 m3 -> 1 m3)
+    else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
+      realisticVolume = Math.max(1, Math.round(rawVol));
+    }
+    // 3. Discrete integer units (lembar, batang, sak/zak, buah, dus, klg, set, roll, unit, rit, btg, lbr)
+    else if (
+      /lbr|lembar|btg|batang|zak|sak|buah|bh|dus|box|kotak|ktk|unit|set|roll|rol|klg|kaleng|pail|drum|rit/i.test(rawSatuan) ||
+      /triplek|multiplex|papan|kaso|balok|besi|helm|rompi|sepatu|sarung tangan|p3k|rambu|tali/i.test(rawName)
+    ) {
       if (rawVol <= 0.05) {
         realisticVolume = 1;
       } else if (rawVol < 1) {
-        // Misal 0.35 lbr -> 1 lbr (potongan papan/lembar riil), 0.077 m3 -> 1 btg
         realisticVolume = 1;
         if (/m3|m³/.test(rawSatuan) && /kayu|balok|kaso|tiang/i.test(rawName)) {
           realisticSatuan = 'btg';
         }
       } else {
-        realisticVolume = Math.round(rawVol);
-        if (realisticVolume === 0) realisticVolume = 1;
+        realisticVolume = Math.max(1, Math.round(rawVol));
       }
-    } else if (/kg|liter|ltr/i.test(rawSatuan)) {
-      // Pembulatan timbangan: jika desimal ganjil mendekati integer, bulatkan ke 1 atau kelipatan 0.5 kg
+    }
+    // 4. Weight / Volume in Kg or Liter
+    else if (/kg|liter|ltr/i.test(rawSatuan)) {
       if (rawVol < 0.5) {
         realisticVolume = 1;
         if (/cat/i.test(rawName)) realisticSatuan = 'klg';
         else if (/paku/i.test(rawName)) realisticSatuan = 'kg';
-      } else if (Math.abs(rawVol - Math.round(rawVol)) < 0.35) {
+      } else {
         realisticVolume = Math.max(1, Math.round(rawVol));
-      } else {
-        // Kelipatan 0.5 kg agar wajar di timbangan toko material
-        realisticVolume = Math.round(rawVol * 2) / 2;
-        if (realisticVolume === 0) realisticVolume = 1;
       }
-    } else if (/m3|m³|m2|m²|m\b/i.test(rawSatuan)) {
-      // Volume kubikasi/meteran luas: bulatkan ke 1 desimal atau integer
-      if (rawVol < 1) {
-        realisticVolume = Math.max(0.5, Math.round(rawVol * 10) / 10);
-      } else {
-        realisticVolume = Math.round(rawVol * 10) / 10;
-      }
-    } else {
-      // Default
-      realisticVolume = rawVol < 1 ? 1 : Math.round(rawVol * 100) / 100;
+    }
+    // 5. Volume cubic / m2
+    else if (/m3|m³|m2|m²|m\b/i.test(rawSatuan)) {
+      realisticVolume = Math.max(1, Math.round(rawVol));
+    }
+    // 6. Default fallback
+    else {
+      realisticVolume = rawVol < 1 ? 1 : Math.round(rawVol);
     }
 
-    // 3. Price Balancing: Reconcile harga satuan so realisticVolume * hargaSatuan = rawJml
-    const reconciledHargaSatuan = Math.max(1, Math.round(rawJml / realisticVolume));
+    // Price Balancing: Reconcile hargaSatuan so realisticVolume * hargaSatuan = rawJml
+    const reconciledHargaSatuan = Math.max(1, Math.round((rawJml / realisticVolume) * 100) / 100);
 
     return {
       ...item,
       volume: realisticVolume,
       satuan: realisticSatuan,
       hargaSatuan: reconciledHargaSatuan,
-      jumlah: rawJml, // TOTAL NOMINAL TETAP PERSIS SAMA DENGAN RAB/REALISASI!
+      jumlah: rawJml, // TOTAL NOMINAL TERJAGA 100% KLOP DENGAN RAB!
     };
   });
 }
@@ -660,6 +660,17 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
     week1SmkkGenerated = true;
   }
 
+  // Filter out any stale/non-RAB kwitansi (e.g. legacy kwitansi with Pompa Jet, Genset, or unexecuted Air Kerja/Listrik in early weeks)
+  for (let i = newKwitansiList.length - 1; i >= 0; i--) {
+    const kw = newKwitansiList[i];
+    const hasExtraneousItems = (kw.items || []).some(
+      (it) => /pompa jet|generator genset|stop kontak|tukang listrik|tukang pipa/i.test(it.namaBarang || '')
+    ) || /pompa jet|generator genset/i.test(kw.uraian || '');
+    if (hasExtraneousItems) {
+      newKwitansiList.splice(i, 1);
+    }
+  }
+
   // Iterate each active division
   activeDivisions.forEach((div, dIdx) => {
     activeDivisionDescriptions.push(div.uraian);
@@ -674,50 +685,52 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
         div.uraian.toLowerCase().includes(rd.uraian.toLowerCase())
     );
 
-    // Look for matching AHSP items for this division
-    const matchingAhsp = (realSchoolData?.ahspList || []).filter((ah) => {
-      const lowerAh = (ah.namaPekerjaan || '').toLowerCase();
-      const lowerDiv = div.uraian.toLowerCase();
-      const ahCodePrefix = (ah.kodePekerjaan || '').split('.')[0].toUpperCase();
-      return (
-        (ahCodePrefix && ahCodePrefix === divCode) ||
-        lowerAh.includes(lowerDiv) ||
-        lowerDiv.includes(lowerAh) ||
-        (lowerDiv.includes('persiapan') && (lowerAh.includes('papan') || lowerAh.includes('bersih') || lowerAh.includes('air') || lowerAh.includes('bowplank') || lowerAh.includes('smkk'))) ||
-        (lowerDiv.includes('galian') && (lowerAh.includes('gali') || lowerAh.includes('urug') || lowerAh.includes('pasir'))) ||
-        (lowerDiv.includes('pasangan') && (lowerAh.includes('bata') || lowerAh.includes('batu') || lowerAh.includes('plester') || lowerAh.includes('aci'))) ||
-        (lowerDiv.includes('beton') && (lowerAh.includes('beton') || lowerAh.includes('sloof') || lowerAh.includes('kolom') || lowerAh.includes('ringbal') || lowerAh.includes('lintel') || lowerAh.includes('konsol') || lowerAh.includes('sofi'))) ||
-        (lowerDiv.includes('kayu') && (lowerAh.includes('pintu') || lowerAh.includes('jendela') || lowerAh.includes('kaca') || lowerAh.includes('kusen') || lowerAh.includes('kayu'))) ||
-        (lowerDiv.includes('atap') && (lowerAh.includes('atap') || lowerAh.includes('spandek') || lowerAh.includes('truss') || lowerAh.includes('rabung') || lowerAh.includes('baja ringan') || lowerAh.includes('lisplank'))) ||
-        (lowerDiv.includes('langit') && (lowerAh.includes('plafon') || lowerAh.includes('gypsum') || lowerAh.includes('hollow') || lowerAh.includes('list'))) ||
-        (lowerDiv.includes('lantai') && (lowerAh.includes('keramik') || lowerAh.includes('granit') || lowerAh.includes('screed') || lowerAh.includes('tile'))) ||
-        (lowerDiv.includes('cat') && (lowerAh.includes('cat') || lowerAh.includes('plamir'))) ||
-        (lowerDiv.includes('listrik') && (lowerAh.includes('listrik') || lowerAh.includes('kabel') || lowerAh.includes('lampu') || lowerAh.includes('saklar'))) ||
-        (lowerDiv.includes('mebeler') && (lowerAh.includes('meja') || lowerAh.includes('kursi') || lowerAh.includes('mebeler')))
-      );
-    });
+    // Group items strictly derived from RAB & validated AHSP breakdowns
+    const bahanItems: { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }[] = [];
+    const alatItems: { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }[] = [];
+    const smkkItems: { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }[] = [];
+    let divUpahTotal = 0;
 
-    // If RealSchoolData division or AHSP list exists
-    if ((realDiv && realDiv.items && realDiv.items.length > 0) || matchingAhsp.length > 0) {
-      // 1. Group items by category: BAHAN, UPAH, ALAT, SMKK, LAINNYA
-      const bahanItems: { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }[] = [];
-      const alatItems: { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }[] = [];
-      const smkkItems: { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }[] = [];
-      let divUpahTotal = 0;
+    if (realDiv && realDiv.items && realDiv.items.length > 0) {
+      realDiv.items.forEach((it: RabSubItem) => {
+        // If SMKK or Papan Nama was generated in Week 1, skip repeating
+        if (week1SmkkGenerated && (/smkk/i.test(it.kategoriBiaya || '') || /smkk|k3|helm|rompi/i.test(it.uraian))) {
+          return;
+        }
+        if (week1PapanNamaGenerated && /papan nama/i.test(it.uraian)) {
+          return;
+        }
 
-      // Priority 1: Use AHSP Komponen if available for maximum precision
-      if (matchingAhsp.length > 0) {
-        matchingAhsp.forEach((ah) => {
-          // If Week 1 papan nama was already generated above, skip repeating its materials
-          if (week1PapanNamaGenerated && /papan nama/i.test(ah.namaPekerjaan || '')) {
-            return;
-          }
+        // Check if this sub-item is Air Kerja / Listrik / Pipa and ensure it's actually executed in active keywords
+        const subUraianLower = it.uraian.toLowerCase();
+        const matRefs = (div.materialRef || []).map((r) => r.toLowerCase());
+        const weekItems = (weekObj.itemPekerjaan || []).map((r) => r.toLowerCase());
+        const allActiveKeywords = [...matRefs, ...weekItems];
 
-          (ah.komponen || []).forEach((comp) => {
-            const isUpah = comp.kategori === 'UPAH' || /tukang|pekerja|mandor/i.test(comp.uraian);
-            const isAlat = comp.kategori === 'ALAT' || /pompa|genset|molen|sewa/i.test(comp.uraian);
-            const compVol = Math.max(0.01, Math.round((comp.koefisien || 1) * progressRatio * 10 * 100) / 100);
+        const isAirKerjaOrListrik = /air kerja|instalasi listrik|stop kontak|tukang listrik|tukang pipa/i.test(subUraianLower);
+        const mentionsAirKerjaOrListrik = allActiveKeywords.some((kw) => /air kerja|listrik|pipa|stop kontak/i.test(kw));
+
+        if (isAirKerjaOrListrik && !mentionsAirKerjaOrListrik && allActiveKeywords.length > 0) {
+          return; // Skip Air Kerja / Listrik sub-item if not executed in this week's progress!
+        }
+
+        const execRabVol = Math.max(0.01, Math.round(it.volume * progressRatio * 100) / 100);
+        const execRabJml = Math.round(execRabVol * it.hargaSatuan);
+        if (execRabJml <= 0 && execRabVol <= 0) return;
+
+        // Search for matching AHSP breakdown for this RAB item
+        const ahspMatch = (realSchoolData?.ahspList || []).find((ah) => {
+          const lowerAh = (ah.namaPekerjaan || '').toLowerCase();
+          const lowerRab = it.uraian.toLowerCase();
+          return lowerAh.includes(lowerRab) || lowerRab.includes(lowerAh);
+        });
+
+        if (ahspMatch && ahspMatch.komponen && ahspMatch.komponen.length > 0) {
+          ahspMatch.komponen.forEach((comp) => {
+            const compVol = Math.max(0.01, Math.round((comp.koefisien || 1) * execRabVol * 100) / 100);
             const compJml = Math.round(compVol * (comp.hargaSatuan || 10000));
+            const isUpah = comp.kategori === 'UPAH' || /tukang|pekerja|mandor/i.test(comp.uraian);
+            const isAlat = comp.kategori === 'ALAT' || /molen|sewa|scaffolding|perancah|gerobak/i.test(comp.uraian);
 
             if (isUpah) {
               divUpahTotal += compJml;
@@ -728,7 +741,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
                 hargaSatuan: comp.hargaSatuan || 174748,
                 jumlah: compJml,
               });
-            } else if (isAlat) {
+            } else if (isAlat && (it.kategoriBiaya === 'ALAT' || /sewa|alat/i.test(it.uraian))) {
               alatItems.push({
                 namaBarang: comp.uraian,
                 volume: compVol,
@@ -736,7 +749,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
                 hargaSatuan: comp.hargaSatuan || 50000,
                 jumlah: compJml,
               });
-            } else {
+            } else if (comp.kategori !== 'ALAT') {
               bahanItems.push({
                 namaBarang: comp.uraian,
                 volume: compVol,
@@ -746,20 +759,8 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
               });
             }
           });
-        });
-      }
-
-      // Priority 2: Supplement or fallback with RealSchoolData RAB SubItems
-      if (realDiv && realDiv.items && realDiv.items.length > 0) {
-        realDiv.items.forEach((it: RabSubItem) => {
-          // If SMKK or Papan Nama was generated in Week 1, skip repeating
-          if (week1SmkkGenerated && (/smkk/i.test(it.kategoriBiaya || '') || /smkk|k3|helm|rompi/i.test(it.uraian))) {
-            return;
-          }
-          if (week1PapanNamaGenerated && /papan nama/i.test(it.uraian)) {
-            return;
-          }
-
+        } else {
+          // Direct RAB SubItem
           const cat = it.kategoriBiaya || (
             /upah|gaji|pekerja|tukang|mandor/i.test(it.uraian) ? 'UPAH' :
             /alat|sewa|molen|scaffolding|perancah|gerobak/i.test(it.uraian) ? 'ALAT' :
@@ -767,46 +768,42 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             'BAHAN'
           );
 
-          const itVol = Math.max(0.01, Math.round(it.volume * progressRatio * 100) / 100);
-          const itJml = Math.round(itVol * it.hargaSatuan);
-
-          if (cat === 'UPAH' && matchingAhsp.length === 0) {
-            divUpahTotal += itJml;
+          if (cat === 'UPAH') {
+            divUpahTotal += execRabJml;
             weeklyAhspUpahComponents.push({
               namaBarang: it.uraian,
-              volume: itVol,
+              volume: execRabVol,
               satuan: it.satuan,
               hargaSatuan: it.hargaSatuan,
-              jumlah: itJml,
+              jumlah: execRabJml,
             });
-          } else if (cat === 'ALAT' && matchingAhsp.length === 0) {
+          } else if (cat === 'ALAT') {
             alatItems.push({
               namaBarang: it.uraian,
-              volume: itVol,
+              volume: execRabVol,
               satuan: it.satuan,
               hargaSatuan: it.hargaSatuan,
-              jumlah: itJml,
+              jumlah: execRabJml,
             });
           } else if (cat === 'SMKK' || cat === 'LAINNYA') {
             smkkItems.push({
               namaBarang: it.uraian,
-              volume: itVol,
+              volume: execRabVol,
               satuan: it.satuan,
               hargaSatuan: it.hargaSatuan,
-              jumlah: itJml,
+              jumlah: execRabJml,
             });
-          } else if (matchingAhsp.length === 0) {
-            // BAHAN
+          } else {
             bahanItems.push({
               namaBarang: it.uraian,
-              volume: itVol,
+              volume: execRabVol,
               satuan: it.satuan,
               hargaSatuan: it.hargaSatuan,
-              jumlah: itJml,
+              jumlah: execRabJml,
             });
           }
-        });
-      }
+        }
+      });
 
       totalWageAmountForWeek += divUpahTotal;
 

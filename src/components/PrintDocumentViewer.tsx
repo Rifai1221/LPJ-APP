@@ -1482,16 +1482,16 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                           const isServiceOrLabor =
                             kw.tipe === 'UPAH' ||
                             kw.tipe === 'KONSULTAN' ||
-                            (kw.tipe === 'OPERASIONAL' && !kw.namaToko) ||
                             /upah|tukang|pekerja|jasa|konsultan|perencana|pengawas|honor|administrasi|adm\b/i.test(
-                              `${kw.uraian} ${kw.penerimaPekerjaan} ${kw.penerimaNama}`
+                              `${kw.noBukti} ${kw.uraian} ${kw.penerimaPekerjaan} ${kw.penerimaNama}`
                             );
-                          const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Nama Barang';
+                          const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
+                          const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
 
                           return (
                             <div className="pt-2 border-t border-slate-300">
                               <p className="font-sans font-bold text-[11px] text-slate-800 mb-1.5">
-                                Rincian Barang / Layanan Terlampir:
+                                {sectionHeader}
                               </p>
                               <table className="w-full border-collapse border border-black font-sans text-xs">
                                 <thead>
