@@ -1869,9 +1869,22 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                   const manDivs = divisions.filter((d) => d.kategori === 'MANAJEMEN');
                   const totBobot = divisions.reduce((s, d) => s + (Number(d.bobotTotal) || 0), 0);
                   const cappedTotBobot = Math.abs(totBobot - 100) <= 0.05 ? 100 : Math.min(100, Math.round(totBobot * 1000) / 1000);
-                  const totLalu = divisions.reduce((s, d) => s + d.prestasiMingguLalu, 0);
-                  const totIni = divisions.reduce((s, d) => s + d.prestasiMingguIni, 0);
-                  const totSdIni = Math.min(100, Math.round(divisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 1000) / 1000);
+                  const totLalu =
+                    week.customTotalMingguLalu !== undefined && week.customTotalMingguLalu !== null
+                      ? week.customTotalMingguLalu
+                      : divisions.reduce((s, d) => s + d.prestasiMingguLalu, 0);
+
+                  const totIni =
+                    week.customTotalMingguIni !== undefined && week.customTotalMingguIni !== null
+                      ? week.customTotalMingguIni
+                      : divisions.reduce((s, d) => s + d.prestasiMingguIni, 0);
+
+                  const calculatedTotSd = Math.min(100, Math.round((totLalu + totIni) * 1000) / 1000);
+                  const totSdIni =
+                    week.customTotalSdMingguIni !== undefined && week.customTotalSdMingguIni !== null
+                      ? week.customTotalSdMingguIni
+                      : calculatedTotSd;
+
                   const activeRealisasi = week.bobotRealisasi !== undefined && week.bobotRealisasi !== null ? week.bobotRealisasi : totSdIni;
                   const dev = Math.round((activeRealisasi - week.bobotRencana) * 1000) / 1000;
                   const isFaster = dev >= 0;

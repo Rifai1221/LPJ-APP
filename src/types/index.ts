@@ -299,6 +299,9 @@ export interface ProjectProgressWeek {
   sisaWaktuMinggu?: number; // e.g. 13 Minggu
   divisions?: DivisionProgressItem[];
   photos?: ProgressPhotoItem[];
+  customTotalMingguLalu?: number; // optional manual override for TOTAL Prestasi Minggu Lalu
+  customTotalMingguIni?: number;  // optional manual override for TOTAL Prestasi Minggu Ini
+  customTotalSdMingguIni?: number; // optional manual override for TOTAL Prestasi s.d Minggu Ini
 }
 
 export interface RabSubItem {

@@ -113,6 +113,11 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   const [customRealisasiStr, setCustomRealisasiStr] = useState<Record<number, string>>({});
   const [customTargetStr, setCustomTargetStr] = useState<Record<number, string>>({});
 
+  // States for manual override of Table Footer Totals (Minggu Lalu & Minggu Ini)
+  const [isEditingTotalFooter, setIsEditingTotalFooter] = useState<boolean>(false);
+  const [customTotalMingguLaluStr, setCustomTotalMingguLaluStr] = useState<Record<number, string>>({});
+  const [customTotalMingguIniStr, setCustomTotalMingguIniStr] = useState<Record<number, string>>({});
+
   // States for manual input, edit, and delete of week transactions
   const [isTxModalOpen, setIsTxModalOpen] = useState<boolean>(false);
   const [editingTx, setEditingTx] = useState<BkuTransaction | null>(null);
@@ -493,9 +498,144 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   // Tetap terkunci di 100,00% jika berada dalam toleransi pembulatan Excel
   const cappedTotalBobot = isBobotWithinExcelTolerance ? 100 : Math.min(100, roundedRawTotalBobot);
 
-  const totalMingguLalu = divisions.reduce((s, d) => s + d.prestasiMingguLalu, 0);
-  const totalMingguIni = divisions.reduce((s, d) => s + d.prestasiMingguIni, 0);
-  const totalSdMingguIni = Math.min(100, Math.round(divisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 1000) / 1000);
+  const rawTotalMingguLalu = divisions.reduce((s, d) => s + d.prestasiMingguLalu, 0);
+  const rawTotalMingguIni = divisions.reduce((s, d) => s + d.prestasiMingguIni, 0);
+
+  // Allow manual override for totals (e.g. to match Excel internal rounding discrepancy)
+  const totalMingguLalu =
+    currentWeek.customTotalMingguLalu !== undefined && currentWeek.customTotalMingguLalu !== null
+      ? currentWeek.customTotalMingguLalu
+      : rawTotalMingguLalu;
+
+  const totalMingguIni =
+    currentWeek.customTotalMingguIni !== undefined && currentWeek.customTotalMingguIni !== null
+      ? currentWeek.customTotalMingguIni
+      : rawTotalMingguIni;
+
+  const rawTotalSdMingguIni = Math.min(100, Math.round((totalMingguLalu + totalMingguIni) * 1000) / 1000);
+  const totalSdMingguIni =
+    currentWeek.customTotalSdMingguIni !== undefined && currentWeek.customTotalSdMingguIni !== null
+      ? currentWeek.customTotalSdMingguIni
+      : rawTotalSdMingguIni;
+
+  // Handler for manual override of Total Minggu Lalu
+  const handleCustomTotalMingguLaluChange = (valStr: string) => {
+    setCustomTotalMingguLaluStr((prev) => ({ ...prev, [selectedWeekNum]: valStr }));
+    const val = parseFloat(valStr);
+    const newTotLalu = isNaN(val) ? 0 : Math.max(0, Math.round(val * 1000) / 1000);
+    const newTotSd = Math.min(100, Math.round((newTotLalu + totalMingguIni) * 1000) / 1000);
+
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          customTotalMingguLalu: newTotLalu,
+          customTotalSdMingguIni: newTotSd,
+          bobotRealisasi: newTotSd,
+          deviasi: Math.round((newTotSd - (w.bobotRencana || 0)) * 1000) / 1000,
+        };
+      }
+      return w;
+    });
+    onUpdateWeeks(updatedAllWeeks);
+  };
+
+  const handleResetTotalMingguLalu = () => {
+    setCustomTotalMingguLaluStr((prev) => {
+      const copy = { ...prev };
+      delete copy[selectedWeekNum];
+      return copy;
+    });
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        const copy = { ...w };
+        delete copy.customTotalMingguLalu;
+        const newTotSd = Math.min(100, Math.round((rawTotalMingguLalu + totalMingguIni) * 1000) / 1000);
+        copy.customTotalSdMingguIni = newTotSd;
+        copy.bobotRealisasi = newTotSd;
+        copy.deviasi = Math.round((newTotSd - (w.bobotRencana || 0)) * 1000) / 1000;
+        return copy;
+      }
+      return w;
+    });
+    onUpdateWeeks(updatedAllWeeks);
+  };
+
+  // Handler for manual override of Total Minggu Ini
+  const handleCustomTotalMingguIniChange = (valStr: string) => {
+    setCustomTotalMingguIniStr((prev) => ({ ...prev, [selectedWeekNum]: valStr }));
+    const val = parseFloat(valStr);
+    const newTotIni = isNaN(val) ? 0 : Math.max(0, Math.round(val * 1000) / 1000);
+    const newTotSd = Math.min(100, Math.round((totalMingguLalu + newTotIni) * 1000) / 1000);
+
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          customTotalMingguIni: newTotIni,
+          customTotalSdMingguIni: newTotSd,
+          bobotRealisasi: newTotSd,
+          deviasi: Math.round((newTotSd - (w.bobotRencana || 0)) * 1000) / 1000,
+        };
+      }
+      return w;
+    });
+    onUpdateWeeks(updatedAllWeeks);
+  };
+
+  const handleResetTotalMingguIni = () => {
+    setCustomTotalMingguIniStr((prev) => {
+      const copy = { ...prev };
+      delete copy[selectedWeekNum];
+      return copy;
+    });
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        const copy = { ...w };
+        delete copy.customTotalMingguIni;
+        const newTotSd = Math.min(100, Math.round((totalMingguLalu + rawTotalMingguIni) * 1000) / 1000);
+        copy.customTotalSdMingguIni = newTotSd;
+        copy.bobotRealisasi = newTotSd;
+        copy.deviasi = Math.round((newTotSd - (w.bobotRencana || 0)) * 1000) / 1000;
+        return copy;
+      }
+      return w;
+    });
+    onUpdateWeeks(updatedAllWeeks);
+  };
+
+  // Handler for manual override of Total s.d Minggu Ini
+  const handleCustomTotalSdMingguIniChange = (valStr: string) => {
+    const val = parseFloat(valStr);
+    const newTotSd = isNaN(val) ? 0 : Math.max(0, Math.min(100, Math.round(val * 1000) / 1000));
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          customTotalSdMingguIni: newTotSd,
+          bobotRealisasi: newTotSd,
+          deviasi: Math.round((newTotSd - (w.bobotRencana || 0)) * 1000) / 1000,
+        };
+      }
+      return w;
+    });
+    onUpdateWeeks(updatedAllWeeks);
+  };
+
+  const handleResetTotalSdMingguIni = () => {
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        const copy = { ...w };
+        delete copy.customTotalSdMingguIni;
+        const calc = Math.min(100, Math.round((totalMingguLalu + totalMingguIni) * 1000) / 1000);
+        copy.bobotRealisasi = calc;
+        copy.deviasi = Math.round((calc - (w.bobotRencana || 0)) * 1000) / 1000;
+        return copy;
+      }
+      return w;
+    });
+    onUpdateWeeks(updatedAllWeeks);
+  };
 
   // Active Realisasi & Target: user can adjust either manually or use table calculations
   const activeRealisasi =
@@ -1144,6 +1284,21 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
           >
             <Sliders className="w-4 h-4 text-amber-500" />
             <span>{isEditingBobotMaster ? 'Kunci Nilai Bobot %' : 'Sesuaikan Bobot %'}</span>
+          </button>
+
+          {/* Button to toggle Adjust Total Row */}
+          <button
+            type="button"
+            onClick={() => setIsEditingTotalFooter(!isEditingTotalFooter)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer ${
+              isEditingTotalFooter
+                ? 'bg-blue-700 hover:bg-blue-800 text-white'
+                : 'bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300'
+            }`}
+            title="Klik untuk menyesuaikan angka total di baris paling bawah secara langsung agar 100% klop dengan hasil cetak Excel"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>{isEditingTotalFooter ? 'Kunci Angka Total' : 'Sesuaikan Total'}</span>
           </button>
 
           {isEditingBobotMaster && !isBobotBalanced && (
@@ -2077,14 +2232,116 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                     )}
                   </div>
                 </td>
-                <td className="py-3 px-3 border border-slate-300 text-right font-mono text-slate-700">
-                  {totalMingguLalu > 0 ? `${formatProg(totalMingguLalu)}%` : '-'}
+                <td className="py-3 px-3 border border-slate-300 text-right font-mono text-slate-700 bg-amber-50/20">
+                  <div className="flex flex-col items-end gap-1">
+                    {isEditingTotalFooter ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          step={decimalPrecision === 3 ? '0.001' : '0.01'}
+                          min="0"
+                          max="100"
+                          value={
+                            customTotalMingguLaluStr[selectedWeekNum] !== undefined
+                              ? customTotalMingguLaluStr[selectedWeekNum]
+                              : currentWeek.customTotalMingguLalu !== undefined
+                              ? currentWeek.customTotalMingguLalu
+                              : totalMingguLalu > 0 ? totalMingguLalu : ''
+                          }
+                          onChange={(e) => handleCustomTotalMingguLaluChange(e.target.value)}
+                          placeholder={decimalPrecision === 3 ? '0,000' : '0,00'}
+                          className="w-20 text-right font-mono font-bold text-amber-950 px-1.5 py-0.5 bg-white border border-amber-400 rounded focus:ring-1 focus:ring-amber-500 focus:outline-hidden text-xs"
+                        />
+                        <span className="text-[10px] text-amber-700 font-bold">%</span>
+                      </div>
+                    ) : (
+                      <span className="font-extrabold">
+                        {totalMingguLalu > 0 ? `${formatProg(totalMingguLalu)}%` : '-'}
+                      </span>
+                    )}
+                    {currentWeek.customTotalMingguLalu !== undefined && (
+                      <button
+                        type="button"
+                        onClick={handleResetTotalMingguLalu}
+                        title="Kembalikan total Minggu Lalu ke hasil hitung otomatis tabel"
+                        className="text-[9px] text-amber-700 hover:text-amber-900 bg-amber-100 px-1.5 py-0.5 rounded cursor-pointer transition font-medium"
+                      >
+                        Reset Auto ({formatProg(rawTotalMingguLalu)}%)
+                      </button>
+                    )}
+                  </div>
                 </td>
                 <td className="py-3 px-3 border border-slate-300 text-right font-mono text-blue-900 bg-blue-100/70 font-extrabold">
-                  {totalMingguIni > 0 ? `${formatProg(totalMingguIni)}%` : '-'}
+                  <div className="flex flex-col items-end gap-1">
+                    {isEditingTotalFooter ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          step={decimalPrecision === 3 ? '0.001' : '0.01'}
+                          min="0"
+                          max="100"
+                          value={
+                            customTotalMingguIniStr[selectedWeekNum] !== undefined
+                              ? customTotalMingguIniStr[selectedWeekNum]
+                              : currentWeek.customTotalMingguIni !== undefined
+                              ? currentWeek.customTotalMingguIni
+                              : totalMingguIni > 0 ? totalMingguIni : ''
+                          }
+                          onChange={(e) => handleCustomTotalMingguIniChange(e.target.value)}
+                          placeholder={decimalPrecision === 3 ? '0,000' : '0,00'}
+                          className="w-20 text-right font-mono font-bold text-blue-950 px-1.5 py-0.5 bg-white border border-blue-400 rounded focus:ring-1 focus:ring-blue-500 focus:outline-hidden text-xs"
+                        />
+                        <span className="text-[10px] text-blue-700 font-bold">%</span>
+                      </div>
+                    ) : (
+                      <span className="font-extrabold text-blue-950">
+                        {totalMingguIni > 0 ? `${formatProg(totalMingguIni)}%` : '-'}
+                      </span>
+                    )}
+                    {currentWeek.customTotalMingguIni !== undefined && (
+                      <button
+                        type="button"
+                        onClick={handleResetTotalMingguIni}
+                        title="Kembalikan total Minggu Ini ke hasil hitung otomatis tabel"
+                        className="text-[9px] text-blue-700 hover:text-blue-900 bg-blue-200/80 px-1.5 py-0.5 rounded cursor-pointer transition font-medium"
+                      >
+                        Reset Auto ({formatProg(rawTotalMingguIni)}%)
+                      </button>
+                    )}
+                  </div>
                 </td>
                 <td className="py-3 px-3 border border-slate-300 text-right font-mono text-slate-950 bg-slate-200/80 font-black">
-                  {formatProg(totalSdMingguIni)}%
+                  <div className="flex flex-col items-end gap-1">
+                    {isEditingTotalFooter ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          step={decimalPrecision === 3 ? '0.001' : '0.01'}
+                          min="0"
+                          max="100"
+                          value={totalSdMingguIni > 0 ? totalSdMingguIni : ''}
+                          onChange={(e) => handleCustomTotalSdMingguIniChange(e.target.value)}
+                          placeholder={decimalPrecision === 3 ? '0,000' : '0,00'}
+                          className="w-20 text-right font-mono font-black text-slate-950 px-1.5 py-0.5 bg-white border border-slate-500 rounded focus:ring-1 focus:ring-slate-700 focus:outline-hidden text-xs"
+                        />
+                        <span className="text-[10px] text-slate-700 font-bold">%</span>
+                      </div>
+                    ) : (
+                      <span className="font-black text-slate-950">
+                        {formatProg(totalSdMingguIni)}%
+                      </span>
+                    )}
+                    {currentWeek.customTotalSdMingguIni !== undefined && (
+                      <button
+                        type="button"
+                        onClick={handleResetTotalSdMingguIni}
+                        title="Kembalikan total s.d Minggu Ini ke hitungan otomatis (Minggu Lalu + Minggu Ini)"
+                        className="text-[9px] text-slate-700 hover:text-slate-900 bg-slate-300 px-1.5 py-0.5 rounded cursor-pointer transition font-medium"
+                      >
+                        Reset Auto ({formatProg(rawTotalSdMingguIni)}%)
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             </tbody>
