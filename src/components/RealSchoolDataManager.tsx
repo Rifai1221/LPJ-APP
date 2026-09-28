@@ -261,6 +261,95 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
     setEditingDivision(null);
   };
 
+  // Auto-absorb 100% Pagu to all divisions proportionally, eliminating any rounding errors down to Rp 0.00
+  const handleScaleAllToPagu = () => {
+    if (!activePagu || activePagu <= 0) {
+      alert('Pagu anggaran harus lebih besar dari 0.');
+      return;
+    }
+
+    if (realData.divisions.length === 0) return;
+
+    // Check if sum of bobot is > 0 or if we use subTotals
+    const sumBobot = realData.divisions.reduce((s, d) => s + (d.bobotPersen || 0), 0);
+    const sumSubTotal = realData.divisions.reduce((s, d) => s + (d.subTotal || 0), 0);
+
+    let scaledDivisions = [];
+    let allocatedTotalRp = 0;
+
+    if (sumBobot > 0) {
+      // Scale by existing bobot ratios
+      scaledDivisions = realData.divisions.map((d) => {
+        const normalizedBobot = parseFloat(((d.bobotPersen / sumBobot) * 100).toFixed(2));
+        const subTotalRp = Math.round(((d.bobotPersen / sumBobot) * activePagu) * 100) / 100;
+        allocatedTotalRp += subTotalRp;
+        return {
+          ...d,
+          bobotPersen: normalizedBobot,
+          subTotal: subTotalRp,
+        };
+      });
+    } else if (sumSubTotal > 0) {
+      // Scale by existing subTotals
+      scaledDivisions = realData.divisions.map((d) => {
+        const ratio = d.subTotal / sumSubTotal;
+        const normalizedBobot = parseFloat((ratio * 100).toFixed(2));
+        const subTotalRp = Math.round((ratio * activePagu) * 100) / 100;
+        allocatedTotalRp += subTotalRp;
+        return {
+          ...d,
+          bobotPersen: normalizedBobot,
+          subTotal: subTotalRp,
+        };
+      });
+    } else {
+      // Equal distribution if all 0
+      const count = realData.divisions.length;
+      const equalBobot = parseFloat((100 / count).toFixed(2));
+      const equalRp = Math.round((activePagu / count) * 100) / 100;
+      scaledDivisions = realData.divisions.map((d) => {
+        allocatedTotalRp += equalRp;
+        return {
+          ...d,
+          bobotPersen: equalBobot,
+          subTotal: equalRp,
+        };
+      });
+    }
+
+    // Precise rounding reconciliation (selisih desimal diserap ke divisi dengan nominal terbesar)
+    let maxIdx = 0;
+    let maxVal = 0;
+    scaledDivisions.forEach((d, idx) => {
+      if (d.subTotal > maxVal) {
+        maxVal = d.subTotal;
+        maxIdx = idx;
+      }
+    });
+
+    const diffRp = Math.round((activePagu - allocatedTotalRp) * 100) / 100;
+    if (Math.abs(diffRp) > 0 && Math.abs(diffRp) <= 500) {
+      scaledDivisions[maxIdx].subTotal = Math.round((scaledDivisions[maxIdx].subTotal + diffRp) * 100) / 100;
+    }
+
+    // Exact 100.00% bobot reconciliation
+    const finalBobotSum = scaledDivisions.reduce((s, d) => s + d.bobotPersen, 0);
+    const diffBobot = Math.round((100 - finalBobotSum) * 100) / 100;
+    if (Math.abs(diffBobot) > 0 && Math.abs(diffBobot) <= 0.05) {
+      scaledDivisions[maxIdx].bobotPersen = Math.round((scaledDivisions[maxIdx].bobotPersen + diffBobot) * 100) / 100;
+    }
+
+    const finalTotal = scaledDivisions.reduce((s, d) => s + d.subTotal, 0);
+
+    onUpdateRealData({
+      ...realData,
+      divisions: scaledDivisions,
+      totalNilaiRab: finalTotal,
+      paguAnggaran: activePagu,
+      biayaPerM2: realData.luasBangunanM2 > 0 ? finalTotal / realData.luasBangunanM2 : 0,
+    });
+  };
+
   // Direct table edit: Edit Jumlah Harga (Rp) of a division -> AUTO CALCULATE BOBOT (%) DARI PAGU ANGGARAN
   const handleDivisionSubTotalChange = (divId: string, valStr: string) => {
     const val = parseFloat(valStr) || 0;
@@ -330,11 +419,20 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
       bobotPersen: parseFloat(((d.subTotal / targetTotal) * 100).toFixed(2)),
     }));
 
-    // Fix 0.01 rounding difference on last item if needed
+    // Fix 0.01 rounding difference on largest item if needed
+    let maxIdx = 0;
+    let maxVal = 0;
+    rebalanced.forEach((d, idx) => {
+      if (d.subTotal > maxVal) {
+        maxVal = d.subTotal;
+        maxIdx = idx;
+      }
+    });
+
     const sumBobot = rebalanced.reduce((s, d) => s + d.bobotPersen, 0);
     const diff = Math.round((100 - sumBobot) * 100) / 100;
     if (Math.abs(diff) > 0 && Math.abs(diff) <= 0.05 && rebalanced.length > 0) {
-      rebalanced[rebalanced.length - 1].bobotPersen = Math.round((rebalanced[rebalanced.length - 1].bobotPersen + diff) * 100) / 100;
+      rebalanced[maxIdx].bobotPersen = Math.round((rebalanced[maxIdx].bobotPersen + diff) * 100) / 100;
     }
 
     onUpdateRealData({
@@ -1297,12 +1395,12 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
             <div>
               <span className="text-slate-400 font-semibold text-[11px] block">STATUS ALOKASI / SISA PAGU:</span>
               <div className="flex items-center gap-1.5 mt-0.5">
-                {Math.abs(sisaPagu) < 1 ? (
+                {Math.abs(sisaPagu) <= 10 || Math.abs(currentTotalRab - activePagu) <= 10 ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                     <CheckCircle className="w-3 h-3 text-emerald-400" />
-                    Pas Sesuai Pagu (100.00%)
+                    Pas Sesuai Pagu (100.00% Terserap)
                   </span>
-                ) : sisaPagu > 0 ? (
+                ) : sisaPagu > 10 ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                     Sisa Pagu: {formatRupiah(sisaPagu)} ({((sisaPagu / activePagu) * 100).toFixed(2)}%)
                   </span>
@@ -1324,6 +1422,16 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleScaleAllToPagu}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm transition cursor-pointer"
+                title="Serap penuh 100% Pagu Anggaran ke seluruh divisi secara proporsional tanpa sisa selisih desimal"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>Serap Penuh Pagu (100%)</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsEditingRekapTable(!isEditingRekapTable)}
