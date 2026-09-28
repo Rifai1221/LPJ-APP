@@ -37,7 +37,7 @@ interface WageManagerProps {
   onUpdateWageReports: (reports: WeeklyWageReport[]) => void;
   onUpdateWorkers: (workers: WorkerItem[]) => void;
   onUpdateKwitansiList?: (list: any[]) => void;
-  onOpenPrintModal: (weekNum?: number) => void;
+  onOpenPrintModal: (weekNum?: number, mode?: string) => void;
 }
 
 export const WageManager: React.FC<WageManagerProps> = ({
@@ -55,6 +55,7 @@ export const WageManager: React.FC<WageManagerProps> = ({
 }) => {
   const [selectedWeekNum, setSelectedWeekNum] = useState<number>(1);
   const [activeTab, setActiveTab] = useState<'absensi' | 'borongan' | 'master'>('absensi');
+  const [masterFilter, setMasterFilter] = useState<'ALL' | 'HARIAN' | 'BORONGAN'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddingWorker, setIsAddingWorker] = useState(false);
   const [editingWorker, setEditingWorker] = useState<WorkerItem | null>(null);
@@ -566,15 +567,105 @@ export const WageManager: React.FC<WageManagerProps> = ({
 
   // Filtered workers list for Master table
   const filteredWorkers = useMemo(() => {
-    if (!searchQuery.trim()) return workers;
+    let list = workers;
+    if (masterFilter === 'HARIAN') {
+      list = list.filter((w) => !w.kategoriPenugasan || w.kategoriPenugasan === 'HARIAN' || w.kategoriPenugasan === 'SEMUA');
+    } else if (masterFilter === 'BORONGAN') {
+      list = list.filter((w) => w.kategoriPenugasan === 'BORONGAN' || w.kategoriPenugasan === 'SEMUA');
+    }
+
+    if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase();
-    return workers.filter(
+    return list.filter(
       (w) =>
         w.nama.toLowerCase().includes(q) ||
         (w.peranLabel || w.peran).toLowerCase().includes(q) ||
         w.domisili.toLowerCase().includes(q)
     );
-  }, [workers, searchQuery]);
+  }, [workers, masterFilter, searchQuery]);
+
+  // Handler to generate standard Borongan Core Team (1 Mandor, 1 KT, 2 Tukang, 3 Pekerja)
+  const handleSetupStandardBoronganTeam = () => {
+    const boronganPreset: WorkerItem[] = [
+      {
+        id: `w-bor-mandor-${Date.now()}`,
+        nama: 'Budiman (Mandor)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'MANDOR',
+        peranLabel: 'Ketua Kelompok / Mandor',
+        upahHarian: getAhspWageRateForRole('MANDOR', 'Mandor', ahspWageMap, 200000),
+        kategoriPenugasan: 'BORONGAN',
+      },
+      {
+        id: `w-bor-kt-${Date.now()}`,
+        nama: 'Suparman (Kepala Tukang)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'KT',
+        peranLabel: 'Kepala Tukang',
+        upahHarian: getAhspWageRateForRole('KT', 'Kepala Tukang', ahspWageMap, 199782),
+        kategoriPenugasan: 'BORONGAN',
+      },
+      {
+        id: `w-bor-t1-${Date.now()}`,
+        nama: 'Agus Santoso (Tukang 1)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'T',
+        peranLabel: 'Tukang Batu & Konstruksi',
+        upahHarian: getAhspWageRateForRole('T', 'Tukang', ahspWageMap, 183834),
+        kategoriPenugasan: 'BORONGAN',
+      },
+      {
+        id: `w-bor-t2-${Date.now()}`,
+        nama: 'Bambang Irawan (Tukang 2)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'T',
+        peranLabel: 'Tukang Kayu & Rangka',
+        upahHarian: getAhspWageRateForRole('T', 'Tukang', ahspWageMap, 183834),
+        kategoriPenugasan: 'BORONGAN',
+      },
+      {
+        id: `w-bor-p1-${Date.now()}`,
+        nama: 'Dedi Kurniawan (Pekerja 1)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'P',
+        peranLabel: 'Pekerja Lapangan / Laden',
+        upahHarian: getAhspWageRateForRole('P', 'Pekerja', ahspWageMap, 174748),
+        kategoriPenugasan: 'BORONGAN',
+      },
+      {
+        id: `w-bor-p2-${Date.now()}`,
+        nama: 'Eko Prasetyo (Pekerja 2)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'P',
+        peranLabel: 'Pekerja Lapangan / Laden',
+        upahHarian: getAhspWageRateForRole('P', 'Pekerja', ahspWageMap, 174748),
+        kategoriPenugasan: 'BORONGAN',
+      },
+      {
+        id: `w-bor-p3-${Date.now()}`,
+        nama: 'Hadi Saputra (Pekerja 3)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'P',
+        peranLabel: 'Pekerja Lapangan / Laden',
+        upahHarian: getAhspWageRateForRole('P', 'Pekerja', ahspWageMap, 174748),
+        kategoriPenugasan: 'BORONGAN',
+      },
+    ];
+
+    // Merge or replace borongan team
+    const nonBorongan = workers.filter((w) => w.kategoriPenugasan !== 'BORONGAN');
+    const updated = [...nonBorongan, ...boronganPreset];
+    onUpdateWorkers(updated);
+    setAutoGenMsg('✅ Tim Inti Borongan (1 Mandor, 1 KT, 2 Tukang, 3 Pekerja) berhasil dibuat sesuai standar tarif AHSP.');
+    setTimeout(() => setAutoGenMsg(null), 5000);
+  };
 
   const handleToggleDay = (workerId: string, dayIndex: number) => {
     const updatedReports = wageReports.map((rep) => {

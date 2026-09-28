@@ -126,6 +126,7 @@ export interface WorkerItem {
   peran: string; // 'KT' | 'T' | 'P' or custom job titles e.g. 'Mandor', 'Tukang Cat', 'Tukang Besi', 'Operator Alat'
   peranLabel?: string; // Custom label description
   upahHarian: number;
+  kategoriPenugasan?: 'SEMUA' | 'HARIAN' | 'BORONGAN';
 }
 
 export interface StoreVendor {

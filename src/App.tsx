@@ -1079,7 +1079,7 @@ Lanjutkan pengosongan data transaksi?`)
             onUpdateWageReports={handleUpdateWageReports}
             onUpdateWorkers={handleUpdateWorkers}
             onUpdateKwitansiList={handleUpdateKwitansiList}
-            onOpenPrintModal={(weekNum) => handleOpenPrint('UPAH', undefined, weekNum)}
+            onOpenPrintModal={(weekNum, mode) => handleOpenPrint(mode || 'UPAH', undefined, weekNum)}
           />
         )}
 

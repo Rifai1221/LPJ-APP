@@ -198,7 +198,8 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
             <option value="BKB">📗 Buku Kas Bank (BKB)</option>
             <option value="KWITANSI">🧾 Kwitansi Bukti Pembayaran</option>
             <option value="SPB">📋 Surat Permintaan Bayar (SPB)</option>
-            <option value="UPAH">👥 Laporan Upah Kerja Mingguan</option>
+            <option value="UPAH">👥 Laporan Upah Kerja Harian (HOK)</option>
+            <option value="BORONGAN">🏗️ SPJ Upah Borongan Tenaga Kerja</option>
             <option value="PROGRESS">📈 Laporan Kemajuan Fisik & Bobot</option>
             <option value="FOTO_PROGRESS">📷 Dokumentasi Foto Fisik Mingguan</option>
             <option value="PAJAK">🏛️ Rekapitulasi Pajak</option>
@@ -1877,6 +1878,232 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                     </div>
                   </div>
                 ))}
+            </div>
+          )}
+
+          {/* ========================================================
+              7B. DOKUMEN SPJ PEMBAYARAN UPAH BORONGAN TENAGA KERJA (OPNAME FISIK)
+             ======================================================== */}
+          {(docType === 'ALL' || docType === 'BORONGAN') && (
+            <div className="space-y-8">
+              {wageReports
+                .filter((r) => !selectedWeekNum || r.mingguKe === selectedWeekNum)
+                .map((wage) => {
+                  const boronganUraianText = wage.boronganUraian || `Pekerjaan Konstruksi Fisik & Pasangan (Minggu Ke-${wage.mingguKe})`;
+                  const mandorNama = wage.penerimaNama || 'Budiman';
+                  const spkNo = wage.boronganNoSpk || `SPK-BOR/${String(wage.mingguKe).padStart(2, '0')}/${school.tahunAnggaran || '2026'}`;
+                  const nominalBorongan = wage.totalUpah || 0;
+
+                  // Ambil anggota tim pekerja (1 Mandor, 1 KT, 2 Tukang, 3 Pekerja + ekstra jika over-capacity)
+                  const boronganAttendance = wage.attendance && wage.attendance.length > 0 ? wage.attendance : [];
+
+                  return (
+                    <div key={`print-borongan-${wage.id}`} className="space-y-8">
+                      {/* LEMBAR 1: BERITA ACARA PEMBAYARAN & OPNAME FISIK UPAH BORONGAN */}
+                      <div className="page-break bg-white p-8 min-h-[297mm] font-sans text-[10.5px] space-y-5 border border-slate-300 print:border-none flex flex-col justify-between">
+                        <div className="space-y-4">
+                          <StandardKopSurat school={school} />
+
+                          <div className="text-center space-y-1 pt-2">
+                            <h3 className="text-xs font-bold uppercase underline">
+                              BERITA ACARA PEMBAYARAN UPAH BORONGAN TENAGA KERJA
+                            </h3>
+                            <p className="text-[10px] font-mono text-slate-700">
+                              Nomor : BAP-BOR/{String(wage.mingguKe).padStart(2, '0')}/{school.tahunAnggaran || '2026'}
+                            </p>
+                          </div>
+
+                          <p className="text-justify leading-relaxed">
+                            Pada hari ini, <strong>{wage.periodeEnd}</strong>, bertempat di <strong>{school.namaSekolah}</strong>, kami yang bertanda tangan di bawah ini:
+                          </p>
+
+                          <div className="space-y-2 pl-4">
+                            <div className="grid grid-cols-12 gap-2">
+                              <span className="col-span-1 font-bold">1.</span>
+                              <span className="col-span-3 font-semibold">Nama</span>
+                              <span className="col-span-8">: <strong>{school.namaKetuaP2SP}</strong></span>
+                            </div>
+                            <div className="grid grid-cols-12 gap-2">
+                              <span className="col-span-1"></span>
+                              <span className="col-span-3">Jabatan</span>
+                              <span className="col-span-8">: Ketua Tim Panitia Pembangunan Satuan Pendidikan (P2SP)</span>
+                            </div>
+                            <div className="grid grid-cols-12 gap-2">
+                              <span className="col-span-1"></span>
+                              <span className="col-span-3">Alamat</span>
+                              <span className="col-span-8">: {school.alamat}, {school.kabKota}</span>
+                            </div>
+                            <p className="text-[9.5px] italic text-slate-600 pl-6">
+                              Selanjutnya disebut sebagai <strong>PIHAK PERTAMA (Pemberi Tugas)</strong>.
+                            </p>
+
+                            <div className="grid grid-cols-12 gap-2 pt-2">
+                              <span className="col-span-1 font-bold">2.</span>
+                              <span className="col-span-3 font-semibold">Nama</span>
+                              <span className="col-span-8">: <strong>{mandorNama}</strong></span>
+                            </div>
+                            <div className="grid grid-cols-12 gap-2">
+                              <span className="col-span-1"></span>
+                              <span className="col-span-3">Jabatan</span>
+                              <span className="col-span-8">: Mandor / Ketua Kelompok Tenaga Kerja Borongan</span>
+                            </div>
+                            <div className="grid grid-cols-12 gap-2">
+                              <span className="col-span-1"></span>
+                              <span className="col-span-3">Alamat</span>
+                              <span className="col-span-8">: {school.desa || school.lokasi || school.kabKota}</span>
+                            </div>
+                            <p className="text-[9.5px] italic text-slate-600 pl-6">
+                              Selanjutnya disebut sebagai <strong>PIHAK KEDUA (Penerima Borongan)</strong>.
+                            </p>
+                          </div>
+
+                          <div className="space-y-2 text-justify leading-relaxed pt-1">
+                            <p>
+                              Berdasarkan hasil pemeriksaan dan opname prestasi kemajuan fisik di lapangan untuk pekerjaan <strong>{school.pekerjaan?.toUpperCase() || 'REVITALISASI SEKOLAH'}</strong> pada periode <strong>{wage.periodeStart} s/d {wage.periodeEnd} (Minggu Ke-{wage.mingguKe})</strong>, kedua belah pihak menyatakan sepakat:
+                            </p>
+                            <ol className="list-decimal pl-6 space-y-1.5">
+                              <li>
+                                <strong>PIHAK KEDUA</strong> telah menyelesaikan tahapan pekerjaan borongan berupa: <strong>{boronganUraianText}</strong> sesuai dengan spesifikasi teknis dan gambar kerja RAB.
+                              </li>
+                              <li>
+                                Atas hasil opname kemajuan fisik tersebut, <strong>PIHAK PERTAMA</strong> membayarkan upah borongan kepada <strong>PIHAK KEDUA</strong> sebesar:
+                                <div className="p-2.5 my-1.5 bg-slate-50 border border-slate-300 font-mono font-bold text-center text-xs">
+                                  {formatRupiah(nominalBorongan)}
+                                  <div className="text-[9.5px] font-sans font-normal italic text-slate-700 mt-0.5">
+                                    (Terbilang: {terbilangRupiah(nominalBorongan)})
+                                  </div>
+                                </div>
+                              </li>
+                              <li>
+                                <strong>PIHAK KEDUA</strong> bertanggung jawab penuh membagikan dan mendistribusikan upah tersebut kepada seluruh anggota kelompok tukang dan pekerja binaannya.
+                              </li>
+                            </ol>
+                          </div>
+                        </div>
+
+                        {/* Signatures */}
+                        <div className="grid grid-cols-3 gap-4 pt-4 text-center text-[9.5px] font-sans">
+                          <div>
+                            <p>PIHAK KEDUA</p>
+                            <p className="font-bold">Mandor / Ketua Kelompok</p>
+                            <div className="h-14" />
+                            <p className="font-bold underline uppercase">{mandorNama}</p>
+                          </div>
+                          <div>
+                            <p>Mengetahui / Memeriksa</p>
+                            <p className="font-bold">Tim Teknis / Pengawas Lapangan</p>
+                            <div className="h-14" />
+                            <p className="font-bold underline">{school.namaFasilitator || school.namaPelaksana || 'Pengawas Lapangan'}</p>
+                          </div>
+                          <div>
+                            <p>PIHAK PERTAMA</p>
+                            <p className="font-bold">Ketua P2SP</p>
+                            <div className="h-14" />
+                            <p className="font-bold underline uppercase">{school.namaKetuaP2SP}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* LEMBAR 2: DAFTAR TANDA TERIMA UPAH KELOMPOK TENAGA KERJA BORONGAN */}
+                      <div className="page-break bg-white p-8 min-h-[297mm] font-sans text-[10px] space-y-4 border border-slate-300 print:border-none flex flex-col justify-between">
+                        <div className="space-y-3">
+                          <StandardKopSurat school={school} />
+
+                          <div className="text-center font-bold uppercase space-y-0.5 pt-1">
+                            <h3 className="text-xs">DAFTAR TANDA TERIMA PEMBAGIAN UPAH KELOMPOK BORONGAN</h3>
+                            <p className="text-[10px] font-normal text-slate-700">
+                              PEKERJAAN: {school?.pekerjaan?.toUpperCase() || 'REVITALISASI SEKOLAH'} • MINGGU KE-{wage.mingguKe}
+                            </p>
+                            <p className="text-[9px] font-mono text-slate-500">
+                              Dasar SPK: {spkNo} • Periode: {wage.periodeStart} s/d {wage.periodeEnd}
+                            </p>
+                          </div>
+
+                          <div className="p-2 bg-slate-50 border border-slate-200 text-[9.5px] flex justify-between items-center">
+                            <div>
+                              <span>Uraian Pekerjaan Fisik: <strong>{boronganUraianText}</strong></span>
+                            </div>
+                            <div className="text-right font-mono font-bold">
+                              <span>Total Upah: {formatRupiah(nominalBorongan)}</span>
+                            </div>
+                          </div>
+
+                          <table className="w-full border-collapse border border-black text-[9px]">
+                            <thead>
+                              <tr className="bg-slate-100 text-center font-bold border border-black">
+                                <th className="border border-black p-1 w-7">NO</th>
+                                <th className="border border-black p-1 text-left">NAMA ANGGOTA TENAGA KERJA</th>
+                                <th className="border border-black p-1 w-28">KATEGORI / PERAN</th>
+                                <th className="border border-black p-1 w-20">TEMPAT TINGGAL</th>
+                                <th className="border border-black p-1 w-24 text-right">TARIF ACUAN AHSP</th>
+                                <th className="border border-black p-1 w-28 text-right">JUMLAH DITERIMA (RP)</th>
+                                <th className="border border-black p-1 w-28">TANDA TANGAN</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {boronganAttendance.map((att, idx) => (
+                                <tr key={att.workerId || idx} className="hover:bg-slate-50">
+                                  <td className="border border-black p-1 text-center font-mono">{idx + 1}</td>
+                                  <td className="border border-black p-1 font-bold">{att.nama}</td>
+                                  <td className="border border-black p-1 text-center">
+                                    <span className="font-semibold">
+                                      {idx === 0 ? 'Mandor / Ketua Kelompok' : att.peranLabel || att.peran}
+                                    </span>
+                                  </td>
+                                  <td className="border border-black p-1 text-center">{att.domisili || 'Dalam Desa'}</td>
+                                  <td className="border border-black p-1 text-right font-mono text-slate-600">
+                                    {formatRupiah(att.upahHarian, false)}
+                                  </td>
+                                  <td className="border border-black p-1 text-right font-mono font-bold">
+                                    {formatRupiah(att.totalUpah, false)}
+                                  </td>
+                                  <td className="border border-black p-1 text-left font-mono text-[8.5px] italic pl-2">
+                                    {idx + 1}. ....................
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className="font-bold bg-slate-100">
+                                <td colSpan={5} className="border border-black p-1.5 text-right uppercase">
+                                  TOTAL PENERIMAAN UPAH KELOMPOK BORONGAN:
+                                </td>
+                                <td className="border border-black p-1.5 text-right font-mono font-bold text-[10px]">
+                                  {formatRupiah(nominalBorongan, false)}
+                                </td>
+                                <td className="border border-black p-1.5 text-center text-[8px] italic font-semibold">
+                                  100% LUNAS & DITERIMA
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+
+                        {/* Signatures */}
+                        <div className="grid grid-cols-3 gap-4 pt-4 text-center text-[9px] font-sans">
+                          <div>
+                            <p>Mengetahui,</p>
+                            <p className="font-bold">Ketua P2SP</p>
+                            <div className="h-12" />
+                            <p className="font-bold underline uppercase">{school.namaKetuaP2SP}</p>
+                          </div>
+                          <div>
+                            <p>Lunas Dibayar Oleh,</p>
+                            <p className="font-bold">Bendahara P2SP</p>
+                            <div className="h-12" />
+                            <p className="font-bold underline uppercase">{school.namaBendahara}</p>
+                          </div>
+                          <div>
+                            <p>{school.kabKota}, {wage.periodeEnd}</p>
+                            <p className="font-bold">Ketua Kelompok / Mandor</p>
+                            <div className="h-12" />
+                            <p className="font-bold underline uppercase">{mandorNama}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           )}
 
