@@ -41,75 +41,136 @@ export function getDateInWeek(startDateIso: string, dayOffset: number) {
  * Mengubah banyaknya volume bahan menjadi bulat/wajar seperti pembelian riil di toko material
  * tanpa mengubah nominal total (jumlah Rp) sedikitpun agar 100% klop dengan RAB/Realisasi.
  */
+/**
+ * Smart Commercial Material Rounding & Aggregation:
+ * 1. Mengubah banyaknya volume bahan menjadi bulat/wajar seperti pembelian riil di toko material (Zak, m³, btg, lbr, dll).
+ * 2. Melakukan AGREGASI / PENGGABUNGAN barang sejenis dalam kwitansi yang sama, sehingga tidak ada barang yang muncul berulang kali dengan harga satuan berbeda.
+ * 3. Menghitung harga satuan rata-rata tertimbang (harmonized price) secara presisi sehingga total nominal tetap 100% klop dengan RAB.
+ */
 export function normalizeMaterialItems<T extends { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }>(
   rawItems: T[]
 ): T[] {
   if (!rawItems || rawItems.length === 0) return [];
 
-  return rawItems.map((item) => {
-    const rawVol = item.volume;
-    const rawJml = item.jumlah;
+  // 1. Standarisasi nama dan konversi satuan komersial dasar
+  const preProcessed = rawItems.map((item) => {
+    const rawVol = item.volume || 0;
+    const rawJml = item.jumlah || 0;
     const rawSatuan = (item.satuan || '').toLowerCase().trim();
-    const rawName = (item.namaBarang || '').toLowerCase();
+    const rawName = (item.namaBarang || '').trim();
+
+    let convertedVol = rawVol;
+    let convertedSatuan = item.satuan || 'unit';
+
+    // Semen Kg -> Zak (1 Zak = 40 kg standar AHSP/SNI)
+    if (/semen|pc\b|portland/i.test(rawName) && /kg|kilogram/i.test(rawSatuan)) {
+      convertedVol = rawVol / 40;
+      convertedSatuan = 'Zak';
+    } else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
+      convertedSatuan = /m3|m³/i.test(rawSatuan) ? 'm³' : 'm²';
+    }
+
+    return {
+      ...item,
+      namaBarang: rawName,
+      volume: convertedVol,
+      satuan: convertedSatuan,
+      jumlah: rawJml,
+    };
+  });
+
+  // 2. Kelompokkan barang sejenis (Grouping by normalized name and unit)
+  const groupMap = new Map<string, { items: typeof preProcessed; namaBarang: string; satuan: string }>();
+
+  preProcessed.forEach((item) => {
+    const normName = item.namaBarang.toLowerCase().replace(/\s+/g, ' ').trim();
+    const normSat = item.satuan.toLowerCase().replace(/\s+/g, ' ').trim();
+    const key = `${normName}__${normSat}`;
+
+    const existing = groupMap.get(key);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      groupMap.set(key, {
+        items: [item],
+        namaBarang: item.namaBarang,
+        satuan: item.satuan,
+      });
+    }
+  });
+
+  // 3. Gabungkan volume, nominal, dan hitung harga satuan seragam
+  const result: T[] = [];
+
+  groupMap.forEach((group) => {
+    const totalRawVol = group.items.reduce((s, it) => s + it.volume, 0);
+    const totalRawJml = group.items.reduce((s, it) => s + it.jumlah, 0);
+    const sampleItem = group.items[0];
+    const rawSatuan = (group.satuan || '').toLowerCase().trim();
+    const rawName = group.namaBarang.toLowerCase();
 
     let realisticVolume: number;
-    let realisticSatuan = item.satuan;
+    let realisticSatuan = group.satuan;
 
-    // 1. Convert Semen in Kg / kg -> Zak
-    if (/semen|pc\b|portland/i.test(rawName) && /kg|kilogram/i.test(rawSatuan)) {
-      realisticVolume = Math.max(1, Math.round(rawVol / 40));
+    // A. Semen (Zak)
+    if (/semen|pc\b|portland/i.test(rawName) && /zak|sak/i.test(rawSatuan)) {
+      realisticVolume = Math.max(1, Math.round(totalRawVol));
       realisticSatuan = 'Zak';
     }
-    // 2. Commercialize Pasir, Batu, Tanah in m3/m2 -> Integer m3/m2 (e.g. 0.7 m3 or 0.8 m3 -> 1 m3)
+    // B. Pasir, Batu, Tanah (m³)
     else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
-      realisticVolume = Math.max(1, Math.round(rawVol));
+      realisticVolume = Math.max(1, Math.round(totalRawVol));
+      realisticSatuan = /m3|m³/i.test(rawSatuan) ? 'm³' : 'm²';
     }
-    // 3. Discrete integer units (lembar, batang, sak/zak, buah, dus, klg, set, roll, unit, rit, btg, lbr)
+    // C. Unit diskrit: lembar, batang, buah, dus, klg, set, roll, unit, rit, dll.
     else if (
       /lbr|lembar|btg|batang|zak|sak|buah|bh|dus|box|kotak|ktk|unit|set|roll|rol|klg|kaleng|pail|drum|rit/i.test(rawSatuan) ||
       /triplek|multiplex|papan|kaso|balok|besi|helm|rompi|sepatu|sarung tangan|p3k|rambu|tali/i.test(rawName)
     ) {
-      if (rawVol <= 0.05) {
+      if (totalRawVol <= 0.05) {
         realisticVolume = 1;
-      } else if (rawVol < 1) {
+      } else if (totalRawVol < 1) {
         realisticVolume = 1;
         if (/m3|m³/.test(rawSatuan) && /kayu|balok|kaso|tiang/i.test(rawName)) {
           realisticSatuan = 'btg';
         }
       } else {
-        realisticVolume = Math.max(1, Math.round(rawVol));
+        realisticVolume = Math.max(1, Math.round(totalRawVol));
       }
     }
-    // 4. Weight / Volume in Kg or Liter
+    // D. Berat / Volume (Kg, Liter)
     else if (/kg|liter|ltr/i.test(rawSatuan)) {
-      if (rawVol < 0.5) {
+      if (totalRawVol < 0.5) {
         realisticVolume = 1;
         if (/cat/i.test(rawName)) realisticSatuan = 'klg';
         else if (/paku/i.test(rawName)) realisticSatuan = 'kg';
       } else {
-        realisticVolume = Math.max(1, Math.round(rawVol));
+        realisticVolume = Math.max(1, Math.round(totalRawVol));
       }
     }
-    // 5. Volume cubic / m2
+    // E. Kubikasi / Meter persegi
     else if (/m3|m³|m2|m²|m\b/i.test(rawSatuan)) {
-      realisticVolume = Math.max(1, Math.round(rawVol));
+      realisticVolume = Math.max(1, Math.round(totalRawVol));
     }
-    // 6. Default fallback
+    // F. Default fallback
     else {
-      realisticVolume = rawVol < 1 ? 1 : Math.round(rawVol);
+      realisticVolume = totalRawVol < 1 ? 1 : Math.round(totalRawVol);
     }
 
-    // Price Balancing: Reconcile hargaSatuan so realisticVolume * hargaSatuan = rawJml
-    const reconciledHargaSatuan = Math.max(1, Math.round((rawJml / realisticVolume) * 100) / 100);
+    // Price Balancing: Reconcile hargaSatuan agar realisticVolume * hargaSatuan = totalRawJml
+    const reconciledHargaSatuan = Math.max(1, Math.round((totalRawJml / realisticVolume) * 100) / 100);
 
-    return {
-      ...item,
+    result.push({
+      ...sampleItem,
+      namaBarang: group.namaBarang,
       volume: realisticVolume,
       satuan: realisticSatuan,
       hargaSatuan: reconciledHargaSatuan,
-      jumlah: rawJml, // TOTAL NOMINAL TERJAGA 100% KLOP DENGAN RAB!
-    };
+      jumlah: totalRawJml, // TOTAL NOMINAL PERSIS SAMA DENGAN RAB!
+    });
   });
+
+  return result;
 }
 
 
@@ -1402,8 +1463,18 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
   }
   generatedCount.upah++;
 
+  const finalizedKwitansi = newKwitansiList.map((kw) => {
+    if (kw.items && kw.items.length > 0 && kw.tipe !== 'UPAH') {
+      return {
+        ...kw,
+        items: normalizeMaterialItems(kw.items),
+      };
+    }
+    return kw;
+  });
+
   return {
-    updatedKwitansi: newKwitansiList,
+    updatedKwitansi: finalizedKwitansi,
     updatedWageReports,
     updatedBkb,
     generatedCount,

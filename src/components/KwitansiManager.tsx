@@ -18,6 +18,7 @@ import {
 import { KwitansiDocument, SchoolMasterData, ProjectProgressWeek } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { terbilangRupiah } from '../utils/terbilang';
+import { normalizeMaterialItems } from '../services/autoGeneratorService';
 
 interface KwitansiManagerProps {
   kwitansiList: KwitansiDocument[];
@@ -464,6 +465,11 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
                   const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
                   const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
 
+                  const displayItems =
+                    selectedKw.tipe !== 'UPAH' && selectedKw.items && selectedKw.items.length > 0
+                      ? normalizeMaterialItems(selectedKw.items)
+                      : selectedKw.items || [];
+
                   return (
                     <div className="mt-3 border-t border-slate-200 pt-3">
                       <p className="font-sans font-bold text-[11px] text-slate-700 mb-1.5">{sectionHeader}</p>
@@ -477,7 +483,7 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {selectedKw.items.map((it, idx) => {
+                          {displayItems.map((it, idx) => {
                             const displayVol =
                               selectedKw.tipe === 'UPAH' || it.satuan === 'HOK' || it.satuan === 'Hari' || it.satuan === 'Hr'
                                 ? Math.round(it.volume)

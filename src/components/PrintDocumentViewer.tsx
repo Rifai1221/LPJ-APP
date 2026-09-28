@@ -18,6 +18,7 @@ import { toRoman } from '../utils/divisionHelper';
 import { getAvailableMonthsForSchool, parseTxDateToIso, resolveWeekDates } from '../utils/monthHelper';
 
 import { SkTimTeknisDocument } from './SkTimTeknisDocument';
+import { normalizeMaterialItems } from '../services/autoGeneratorService';
 
 interface PrintDocumentViewerProps {
   isOpen: boolean;
@@ -1487,6 +1488,10 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                             );
                           const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
                           const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
+                          const printItems =
+                            kw.tipe !== 'UPAH' && kw.items && kw.items.length > 0
+                              ? normalizeMaterialItems(kw.items)
+                              : kw.items || [];
 
                           return (
                             <div className="pt-2 border-t border-slate-300">
@@ -1503,7 +1508,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {kw.items.map((it, idx) => {
+                                  {printItems.map((it, idx) => {
                                     const displayVol =
                                       kw.tipe === 'UPAH' || it.satuan === 'HOK' || it.satuan === 'Hari' || it.satuan === 'Hr'
                                         ? Math.round(it.volume)
@@ -1598,40 +1603,48 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                           <h4 className="font-bold text-sm uppercase tracking-wider underline">BON / FAKTUR</h4>
                         </div>
 
-                        <table className="w-full border-collapse border border-black text-xs">
-                          <thead>
-                            <tr className="bg-slate-100 text-center font-bold">
-                              <th className="border border-black p-2 w-28">Banyaknya</th>
-                              <th className="border border-black p-2 text-left">Nama Barang</th>
-                              <th className="border border-black p-2 text-right w-32">Harga satuan</th>
-                              <th className="border border-black p-2 text-right w-36">Jumlah</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {kw.items.map((it, iIdx) => (
-                              <tr key={iIdx}>
-                                <td className="border border-black p-2 text-center font-mono">
-                                  {it.volume} {it.satuan}
-                                </td>
-                                <td className="border border-black p-2 font-medium">{it.namaBarang}</td>
-                                <td className="border border-black p-2 text-right font-mono">
-                                  {formatRupiah(it.hargaSatuan, false)}
-                                </td>
-                                <td className="border border-black p-2 text-right font-mono font-bold">
-                                  {formatRupiah(it.jumlah, false)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr className="font-bold bg-slate-100">
-                              <td colSpan={3} className="border border-black p-2 text-right uppercase">Jumlah Rp</td>
-                              <td className="border border-black p-2 text-right font-mono font-bold">
-                                {formatRupiah(kw.nominal, false)}
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </table>
+                        {(() => {
+                          const bonItems =
+                            kw.tipe !== 'UPAH' && kw.items && kw.items.length > 0
+                              ? normalizeMaterialItems(kw.items)
+                              : kw.items || [];
+                          return (
+                            <table className="w-full border-collapse border border-black text-xs">
+                              <thead>
+                                <tr className="bg-slate-100 text-center font-bold">
+                                  <th className="border border-black p-2 w-28">Banyaknya</th>
+                                  <th className="border border-black p-2 text-left">Nama Barang</th>
+                                  <th className="border border-black p-2 text-right w-32">Harga satuan</th>
+                                  <th className="border border-black p-2 text-right w-36">Jumlah</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {bonItems.map((it, iIdx) => (
+                                  <tr key={iIdx}>
+                                    <td className="border border-black p-2 text-center font-mono">
+                                      {it.volume} {it.satuan}
+                                    </td>
+                                    <td className="border border-black p-2 font-medium">{it.namaBarang}</td>
+                                    <td className="border border-black p-2 text-right font-mono">
+                                      {formatRupiah(it.hargaSatuan, false)}
+                                    </td>
+                                    <td className="border border-black p-2 text-right font-mono font-bold">
+                                      {formatRupiah(it.jumlah, false)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr className="font-bold bg-slate-100">
+                                  <td colSpan={3} className="border border-black p-2 text-right uppercase">Jumlah Rp</td>
+                                  <td className="border border-black p-2 text-right font-mono font-bold">
+                                    {formatRupiah(kw.nominal, false)}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          );
+                        })()}
                       </div>
 
                       <div className="flex justify-end pt-8">
@@ -1672,28 +1685,36 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                           <h4 className="font-bold text-sm uppercase tracking-wider underline">PESANAN BARANG</h4>
                         </div>
 
-                        <table className="w-full border-collapse border border-black text-xs">
-                          <thead>
-                            <tr className="bg-slate-100 text-center font-bold">
-                              <th className="border border-black p-2 w-10">No.</th>
-                              <th className="border border-black p-2 w-28">Banyaknya</th>
-                              <th className="border border-black p-2 text-left">Uraian</th>
-                              <th className="border border-black p-2">Keterangan</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {kw.items.map((it, iIdx) => (
-                              <tr key={iIdx}>
-                                <td className="border border-black p-2 text-center font-mono">{iIdx + 1}</td>
-                                <td className="border border-black p-2 text-center font-mono">{it.volume} {it.satuan}</td>
-                                <td className="border border-black p-2 font-medium">{it.namaBarang}</td>
-                                <td className="border border-black p-2 text-center text-slate-600">
-                                  {kw.keteranganSpb || `Untuk Keperluan ${school.namaSekolah}`}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        {(() => {
+                          const spbItems =
+                            kw.tipe !== 'UPAH' && kw.items && kw.items.length > 0
+                              ? normalizeMaterialItems(kw.items)
+                              : kw.items || [];
+                          return (
+                            <table className="w-full border-collapse border border-black text-xs">
+                              <thead>
+                                <tr className="bg-slate-100 text-center font-bold">
+                                  <th className="border border-black p-2 w-10">No.</th>
+                                  <th className="border border-black p-2 w-28">Banyaknya</th>
+                                  <th className="border border-black p-2 text-left">Uraian</th>
+                                  <th className="border border-black p-2">Keterangan</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {spbItems.map((it, iIdx) => (
+                                  <tr key={iIdx}>
+                                    <td className="border border-black p-2 text-center font-mono">{iIdx + 1}</td>
+                                    <td className="border border-black p-2 text-center font-mono">{it.volume} {it.satuan}</td>
+                                    <td className="border border-black p-2 font-medium">{it.namaBarang}</td>
+                                    <td className="border border-black p-2 text-center text-slate-600">
+                                      {kw.keteranganSpb || `Untuk Keperluan ${school.namaSekolah}`}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          );
+                        })()}
                       </div>
 
                       {/* SPB Signatures */}
