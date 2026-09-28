@@ -54,10 +54,16 @@ export const WageManager: React.FC<WageManagerProps> = ({
   onOpenPrintModal,
 }) => {
   const [selectedWeekNum, setSelectedWeekNum] = useState<number>(1);
-  const [activeTab, setActiveTab] = useState<'absensi' | 'master'>('absensi');
+  const [activeTab, setActiveTab] = useState<'absensi' | 'borongan' | 'master'>('absensi');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddingWorker, setIsAddingWorker] = useState(false);
   const [editingWorker, setEditingWorker] = useState<WorkerItem | null>(null);
+
+  // Borongan form states
+  const [boronganType, setBoronganType] = useState<'MINGGUAN' | 'BULANAN' | 'RENTANG_WAKTU'>('MINGGUAN');
+  const [boronganUraian, setBoronganUraian] = useState<string>('');
+  const [boronganPenerima, setBoronganPenerima] = useState<string>('Budiman');
+  const [boronganJabatan, setBoronganJabatan] = useState<string>('Kepala Pelaksana / Mandor');
 
   // Form states for adding worker
   const [roleOption, setRoleOption] = useState<string>('P');
@@ -211,7 +217,16 @@ export const WageManager: React.FC<WageManagerProps> = ({
   const wageDifference = currentWageTotal - targetWageBudget;
   const isWageBalanced = targetWageBudget > 0 && Math.abs(wageDifference) === 0;
 
-  // Handler: Apply AHSP Standard Rates to All Workers
+  // Handler: Apply AHSP Standard Rates to Active Week & Balance Immediately
+  const handleApplyAhspRatesToWeek = () => {
+    if (!activeReport) return;
+    const target = targetWageBudget > 0 ? targetWageBudget : activeReport.totalUpah || 2740737;
+    handleSyncWithRabAndKwitansi(target);
+    setAutoGenMsg(`✅ Tarif AHSP resmi diterapkan & disinkronkan 100% pada Minggu Ke-${selectedWeekNum}.`);
+    setTimeout(() => setAutoGenMsg(null), 4000);
+  };
+
+  // Handler: Apply AHSP Standard Rates to Master Workers & Sync All Weeks
   const handleApplyAhspRatesToAll = () => {
     const updatedWorkers = workers.map((w) => {
       const rate = getAhspWageRateForRole(w.peran, w.peranLabel || w.peran, ahspWageMap, w.upahHarian);
@@ -221,25 +236,7 @@ export const WageManager: React.FC<WageManagerProps> = ({
       };
     });
     onUpdateWorkers(updatedWorkers);
-
-    const updatedReports = wageReports.map((rep) => {
-      const updatedAtt = rep.attendance.map((att) => {
-        const rate = getAhspWageRateForRole(att.peran, att.peranLabel || att.peran, ahspWageMap, att.upahHarian);
-        return {
-          ...att,
-          upahHarian: rate,
-          totalUpah: att.hok * rate,
-        };
-      });
-      return {
-        ...rep,
-        attendance: updatedAtt,
-        totalUpah: updatedAtt.reduce((s, a) => s + a.totalUpah, 0),
-      };
-    });
-    onUpdateWageReports(updatedReports);
-    setAutoGenMsg('✅ Seluruh tarif upah harian (HOK) otomatis diselaraskan 100% dengan Master AHSP Data Real Sekolah.');
-    setTimeout(() => setAutoGenMsg(null), 4000);
+    handleSyncAllWeeksToFullCapacity();
   };
 
   // Handler: Balance Attendance & Sync with RAB/Kwitansi
@@ -854,7 +851,19 @@ export const WageManager: React.FC<WageManagerProps> = ({
             }`}
           >
             <Calendar className="w-4 h-4" />
-            <span>Daftar Upah & Absensi Mingguan</span>
+            <span>Mode Harian: Daftar Upah & Absensi (HOK)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('borongan')}
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-2 ${
+              activeTab === 'borongan'
+                ? 'border-indigo-600 text-indigo-900 bg-indigo-50/50'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <Building2 className="w-4 h-4 text-indigo-600" />
+            <span>Mode Borongan: Opname Fisik & SPK Tenaga Kerja</span>
           </button>
 
           <button
@@ -1395,7 +1404,222 @@ export const WageManager: React.FC<WageManagerProps> = ({
         </div>
       )}
 
-      {/* TAB 2: MASTER DATA TENAGA KERJA */}
+      {/* TAB 2: MODE BORONGAN TENAGA KERJA (OPNAME PRESTASI FISIK RAB & AHSP) */}
+      {activeTab === 'borongan' && (
+        <div className="space-y-6 animate-in fade-in">
+          {/* Week / Period Selector for Borongan */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">
+                  Pilih Periode Pembayaran Borongan:
+                </span>
+                <p className="text-xs text-slate-500">
+                  Pembayaran upah didasarkan pada Berita Acara Opname Prestasi Fisik (Output Kerja), tanpa perlu absensi harian orang per orang.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600">Model Borongan:</span>
+                <select
+                  value={boronganType}
+                  onChange={(e) => setBoronganType(e.target.value as any)}
+                  className="px-3 py-1.5 text-xs font-bold bg-indigo-50 border border-indigo-300 text-indigo-900 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="MINGGUAN">Borongan Mingguan (Sesuai Progres Fisik)</option>
+                  <option value="BULANAN">Borongan Bulanan (Opname Akhir Bulan)</option>
+                  <option value="RENTANG_WAKTU">Borongan Termin / Rentang Waktu (SPK Sub-Pekerjaan)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+              {wageReports.map((w) => (
+                <button
+                  key={w.mingguKe}
+                  onClick={() => setSelectedWeekNum(w.mingguKe)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                    selectedWeekNum === w.mingguKe
+                      ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Minggu {w.mingguKe} {w.boronganUraian ? `(${w.boronganUraian.slice(0, 12)}...)` : ''}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Borongan Summary Card */}
+          {activeReport && (
+            <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-purple-950 text-white p-6 rounded-xl shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-indigo-800/60 pb-4">
+                <div>
+                  <div className="flex items-center gap-2 text-xs text-indigo-200">
+                    <Building2 className="w-4 h-4 text-amber-400" />
+                    <span>SPK & Berita Acara Pembayaran Upah Borongan</span>
+                    <span>•</span>
+                    <span className="font-mono bg-indigo-800/80 px-2 py-0.5 rounded">
+                      No. Kwitansi: {activeReport.noBuktiKwitansi || `UK/${String(activeReport.mingguKe).padStart(2, '0')}/2026`}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold mt-1 text-white">
+                    Upah Borongan Tenaga Kerja Minggu Ke-{activeReport.mingguKe}
+                  </h3>
+                  <p className="text-xs text-indigo-200">
+                    Periode: {activeReport.periodeStart} s/d {activeReport.periodeEnd} ({activeReport.bulan})
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] text-indigo-200 uppercase font-semibold">Total Nilai Borongan Fisik</span>
+                  <p className="text-2xl font-black text-amber-300 font-mono">
+                    {formatRupiah(activeReport.totalUpah || targetWageBudget)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Form Input Detail Borongan */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-2">
+                <div className="space-y-1">
+                  <label className="text-indigo-200 font-semibold block text-[11px]">Uraian Pekerjaan yang Diborongkan:</label>
+                  <input
+                    type="text"
+                    value={activeReport.boronganUraian || `Pekerjaan Konstruksi Fisik & Pasangan Minggu Ke-${activeReport.mingguKe}`}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const updated = wageReports.map((r) => (r.mingguKe === selectedWeekNum ? { ...r, boronganUraian: val } : r));
+                      onUpdateWageReports(updated);
+                    }}
+                    className="w-full px-3 py-2 bg-white text-slate-900 font-semibold rounded-lg border border-indigo-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    placeholder="Contoh: Borongan Pekerjaan Dinding & Atap"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-indigo-200 font-semibold block text-[11px]">Nama Mandor / Ketua Kelompok Penerima:</label>
+                  <input
+                    type="text"
+                    value={activeReport.penerimaNama || 'Budiman'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const updated = wageReports.map((r) => (r.mingguKe === selectedWeekNum ? { ...r, penerimaNama: val } : r));
+                      onUpdateWageReports(updated);
+                    }}
+                    className="w-full px-3 py-2 bg-white text-slate-900 font-bold rounded-lg border border-indigo-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    placeholder="Nama Mandor / Kepala Tukang"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-indigo-200 font-semibold block text-[11px]">No. SPK / Dasar Opname Fisik:</label>
+                  <input
+                    type="text"
+                    value={activeReport.boronganNoSpk || `SPK-BOR/${String(activeReport.mingguKe).padStart(2, '0')}/${school.tahunAnggaran || '2026'}`}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const updated = wageReports.map((r) => (r.mingguKe === selectedWeekNum ? { ...r, boronganNoSpk: val } : r));
+                      onUpdateWageReports(updated);
+                    }}
+                    className="w-full px-3 py-2 bg-white text-slate-900 font-mono rounded-lg border border-indigo-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    placeholder="Nomor Surat Perjanjian Kerja Borongan"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Borongan Breakdown Table & Member List */}
+          {activeReport && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Daftar Kelompok Tukang & Tenaga Kerja Borongan</span>
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Nama-nama tenaga kerja di bawah ini tercantum resmi sebagai anggota kelompok penerima upah borongan.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSyncWithRabAndKwitansi()}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Sinkronkan Nilai ke Kwitansi & RAB</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenPrintModal(selectedWeekNum)}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Cetak Lembar SPJ Borongan</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900 text-white uppercase text-[10px] tracking-wider">
+                      <th className="py-2.5 px-3 w-10 text-center">No</th>
+                      <th className="py-2.5 px-4">Nama Tenaga Kerja</th>
+                      <th className="py-2.5 px-3 text-center">Peran / Kategori</th>
+                      <th className="py-2.5 px-3 text-center">Domisili</th>
+                      <th className="py-2.5 px-4 text-right">Dasar Tarif AHSP (Ref)</th>
+                      <th className="py-2.5 px-4 text-center">Status Kelompok</th>
+                      <th className="py-2.5 px-4 text-center">Tanda Terima</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {workers.slice(0, 5).map((w, idx) => (
+                      <tr key={w.id} className="hover:bg-indigo-50/40 transition">
+                        <td className="py-2.5 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
+                        <td className="py-2.5 px-4 font-bold text-slate-900">{w.nama}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            idx === 0 ? 'bg-amber-100 text-amber-800 font-black' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {idx === 0 ? 'Ketua Kelompok / Mandor' : w.peranLabel || w.peran}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-slate-600">{w.domisili}</td>
+                        <td className="py-2.5 px-4 text-right font-mono text-slate-500">
+                          {formatRupiah(w.upahHarian)}/hari
+                        </td>
+                        <td className="py-2.5 px-4 text-center">
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-semibold text-[10px]">
+                            {idx === 0 ? 'Penanggung Jawab' : 'Anggota Pelaksana'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 text-center font-mono text-[10px] text-slate-400 italic">
+                          [ {w.nama} ]
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-indigo-50/70 font-bold text-indigo-950 border-t-2 border-indigo-200">
+                      <td colSpan={4} className="py-3 px-4 text-right uppercase text-xs">
+                        Total Nilai Pembayaran Upah Borongan Minggu Ke-{activeReport.mingguKe}:
+                      </td>
+                      <td colSpan={3} className="py-3 px-4 text-right font-mono text-base text-indigo-950 font-black">
+                        {formatRupiah(activeReport.totalUpah || targetWageBudget)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: MASTER DATA TENAGA KERJA */}
       {activeTab === 'master' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

@@ -166,6 +166,15 @@ export interface WeeklyWageReport {
   totalUpah: number;
   bobotMingguIni?: number; // %
   bobotKumulatif?: number; // %
+  // Mode Borongan fields
+  tipeUpah?: 'HARIAN_HOK' | 'BORONGAN';
+  boronganType?: 'MINGGUAN' | 'BULANAN' | 'RENTANG_WAKTU';
+  boronganUraian?: string;
+  boronganVolume?: number;
+  boronganSatuan?: string;
+  boronganHargaSatuan?: number;
+  boronganNoSpk?: string;
+  boronganAnggotaKelompok?: string[];
 }
 
 export interface TokoItem {
