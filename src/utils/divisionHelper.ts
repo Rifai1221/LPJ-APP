@@ -153,6 +153,67 @@ export function buildDefaultWeeklyProgress(): ProjectProgressWeek[] {
 }
 
 /**
+ * Automatically recalculates and cascades weekly progress across all weeks:
+ * For each week W > 1:
+ * - If a division does not have isManualMingguLalu = true, its prestasiMingguLalu
+ *   is automatically taken from week (W-1)'s prestasiSdMingguIni.
+ * - prestasiSdMingguIni = Math.min(bobotTotal, prestasiMingguLalu + prestasiMingguIni)
+ * - Week bobotRealisasi = sum(divisions.prestasiSdMingguIni)
+ * - Week deviasi = bobotRealisasi - bobotRencana
+ */
+export function recalculateAllWeeksProgress(weeks: ProjectProgressWeek[]): ProjectProgressWeek[] {
+  if (!weeks || weeks.length === 0) return [];
+  const sorted = [...weeks].sort((a, b) => a.mingguKe - b.mingguKe);
+
+  for (let i = 0; i < sorted.length; i++) {
+    const currentW = sorted[i];
+    const prevW = i > 0 ? sorted[i - 1] : null;
+
+    if (!currentW.divisions || currentW.divisions.length === 0) continue;
+
+    const updatedDivs = currentW.divisions.map((d) => {
+      let mingguLalu = Number(d.prestasiMingguLalu) || 0;
+
+      // If week > 1 and not manually overridden, auto-take from previous week's prestasiSdMingguIni
+      if (prevW && !d.isManualMingguLalu) {
+        const matchedPrev = prevW.divisions?.find(
+          (pd) => pd.id === d.id || (pd.kode === d.kode && pd.kategori === d.kategori)
+        );
+        if (matchedPrev) {
+          mingguLalu = Number(matchedPrev.prestasiSdMingguIni) || 0;
+        }
+      }
+
+      const ini = Number(d.prestasiMingguIni) || 0;
+      const sdIni = Math.min(
+        d.bobotTotal,
+        Math.round((mingguLalu + ini) * 100) / 100
+      );
+
+      return {
+        ...d,
+        prestasiMingguLalu: Math.round(mingguLalu * 100) / 100,
+        prestasiSdMingguIni: sdIni,
+      };
+    });
+
+    const totalSdIni = Math.min(
+      100,
+      Math.round(updatedDivs.reduce((s, d) => s + (d.prestasiSdMingguIni || 0), 0) * 100) / 100
+    );
+
+    sorted[i] = {
+      ...currentW,
+      divisions: updatedDivs,
+      bobotRealisasi: totalSdIni,
+      deviasi: Math.round((totalSdIni - currentW.bobotRencana) * 100) / 100,
+    };
+  }
+
+  return sorted;
+}
+
+/**
  * Extract map of wage rates (UPAH) from AHSP List in RealSchoolData
  */
 export function getAhspWageRatesMap(ahspList?: any[]): Record<string, number> {

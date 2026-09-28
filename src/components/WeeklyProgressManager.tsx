@@ -38,7 +38,7 @@ import {
   KwitansiDocument,
 } from '../types';
 import { formatNumber, formatRupiah } from '../utils/formatters';
-import { DEFAULT_DIVISIONS, toRoman, renumberDivisions } from '../utils/divisionHelper';
+import { DEFAULT_DIVISIONS, toRoman, renumberDivisions, recalculateAllWeeksProgress } from '../utils/divisionHelper';
 import { resolveWeekDates, formatWeekPeriodString, sanitizeYear } from '../utils/monthHelper';
 import { WeeklyPhotoDocumentation } from './WeeklyPhotoDocumentation';
 
@@ -397,16 +397,64 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       .reduce((s, t) => s + t.penerimaan, 0);
   }, [currentWeekTransactions]);
 
-  // If week doesn't have divisions array initialized, construct from DEFAULT_DIVISIONS
-  const rawDivisions: DivisionProgressItem[] =
-    currentWeek.divisions && currentWeek.divisions.length > 0
-      ? currentWeek.divisions
-      : DEFAULT_DIVISIONS.map((d) => ({
-          ...d,
-          prestasiMingguLalu: 0,
-          prestasiMingguIni: 0,
-          prestasiSdMingguIni: 0,
-        }));
+  // Automatically ensure weeks progress is properly cascaded if needed
+  useEffect(() => {
+    if (progressWeeks && progressWeeks.length > 1) {
+      const needsRecalc = progressWeeks.some((w, idx) => {
+        if (idx === 0) return false;
+        const prev = progressWeeks[idx - 1];
+        if (!w.divisions || !prev.divisions) return false;
+        return w.divisions.some((d) => {
+          if (d.isManualMingguLalu) return false;
+          const prevD = prev.divisions?.find(
+            (pd) => pd.id === d.id || (pd.kode === d.kode && pd.kategori === d.kategori)
+          );
+          return prevD && (Number(prevD.prestasiSdMingguIni) || 0) > 0 && (Number(d.prestasiMingguLalu) || 0) === 0;
+        });
+      });
+
+      if (needsRecalc) {
+        const recalculated = recalculateAllWeeksProgress(progressWeeks);
+        onUpdateWeeks(recalculated);
+      }
+    }
+  }, [progressWeeks, onUpdateWeeks]);
+
+  // Construct divisions for current week: automatically cascade prestasiMingguLalu from previous week if not manual
+  const rawDivisions: DivisionProgressItem[] = useMemo(() => {
+    const prevWeek = selectedWeekNum > 1 ? progressWeeks.find((w) => w.mingguKe === selectedWeekNum - 1) : null;
+    const baseDivs =
+      currentWeek.divisions && currentWeek.divisions.length > 0
+        ? currentWeek.divisions
+        : DEFAULT_DIVISIONS.map((d) => ({
+            ...d,
+            prestasiMingguLalu: 0,
+            prestasiMingguIni: 0,
+            prestasiSdMingguIni: 0,
+          }));
+
+    return baseDivs.map((d) => {
+      let mingguLalu = Number(d.prestasiMingguLalu) || 0;
+      if (prevWeek && !d.isManualMingguLalu) {
+        const matchedPrev = prevWeek.divisions?.find(
+          (pd) => pd.id === d.id || (pd.kode === d.kode && pd.kategori === d.kategori)
+        );
+        if (matchedPrev) {
+          mingguLalu = Number(matchedPrev.prestasiSdMingguIni) || 0;
+        }
+      }
+      const ini = Number(d.prestasiMingguIni) || 0;
+      const sdIni = Math.min(
+        d.bobotTotal,
+        Math.round((mingguLalu + ini) * 100) / 100
+      );
+      return {
+        ...d,
+        prestasiMingguLalu: Math.round(mingguLalu * 100) / 100,
+        prestasiSdMingguIni: sdIni,
+      };
+    });
+  }, [currentWeek.divisions, selectedWeekNum, progressWeeks]);
 
   // Automatically enforce Roman numeral numbering according to work category (FISIK or MANAJEMEN)
   const divisions = renumberDivisions(rawDivisions);
@@ -707,7 +755,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     // Calculate this week's updated divisions
     const updatedDivisions = divisions.map((d) => {
       if (d.id === divisionId) {
-        const sdIni = Math.min(d.bobotTotal, Math.round((d.prestasiMingguLalu + val) * 100) / 100);
+        const sdIni = Math.min(d.bobotTotal, Math.round(((Number(d.prestasiMingguLalu) || 0) + val) * 100) / 100);
         return {
           ...d,
           prestasiMingguIni: val,
@@ -717,95 +765,73 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       return d;
     });
 
-    const newTotalSdIni = Math.min(100, Math.round(updatedDivisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100);
-    const newDev = Math.round((newTotalSdIni - currentWeek.bobotRencana) * 100) / 100;
-
-    // Propagate forward to subsequent weeks (update their 'prestasiMingguLalu')
     const updatedAllWeeks = progressWeeks.map((w) => {
       if (w.mingguKe === selectedWeekNum) {
         return {
           ...w,
-          bobotRealisasi: newTotalSdIni,
-          deviasi: newDev,
           divisions: updatedDivisions,
-        };
-      } else if (w.mingguKe > selectedWeekNum) {
-        // Update minggu lalu for subsequent weeks
-        const nextDivs = (w.divisions || DEFAULT_DIVISIONS.map(d => ({ ...d, prestasiMingguLalu: 0, prestasiMingguIni: 0, prestasiSdMingguIni: 0 }))).map((nd) => {
-          const matchedCurrent = updatedDivisions.find((ud) => ud.id === nd.id);
-          const previousCumulative = matchedCurrent ? matchedCurrent.prestasiSdMingguIni : nd.prestasiMingguLalu;
-          const sdIni = Math.min(nd.bobotTotal, Math.round((previousCumulative + nd.prestasiMingguIni) * 100) / 100);
-          return {
-            ...nd,
-            prestasiMingguLalu: previousCumulative,
-            prestasiSdMingguIni: sdIni,
-          };
-        });
-        const nextTotal = Math.min(100, Math.round(nextDivs.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100);
-        return {
-          ...w,
-          bobotRealisasi: nextTotal,
-          deviasi: Math.round((nextTotal - w.bobotRencana) * 100) / 100,
-          divisions: nextDivs,
         };
       }
       return w;
     });
 
-    onUpdateWeeks(updatedAllWeeks);
+    const finalWeeks = recalculateAllWeeksProgress(updatedAllWeeks);
+    onUpdateWeeks(finalWeeks);
   };
 
   const handlePrestasiMingguLaluChange = (divisionId: string, valueStr: string) => {
+    const isCleared = valueStr.trim() === '';
     const val = parseFloat(valueStr) || 0;
 
     // Calculate this week's updated divisions with adjusted prestasiMingguLalu
     const updatedDivisions = divisions.map((d) => {
       if (d.id === divisionId) {
-        const sdIni = Math.min(d.bobotTotal, Math.round((val + d.prestasiMingguIni) * 100) / 100);
         return {
           ...d,
-          prestasiMingguLalu: val,
-          prestasiSdMingguIni: sdIni,
+          isManualMingguLalu: !isCleared,
+          prestasiMingguLalu: isCleared ? 0 : val,
         };
       }
       return d;
     });
 
-    const newTotalSdIni = Math.min(100, Math.round(updatedDivisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100);
-    const newDev = Math.round((newTotalSdIni - currentWeek.bobotRencana) * 100) / 100;
-
-    // Propagate forward to subsequent weeks
     const updatedAllWeeks = progressWeeks.map((w) => {
       if (w.mingguKe === selectedWeekNum) {
         return {
           ...w,
-          bobotRealisasi: newTotalSdIni,
-          deviasi: newDev,
           divisions: updatedDivisions,
-        };
-      } else if (w.mingguKe > selectedWeekNum) {
-        const nextDivs = (w.divisions || DEFAULT_DIVISIONS.map(d => ({ ...d, prestasiMingguLalu: 0, prestasiMingguIni: 0, prestasiSdMingguIni: 0 }))).map((nd) => {
-          const matchedCurrent = updatedDivisions.find((ud) => ud.id === nd.id);
-          const previousCumulative = matchedCurrent ? matchedCurrent.prestasiSdMingguIni : nd.prestasiMingguLalu;
-          const sdIni = Math.min(nd.bobotTotal, Math.round((previousCumulative + nd.prestasiMingguIni) * 100) / 100);
-          return {
-            ...nd,
-            prestasiMingguLalu: previousCumulative,
-            prestasiSdMingguIni: sdIni,
-          };
-        });
-        const nextTotal = Math.min(100, Math.round(nextDivs.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100);
-        return {
-          ...w,
-          bobotRealisasi: nextTotal,
-          deviasi: Math.round((nextTotal - w.bobotRencana) * 100) / 100,
-          divisions: nextDivs,
         };
       }
       return w;
     });
 
-    onUpdateWeeks(updatedAllWeeks);
+    const finalWeeks = recalculateAllWeeksProgress(updatedAllWeeks);
+    onUpdateWeeks(finalWeeks);
+  };
+
+  const handleResetManualMingguLalu = (divisionId: string) => {
+    const updatedDivisions = divisions.map((d) => {
+      if (d.id === divisionId) {
+        return {
+          ...d,
+          isManualMingguLalu: false,
+        };
+      }
+      return d;
+    });
+
+    const updatedAllWeeks = progressWeeks.map((w) => {
+      if (w.mingguKe === selectedWeekNum) {
+        return {
+          ...w,
+          divisions: updatedDivisions,
+        };
+      }
+      return w;
+    });
+
+    const finalWeeks = recalculateAllWeeksProgress(updatedAllWeeks);
+    onUpdateWeeks(finalWeeks);
   };
 
   const handleApplyAndSync = () => {
@@ -1606,17 +1632,39 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                     )}
                   </td>
                   <td className="py-1.5 px-2 border border-slate-300 text-right bg-amber-50/40">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max={item.bobotTotal}
-                      value={item.prestasiMingguLalu === 0 ? '' : item.prestasiMingguLalu}
-                      onChange={(e) => handlePrestasiMingguLaluChange(item.id, e.target.value)}
-                      placeholder="0,00"
-                      className="w-full text-right font-mono font-medium text-amber-950 px-2 py-1 bg-white border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
-                      title="Isi / sesuaikan nilai prestasi minggu lalu (Bobot %)"
-                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={item.bobotTotal}
+                        value={item.prestasiMingguLalu === 0 ? '' : item.prestasiMingguLalu}
+                        onChange={(e) => handlePrestasiMingguLaluChange(item.id, e.target.value)}
+                        placeholder="0,00"
+                        className={`w-full text-right font-mono font-medium px-2 py-1 bg-white border rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden transition ${
+                          item.isManualMingguLalu
+                            ? 'border-amber-500 text-amber-950 font-bold bg-amber-50/60 shadow-xs'
+                            : 'border-amber-300 text-slate-800'
+                        }`}
+                        title={
+                          item.isManualMingguLalu
+                            ? 'Nilai diinput manual. Klik tombol "Auto" di samping untuk kembali ke hitungan otomatis minggu sebelumnya.'
+                            : selectedWeekNum > 1
+                            ? 'Otomatis dihitung dari akumulasi s.d minggu sebelumnya. Anda dapat mengedit nilai ini secara manual jika diperlukan.'
+                            : 'Prestasi minggu lalu (Bobot %)'
+                        }
+                      />
+                      {item.isManualMingguLalu && (
+                        <button
+                          type="button"
+                          onClick={() => handleResetManualMingguLalu(item.id)}
+                          title="Kembalikan ke hitungan otomatis dari minggu sebelumnya"
+                          className="text-[10px] font-bold text-amber-900 bg-amber-200 hover:bg-amber-300 active:scale-95 px-1.5 py-1 rounded cursor-pointer transition shadow-xs shrink-0"
+                        >
+                          Auto
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="py-1.5 px-2 border border-slate-300 text-right bg-blue-50/60">
                     <input
@@ -1820,17 +1868,39 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                     )}
                   </td>
                   <td className="py-1.5 px-2 border border-slate-300 text-right bg-amber-50/40">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max={item.bobotTotal}
-                      value={item.prestasiMingguLalu === 0 ? '' : item.prestasiMingguLalu}
-                      onChange={(e) => handlePrestasiMingguLaluChange(item.id, e.target.value)}
-                      placeholder="0,00"
-                      className="w-full text-right font-mono font-medium text-amber-950 px-2 py-1 bg-white border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
-                      title="Isi / sesuaikan nilai prestasi minggu lalu (Bobot %)"
-                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={item.bobotTotal}
+                        value={item.prestasiMingguLalu === 0 ? '' : item.prestasiMingguLalu}
+                        onChange={(e) => handlePrestasiMingguLaluChange(item.id, e.target.value)}
+                        placeholder="0,00"
+                        className={`w-full text-right font-mono font-medium px-2 py-1 bg-white border rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden transition ${
+                          item.isManualMingguLalu
+                            ? 'border-amber-500 text-amber-950 font-bold bg-amber-50/60 shadow-xs'
+                            : 'border-amber-300 text-slate-800'
+                        }`}
+                        title={
+                          item.isManualMingguLalu
+                            ? 'Nilai diinput manual. Klik tombol "Auto" di samping untuk kembali ke hitungan otomatis minggu sebelumnya.'
+                            : selectedWeekNum > 1
+                            ? 'Otomatis dihitung dari akumulasi s.d minggu sebelumnya. Anda dapat mengedit nilai ini secara manual jika diperlukan.'
+                            : 'Prestasi minggu lalu (Bobot %)'
+                        }
+                      />
+                      {item.isManualMingguLalu && (
+                        <button
+                          type="button"
+                          onClick={() => handleResetManualMingguLalu(item.id)}
+                          title="Kembalikan ke hitungan otomatis dari minggu sebelumnya"
+                          className="text-[10px] font-bold text-amber-900 bg-amber-200 hover:bg-amber-300 active:scale-95 px-1.5 py-1 rounded cursor-pointer transition shadow-xs shrink-0"
+                        >
+                          Auto
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="py-1.5 px-2 border border-slate-300 text-right bg-blue-50/60">
                     <input

@@ -91,11 +91,32 @@ export function isHideDemoPresets(): boolean {
   }
 }
 
+const DELETED_TENANTS_KEY = 'LPJ_DELETED_TENANTS_IDS';
+
+export function getDeletedTenantIds(): string[] {
+  try {
+    const raw = localStorage.getItem(DELETED_TENANTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addDeletedTenantId(tenantId: string) {
+  try {
+    const current = getDeletedTenantIds();
+    if (!current.includes(tenantId)) {
+      localStorage.setItem(DELETED_TENANTS_KEY, JSON.stringify([...current, tenantId]));
+    }
+  } catch {}
+}
+
 // 2. Fetch all registered school tenants (Cloud Firestore + Local Presets)
 // CRITICAL: Any school saved in Firestore is real user data and MUST NEVER be dropped or overwritten!
 export async function getAllSchoolTenants(): Promise<SchoolTenant[]> {
   const tenantsMap = new Map<string, SchoolTenant>();
   const hideDemo = isHideDemoPresets();
+  const deletedIds = getDeletedTenantIds();
 
   // Step A: Load custom/active schools saved in Firestore FIRST (Highest Priority!)
   if (!checkIsQuotaExhausted()) {
@@ -103,10 +124,10 @@ export async function getAllSchoolTenants(): Promise<SchoolTenant[]> {
       const schoolsCol = collection(db, 'schools');
       const snapshot = await withTimeout(getDocs(schoolsCol), 3500);
       snapshot.forEach((docSnap) => {
+        if (deletedIds.includes(docSnap.id)) return; // Never resurrect deleted schools
         const data = docSnap.data();
         if (data && (data.npsn || data.namaSekolah)) {
           // Any document stored in Firestore was created or saved by the user!
-          // We always include it.
           tenantsMap.set(docSnap.id, {
             id: docSnap.id,
             npsn: data.npsn || '10105685',
@@ -136,16 +157,16 @@ export async function getAllSchoolTenants(): Promise<SchoolTenant[]> {
     if (customListRaw) {
       const customList: SchoolTenant[] = JSON.parse(customListRaw);
       customList.forEach((c) => {
-        if (!tenantsMap.has(c.id)) {
+        if (!tenantsMap.has(c.id) && !deletedIds.includes(c.id)) {
           tenantsMap.set(c.id, c);
         }
       });
     }
   } catch {}
 
-  // Step C: Include default presets unless user explicitly toggled "hideDemo" AND presets are not in Firestore
+  // Step C: Include default presets unless user explicitly toggled "hideDemo" OR preset was deleted
   DEFAULT_PRESET_TENANTS.forEach((preset) => {
-    if (!tenantsMap.has(preset.id)) {
+    if (!tenantsMap.has(preset.id) && !deletedIds.includes(preset.id)) {
       if (!hideDemo) {
         tenantsMap.set(preset.id, preset);
       }
@@ -473,9 +494,13 @@ export async function saveSchoolTenantAppState(
 
 // 6. Delete a school tenant and its associated LPJ data
 export async function deleteSchoolTenant(tenantId: string): Promise<boolean> {
-  // 1. Remove from localStorage cache
+  // 1. Blacklist ID so it can NEVER be loaded or resurrected
+  addDeletedTenantId(tenantId);
+
+  // 2. Remove from localStorage cache
   try {
     localStorage.removeItem(`${TENANT_CACHE_PREFIX}${tenantId}`);
+    localStorage.removeItem(`LPJ_OFFLINE_STATE_${tenantId}`);
     
     const customListRaw = localStorage.getItem('LOCAL_CUSTOM_TENANTS_LIST');
     if (customListRaw) {
@@ -487,7 +512,7 @@ export async function deleteSchoolTenant(tenantId: string): Promise<boolean> {
     console.warn('Error clearing local cache during tenant delete:', err);
   }
 
-  // 2. Delete from Firestore
+  // 3. Delete from Firestore
   try {
     const dataDocRef = doc(db, 'schools', tenantId, 'lpj_data', 'current');
     await deleteDoc(dataDocRef);
@@ -497,7 +522,7 @@ export async function deleteSchoolTenant(tenantId: string): Promise<boolean> {
     return true;
   } catch (err) {
     console.warn('Firestore delete error:', err);
-    return false;
+    return true; // Still true because locally and permanently blacklisted!
   }
 }
 

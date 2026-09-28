@@ -270,6 +270,7 @@ export interface DivisionProgressItem {
   prestasiMingguIni: number;
   prestasiSdMingguIni: number;
   materialRef?: string[]; // item IDs or keywords from RPD
+  isManualMingguLalu?: boolean; // true if manually overridden by user
 }
 
 export interface ProgressPhotoItem {
