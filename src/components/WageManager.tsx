@@ -240,6 +240,125 @@ export const WageManager: React.FC<WageManagerProps> = ({
     handleSyncAllWeeksToFullCapacity();
   };
 
+  // Helper: Build a balanced Borongan team attendance with Mandor, KT, Tukang, and Pekerja
+  const getBalancedBoronganAttendance = (
+    targetBudget: number,
+    masterWorkers: WorkerItem[],
+    ahspMap: Record<string, number>
+  ) => {
+    // 1. Ambil worker dari Master Data yang ber-kategori 'BORONGAN' atau 'SEMUA'
+    let candidates = masterWorkers.filter(
+      (w) => w.kategoriPenugasan === 'BORONGAN' || w.kategoriPenugasan === 'SEMUA' || !w.kategoriPenugasan
+    );
+
+    if (candidates.length === 0) {
+      candidates = masterWorkers;
+    }
+
+    // 2. Pastikan minimal ada 1 Mandor, 1 KT, Tukang, dan Pekerja
+    const hasMandor = candidates.some((w) => w.peran === 'MANDOR' || (w.peranLabel || '').toLowerCase().includes('mandor'));
+    const hasKt = candidates.some((w) => w.peran === 'KT' || (w.peranLabel || '').toLowerCase().includes('kepala tukang'));
+    const hasPekerja = candidates.some((w) => w.peran === 'P' || (w.peranLabel || '').toLowerCase().includes('pekerja'));
+
+    const fullTeam: WorkerItem[] = [...candidates];
+
+    if (!hasMandor) {
+      fullTeam.unshift({
+        id: `w-auto-mandor-${Date.now()}`,
+        nama: 'Budiman (Mandor)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'MANDOR',
+        peranLabel: 'Ketua Kelompok / Mandor',
+        upahHarian: getAhspWageRateForRole('MANDOR', 'Mandor', ahspMap, 199782),
+        kategoriPenugasan: 'BORONGAN',
+      });
+    }
+
+    if (!hasKt) {
+      fullTeam.splice(1, 0, {
+        id: `w-auto-kt-${Date.now()}`,
+        nama: 'Suparman (Kepala Tukang)',
+        jenisKelamin: 'L',
+        domisili: 'Dalam Desa',
+        peran: 'KT',
+        peranLabel: 'Kepala Tukang',
+        upahHarian: getAhspWageRateForRole('KT', 'Kepala Tukang', ahspMap, 199782),
+        kategoriPenugasan: 'BORONGAN',
+      });
+    }
+
+    if (!hasPekerja) {
+      fullTeam.push(
+        {
+          id: `w-auto-p1-${Date.now()}`,
+          nama: 'Dedi Kurniawan (Pekerja 1)',
+          jenisKelamin: 'L',
+          domisili: 'Dalam Desa',
+          peran: 'P',
+          peranLabel: 'Pekerja Lapangan / Laden',
+          upahHarian: getAhspWageRateForRole('P', 'Pekerja', ahspMap, 146909),
+          kategoriPenugasan: 'BORONGAN',
+        },
+        {
+          id: `w-auto-p2-${Date.now()}`,
+          nama: 'Eko Prasetyo (Pekerja 2)',
+          jenisKelamin: 'L',
+          domisili: 'Dalam Desa',
+          peran: 'P',
+          peranLabel: 'Pekerja Lapangan / Laden',
+          upahHarian: getAhspWageRateForRole('P', 'Pekerja', ahspMap, 146909),
+          kategoriPenugasan: 'BORONGAN',
+        }
+      );
+    }
+
+    // Sort by role hierarchy: MANDOR -> KT -> T / Tukang -> P / Pekerja
+    const getRoleWeight = (w: WorkerItem) => {
+      if (w.peran === 'MANDOR' || (w.peranLabel || '').toLowerCase().includes('mandor')) return 1;
+      if (w.peran === 'KT' || (w.peranLabel || '').toLowerCase().includes('kepala tukang')) return 2;
+      if (w.peran === 'P' || (w.peranLabel || '').toLowerCase().includes('pekerja')) return 4;
+      return 3; // Tukang
+    };
+
+    fullTeam.sort((a, b) => getRoleWeight(a) - getRoleWeight(b));
+
+    // 3. Proportional AHSP Weighted Distribution
+    const totalAhspRateSum = fullTeam.reduce((sum, w) => {
+      const rate = getAhspWageRateForRole(w.peran, w.peranLabel, ahspMap, w.upahHarian);
+      return sum + rate;
+    }, 0);
+
+    let allocatedSum = 0;
+    const resultAttendance = fullTeam.map((w) => {
+      const exactRate = getAhspWageRateForRole(w.peran, w.peranLabel, ahspMap, w.upahHarian);
+      let assignedTotal = Math.round((targetBudget * exactRate) / (totalAhspRateSum || 1));
+      allocatedSum += assignedTotal;
+
+      return {
+        workerId: w.id,
+        nama: w.nama,
+        jenisKelamin: w.jenisKelamin,
+        domisili: w.domisili || 'Dalam Desa',
+        peran: w.peran,
+        peranLabel: w.peranLabel,
+        days: [1, 1, 1, 1, 0, 1, 1] as [number, number, number, number, number, number, number],
+        hok: 6,
+        upahHarian: exactRate,
+        totalUpah: assignedTotal,
+      };
+    });
+
+    // Adjust difference to last worker (Pekerja) so total is 100% klop (Rp 0 difference)
+    const diff = targetBudget - allocatedSum;
+    if (diff !== 0 && resultAttendance.length > 0) {
+      const lastIdx = resultAttendance.length - 1;
+      resultAttendance[lastIdx].totalUpah += diff;
+    }
+
+    return resultAttendance;
+  };
+
   // Handler: Balance Attendance & Sync with RAB/Kwitansi
   const handleSyncWithRabAndKwitansi = (customTarget?: number) => {
     const target =
@@ -255,93 +374,92 @@ export const WageManager: React.FC<WageManagerProps> = ({
       return;
     }
 
-    // 1. Ambil list kehadiran saat ini atau semua worker terdaftar
-    let currentAttendance =
-      activeReport.attendance.length > 0
-        ? [...activeReport.attendance]
-        : workers.map((w) => ({
-            workerId: w.id,
-            nama: w.nama,
-            jenisKelamin: w.jenisKelamin,
-            domisili: w.domisili,
-            peran: w.peran,
-            peranLabel: w.peranLabel,
-            days: [1, 1, 1, 1, 0, 1, 1] as [number, number, number, number, number, number, number],
-            hok: 6,
-            upahHarian: w.upahHarian,
-            totalUpah: 6 * w.upahHarian,
-          }));
+    let balancedAttendance: any[] = [];
 
-    // Standardize daily rates strictly using AHSP master standard
-    currentAttendance = currentAttendance.map((att) => {
-      const standardRate = getAhspWageRateForRole(att.peran, att.peranLabel || att.peran, ahspWageMap, att.upahHarian);
-      return {
-        ...att,
-        upahHarian: standardRate,
-      };
-    });
+    if (activeTab === 'borongan') {
+      // Use balanced Borongan team structure (Mandor, KT, Tukang, Pekerja)
+      balancedAttendance = getBalancedBoronganAttendance(target, workers, ahspWageMap);
+    } else {
+      // 1. Ambil list kehadiran saat ini atau semua worker terdaftar untuk Mode Harian HOK
+      let currentAttendance =
+        activeReport.attendance.length > 0
+          ? [...activeReport.attendance]
+          : workers.map((w) => ({
+              workerId: w.id,
+              nama: w.nama,
+              jenisKelamin: w.jenisKelamin,
+              domisili: w.domisili,
+              peran: w.peran,
+              peranLabel: w.peranLabel,
+              days: [1, 1, 1, 1, 0, 1, 1] as [number, number, number, number, number, number, number],
+              hok: 6,
+              upahHarian: w.upahHarian,
+              totalUpah: 6 * w.upahHarian,
+            }));
 
-    const numWorkers = currentAttendance.length;
-    if (numWorkers === 0) return;
-
-    // 2. Full-Capacity Sequential Core Worker Allocation Algorithm:
-    // Maksimalkan hari kerja (hingga 7 hari penuh) untuk pekerja utama secara konsisten dari awal hingga akhir.
-    // Jika masih ada sisa pagu yang belum terserap, barulah alokasikan ke pekerja berikutnya.
-    let remainingBudget = target;
-    const balancedAttendance: typeof currentAttendance = [];
-
-    for (let i = 0; i < currentAttendance.length; i++) {
-      if (remainingBudget <= 0) break;
-
-      const att = currentAttendance[i];
-      const workerRate = att.upahHarian || 120000;
-      const isLastAvailable = i === currentAttendance.length - 1;
-
-      // Maksimal 7 hari kerja per minggu untuk pekerja ini
-      const maxPossibleHok = Math.min(7, Math.max(1, Math.floor(remainingBudget / workerRate)));
-
-      let assignedHok = 0;
-      let assignedTotal = 0;
-      let assignedDailyRate = workerRate;
-
-      if (isLastAvailable || remainingBudget < workerRate * 2) {
-        // Alokasikan sisa dana penuh ke pekerja ini agar 100% balance
-        assignedTotal = remainingBudget;
-        let calculatedHok = Math.round(assignedTotal / workerRate);
-        assignedHok = Math.min(7, Math.max(1, calculatedHok));
-        assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
-        remainingBudget = 0;
-      } else {
-        // Maksimalkan 7 hari kerja (atau sisa max hari yang muat)
-        assignedHok = Math.min(7, Math.max(1, maxPossibleHok));
-        assignedTotal = Math.round(assignedHok * workerRate);
-        remainingBudget -= assignedTotal;
-      }
-
-      const assignedDays: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
-      for (let d = 0; d < Math.min(7, assignedHok); d++) {
-        assignedDays[d] = 1;
-      }
-
-      balancedAttendance.push({
-        ...att,
-        days: assignedDays,
-        hok: assignedHok,
-        upahHarian: assignedDailyRate,
-        totalUpah: assignedTotal,
+      // Standardize daily rates strictly using AHSP master standard
+      currentAttendance = currentAttendance.map((att) => {
+        const standardRate = getAhspWageRateForRole(att.peran, att.peranLabel || att.peran, ahspWageMap, att.upahHarian);
+        return {
+          ...att,
+          upahHarian: standardRate,
+        };
       });
-    }
 
-    // Jika seluruh worker yang ada sudah 7 hari penuh tapi masih ada sisa dana, serap ke pekerja terakhir
-    if (remainingBudget > 0 && balancedAttendance.length > 0) {
-      const lastIdx = balancedAttendance.length - 1;
-      balancedAttendance[lastIdx].totalUpah += remainingBudget;
-      balancedAttendance[lastIdx].upahHarian = Math.round((balancedAttendance[lastIdx].totalUpah / (balancedAttendance[lastIdx].hok || 1)) * 100) / 100;
+      const numWorkers = currentAttendance.length;
+      if (numWorkers === 0) return;
+
+      let remainingBudget = target;
+
+      for (let i = 0; i < currentAttendance.length; i++) {
+        if (remainingBudget <= 0) break;
+
+        const att = currentAttendance[i];
+        const workerRate = att.upahHarian || 120000;
+        const isLastAvailable = i === currentAttendance.length - 1;
+
+        const maxPossibleHok = Math.min(7, Math.max(1, Math.floor(remainingBudget / workerRate)));
+
+        let assignedHok = 0;
+        let assignedTotal = 0;
+        let assignedDailyRate = workerRate;
+
+        if (isLastAvailable || remainingBudget < workerRate * 2) {
+          assignedTotal = remainingBudget;
+          let calculatedHok = Math.round(assignedTotal / workerRate);
+          assignedHok = Math.min(7, Math.max(1, calculatedHok));
+          assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
+          remainingBudget = 0;
+        } else {
+          assignedHok = Math.min(7, Math.max(1, maxPossibleHok));
+          assignedTotal = Math.round(assignedHok * workerRate);
+          remainingBudget -= assignedTotal;
+        }
+
+        const assignedDays: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
+        for (let d = 0; d < Math.min(7, assignedHok); d++) {
+          assignedDays[d] = 1;
+        }
+
+        balancedAttendance.push({
+          ...att,
+          days: assignedDays,
+          hok: assignedHok,
+          upahHarian: assignedDailyRate,
+          totalUpah: assignedTotal,
+        });
+      }
+
+      if (remainingBudget > 0 && balancedAttendance.length > 0) {
+        const lastIdx = balancedAttendance.length - 1;
+        balancedAttendance[lastIdx].totalUpah += remainingBudget;
+        balancedAttendance[lastIdx].upahHarian = Math.round((balancedAttendance[lastIdx].totalUpah / (balancedAttendance[lastIdx].hok || 1)) * 100) / 100;
+      }
     }
 
     const finalTotalUpah = balancedAttendance.reduce((s, a) => s + a.totalUpah, 0);
 
-    // 3. Update Weekly Wage Report
+    // Update Weekly Wage Report
     const updatedWageReports = wageReports.map((rep) => {
       if (rep.mingguKe === selectedWeekNum) {
         return {
@@ -441,58 +559,64 @@ export const WageManager: React.FC<WageManagerProps> = ({
 
       const targetNominal = matchedKw && matchedKw.nominal > 0 ? matchedKw.nominal : rep.totalUpah > 0 ? rep.totalUpah : 2740737;
 
-      let remaining = targetNominal;
-      const balancedAttendance: any[] = [];
+      let balancedAttendance: any[] = [];
 
-      for (let i = 0; i < workers.length; i++) {
-        if (remaining <= 0) break;
-        const w = workers[i];
-        const exactRate = getAhspWageRateForRole(w.peran, w.peranLabel, ahspWageMap, w.upahHarian);
-        const isLastWorker = i === workers.length - 1;
+      if (activeTab === 'borongan') {
+        balancedAttendance = getBalancedBoronganAttendance(targetNominal, workers, ahspWageMap);
+      } else {
+        let remaining = targetNominal;
 
-        let assignedHok = 0;
-        let assignedTotal = 0;
-        let assignedDailyRate = exactRate;
+        for (let i = 0; i < workers.length; i++) {
+          if (remaining <= 0) break;
+          const w = workers[i];
+          const exactRate = getAhspWageRateForRole(w.peran, w.peranLabel, ahspWageMap, w.upahHarian);
+          const isLastWorker = i === workers.length - 1;
 
-        if (isLastWorker || remaining < exactRate * 2) {
-          assignedTotal = remaining;
-          let calculatedHok = Math.round(assignedTotal / exactRate);
-          assignedHok = Math.min(7, Math.max(1, calculatedHok));
-          assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
-          remaining = 0;
-        } else {
-          const maxHokPossible = Math.min(7, Math.max(1, Math.floor(remaining / exactRate)));
-          assignedHok = maxHokPossible;
-          assignedTotal = Math.round(assignedHok * exactRate);
-          remaining -= assignedTotal;
+          let assignedHok = 0;
+          let assignedTotal = 0;
+          let assignedDailyRate = exactRate;
+
+          if (isLastWorker || remaining < exactRate * 2) {
+            assignedTotal = remaining;
+            let calculatedHok = Math.round(assignedTotal / exactRate);
+            assignedHok = Math.min(7, Math.max(1, calculatedHok));
+            assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
+            remaining = 0;
+          } else {
+            const maxHokPossible = Math.min(7, Math.max(1, Math.floor(remaining / exactRate)));
+            assignedHok = maxHokPossible;
+            assignedTotal = Math.round(assignedHok * exactRate);
+            remaining -= assignedTotal;
+          }
+
+          const days: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
+          for (let d = 0; d < Math.min(7, assignedHok); d++) {
+            days[d] = 1;
+          }
+
+          balancedAttendance.push({
+            workerId: w.id,
+            nama: w.nama,
+            jenisKelamin: w.jenisKelamin,
+            domisili: w.domisili === 'Luar Desa' ? 'Luar Desa' : 'Dalam Desa',
+            peran: w.peran,
+            peranLabel: w.peranLabel,
+            days,
+            hok: assignedHok,
+            upahHarian: assignedDailyRate,
+            totalUpah: assignedTotal,
+          });
         }
 
-        const days: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
-        for (let d = 0; d < Math.min(7, assignedHok); d++) {
-          days[d] = 1;
+        if (remaining > 0 && balancedAttendance.length > 0) {
+          const lastIdx = balancedAttendance.length - 1;
+          balancedAttendance[lastIdx].totalUpah += remaining;
+          balancedAttendance[lastIdx].upahHarian = Math.round((balancedAttendance[lastIdx].totalUpah / (balancedAttendance[lastIdx].hok || 1)) * 100) / 100;
         }
-
-        balancedAttendance.push({
-          workerId: w.id,
-          nama: w.nama,
-          jenisKelamin: w.jenisKelamin,
-          domisili: w.domisili === 'Luar Desa' ? 'Luar Desa' : 'Dalam Desa',
-          peran: w.peran,
-          peranLabel: w.peranLabel,
-          days,
-          hok: assignedHok,
-          upahHarian: assignedDailyRate,
-          totalUpah: assignedTotal,
-        });
-      }
-
-      if (remaining > 0 && balancedAttendance.length > 0) {
-        const lastIdx = balancedAttendance.length - 1;
-        balancedAttendance[lastIdx].totalUpah += remaining;
-        balancedAttendance[lastIdx].upahHarian = Math.round((balancedAttendance[lastIdx].totalUpah / (balancedAttendance[lastIdx].hok || 1)) * 100) / 100;
       }
 
       const finalTotal = balancedAttendance.reduce((s, a) => s + a.totalUpah, 0);
+
       processedWeeksCount++;
 
       // Update Kwitansi
