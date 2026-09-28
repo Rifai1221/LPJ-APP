@@ -353,6 +353,7 @@ export interface RealSchoolData {
   tahunAnggaran: string;
   luasBangunanM2: number;
   biayaPerM2: number;
+  paguAnggaran?: number;
   totalNilaiRab: number;
   divisions: RabDivision[];
   ahspList?: AhspItem[];

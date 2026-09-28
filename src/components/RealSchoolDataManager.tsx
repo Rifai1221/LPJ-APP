@@ -6,6 +6,8 @@ import {
   Plus,
   Trash2,
   Edit2,
+  Edit3,
+  Sliders,
   Save,
   RotateCcw,
   ChevronDown,
@@ -20,7 +22,8 @@ import {
   FileUp,
   AlertTriangle,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  Wand2
 } from 'lucide-react';
 import { defaultRealSchoolData } from '../data/realSchoolData';
 import { downloadRealDataExcelTemplate, parseRealDataExcelFile } from '../utils/excelHelper';
@@ -48,7 +51,10 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
   // Division Modal / Form state
   const [editingDivision, setEditingDivision] = useState<RabDivision | null>(null);
   const [isAddingDivision, setIsAddingDivision] = useState(false);
-  const [newDivForm, setNewDivForm] = useState({ kode: '', uraian: '' });
+  const [newDivForm, setNewDivForm] = useState({ kode: '', uraian: '', subTotal: 0, bobotPersen: 0 });
+
+  // Rekap Table Quick Edit mode (Edit Jumlah Harga RP & Bobot % langsung di tabel)
+  const [isEditingRekapTable, setIsEditingRekapTable] = useState(false);
 
   // AHSP Modal / Form state
   const [editingAhsp, setEditingAhsp] = useState<AhspItem | null>(null);
@@ -168,9 +174,16 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
     }).format(val || 0);
   };
 
-  // Recalculate totals
+  // Recalculate totals & Pagu reference
   const currentTotalRab = realData.divisions.reduce((sum, d) => sum + (d.subTotal || 0), 0);
+  const activePagu = realData.paguAnggaran !== undefined && realData.paguAnggaran > 0 
+    ? realData.paguAnggaran 
+    : currentTotalRab > 0 
+      ? currentTotalRab 
+      : 516851675.10;
+  const sisaPagu = activePagu - currentTotalRab;
   const biayaPerM2 = realData.luasBangunanM2 > 0 ? currentTotalRab / realData.luasBangunanM2 : 0;
+  const totalBobotTerkini = realData.divisions.reduce((s, d) => s + (d.bobotPersen || 0), 0);
 
   // Handle header field change
   const handleHeaderChange = (field: keyof RealSchoolData, value: any) => {
@@ -179,7 +192,19 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
       const luas = parseFloat(value) || 1;
       updated.biayaPerM2 = updated.totalNilaiRab / luas;
     }
+    if (field === 'paguAnggaran') {
+      const pagu = parseFloat(value) || 0;
+      updated.paguAnggaran = pagu;
+    }
     onUpdateRealData(updated);
+  };
+
+  // Set Pagu Anggaran sama dengan Total RAB saat ini
+  const handleSetPaguFromTotalRab = () => {
+    onUpdateRealData({
+      ...realData,
+      paguAnggaran: currentTotalRab,
+    });
   };
 
   // --- DIVISION CRUD ---
@@ -189,42 +214,135 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
       return;
     }
     const newDivId = `div-${Date.now()}`;
+    let initialSubTotal = Number(newDivForm.subTotal) || 0;
+    let initialBobot = Number(newDivForm.bobotPersen) || 0;
+
+    // Jika user menginput bobot tapi tidak mengisi subTotal, hitung dari Pagu
+    if (initialBobot > 0 && initialSubTotal === 0 && activePagu > 0) {
+      initialSubTotal = Math.round(((initialBobot / 100) * activePagu) * 100) / 100;
+    } else if (initialSubTotal > 0 && initialBobot === 0 && activePagu > 0) {
+      initialBobot = parseFloat(((initialSubTotal / activePagu) * 100).toFixed(2));
+    }
+
     const newDivision: RabDivision = {
       id: newDivId,
       kode: newDivForm.kode.toUpperCase().trim(),
       uraian: newDivForm.uraian.toUpperCase().trim(),
-      subTotal: 0,
-      bobotPersen: 0,
+      subTotal: initialSubTotal,
+      bobotPersen: initialBobot,
       items: [],
     };
 
     const updatedDivs = [...realData.divisions, newDivision];
     const newTotal = updatedDivs.reduce((s, d) => s + (d.subTotal || 0), 0);
-    const rebalancedDivs = updatedDivs.map((d) => ({
-      ...d,
-      bobotPersen: newTotal > 0 ? parseFloat(((d.subTotal / newTotal) * 100).toFixed(2)) : 0,
-    }));
 
     onUpdateRealData({
       ...realData,
-      divisions: rebalancedDivs,
+      divisions: updatedDivs,
       totalNilaiRab: newTotal,
       biayaPerM2: realData.luasBangunanM2 > 0 ? newTotal / realData.luasBangunanM2 : 0,
     });
 
     setExpandedDivisions((prev) => ({ ...prev, [newDivId]: true }));
-    setNewDivForm({ kode: '', uraian: '' });
+    setNewDivForm({ kode: '', uraian: '', subTotal: 0, bobotPersen: 0 });
     setIsAddingDivision(false);
   };
 
   const handleSaveEditDivision = () => {
     if (!editingDivision) return;
     const updatedDivs = realData.divisions.map((d) => (d.id === editingDivision.id ? editingDivision : d));
+    const newTotal = updatedDivs.reduce((sum, d) => sum + (d.subTotal || 0), 0);
     onUpdateRealData({
       ...realData,
       divisions: updatedDivs,
+      totalNilaiRab: newTotal,
+      biayaPerM2: realData.luasBangunanM2 > 0 ? newTotal / realData.luasBangunanM2 : 0,
     });
     setEditingDivision(null);
+  };
+
+  // Direct table edit: Edit Jumlah Harga (Rp) of a division -> AUTO CALCULATE BOBOT (%) DARI PAGU ANGGARAN
+  const handleDivisionSubTotalChange = (divId: string, valStr: string) => {
+    const val = parseFloat(valStr) || 0;
+    const paguRef = activePagu > 0 ? activePagu : currentTotalRab;
+
+    const updatedDivs = realData.divisions.map((d) => {
+      if (d.id === divId) {
+        const subTotalVal = Math.max(0, val);
+        const calcBobot = paguRef > 0 ? parseFloat(((subTotalVal / paguRef) * 100).toFixed(2)) : d.bobotPersen;
+        return { 
+          ...d, 
+          subTotal: subTotalVal,
+          bobotPersen: calcBobot,
+        };
+      }
+      return d;
+    });
+
+    const newTotal = updatedDivs.reduce((sum, d) => sum + (d.subTotal || 0), 0);
+
+    onUpdateRealData({
+      ...realData,
+      divisions: updatedDivs,
+      totalNilaiRab: newTotal,
+      biayaPerM2: realData.luasBangunanM2 > 0 ? newTotal / realData.luasBangunanM2 : 0,
+    });
+  };
+
+  // Direct table edit: Edit Bobot (%) of a division -> AUTO CALCULATE JUMLAH HARGA (RP) DARI PAGU ANGGARAN
+  const handleDivisionBobotChange = (divId: string, valStr: string) => {
+    const bobotVal = parseFloat(valStr) || 0;
+    const paguRef = activePagu > 0 ? activePagu : 516851675.10;
+
+    const updatedDivs = realData.divisions.map((d) => {
+      if (d.id === divId) {
+        const safeBobot = Math.max(0, bobotVal);
+        // Otomatis hitung Jumlah Harga (Rp) = (Bobot / 100) * Pagu Anggaran
+        const calculatedSubTotal = Math.round(((safeBobot / 100) * paguRef) * 100) / 100;
+        return { 
+          ...d, 
+          bobotPersen: safeBobot,
+          subTotal: calculatedSubTotal,
+        };
+      }
+      return d;
+    });
+
+    const newTotal = updatedDivs.reduce((sum, d) => sum + (d.subTotal || 0), 0);
+
+    onUpdateRealData({
+      ...realData,
+      divisions: updatedDivs,
+      totalNilaiRab: newTotal,
+      biayaPerM2: realData.luasBangunanM2 > 0 ? newTotal / realData.luasBangunanM2 : 0,
+    });
+  };
+
+  // Auto-balance Bobot % to 100.00% based on Pagu Anggaran / subTotals
+  const handleAutoBalanceBobotFromSubTotals = () => {
+    const targetTotal = activePagu > 0 ? activePagu : currentTotalRab;
+    if (targetTotal <= 0) {
+      alert('Pagu anggaran atau total RAB harus lebih dari 0 untuk menghitung bobot otomatis.');
+      return;
+    }
+    const rebalanced = realData.divisions.map((d) => ({
+      ...d,
+      bobotPersen: parseFloat(((d.subTotal / targetTotal) * 100).toFixed(2)),
+    }));
+
+    // Fix 0.01 rounding difference on last item if needed
+    const sumBobot = rebalanced.reduce((s, d) => s + d.bobotPersen, 0);
+    const diff = Math.round((100 - sumBobot) * 100) / 100;
+    if (Math.abs(diff) > 0 && Math.abs(diff) <= 0.05 && rebalanced.length > 0) {
+      rebalanced[rebalanced.length - 1].bobotPersen = Math.round((rebalanced[rebalanced.length - 1].bobotPersen + diff) * 100) / 100;
+    }
+
+    onUpdateRealData({
+      ...realData,
+      divisions: rebalanced,
+      totalNilaiRab: currentTotalRab,
+      biayaPerM2: realData.luasBangunanM2 > 0 ? currentTotalRab / realData.luasBangunanM2 : 0,
+    });
   };
 
   const handleDeleteDivision = (divId: string, kode: string) => {
@@ -784,12 +902,12 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
             <button
               type="button"
               onClick={() => setIsAddingDivision(false)}
-              className="text-slate-400 hover:text-slate-600"
+              className="text-slate-400 hover:text-slate-600 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Kode Divisi (misal: XIII)</label>
               <input
@@ -800,7 +918,7 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-bold uppercase"
               />
             </div>
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-3">
               <label className="block text-xs font-bold text-slate-700 mb-1">Nama Uraian Pekerjaan Divisi</label>
               <input
                 type="text"
@@ -810,19 +928,54 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-bold uppercase"
               />
             </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-slate-700 mb-1">Jumlah Harga (Rp)</label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="0"
+                value={newDivForm.subTotal || ''}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value) || 0;
+                  const autoBobot = activePagu > 0 ? parseFloat(((val / activePagu) * 100).toFixed(2)) : newDivForm.bobotPersen;
+                  setNewDivForm({ ...newDivForm, subTotal: val, bobotPersen: autoBobot });
+                }}
+                className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Bobot (%) <span className="text-[10px] text-blue-600 font-normal">(Hitung Rp otomatis)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                placeholder="0.00"
+                value={newDivForm.bobotPersen || ''}
+                onChange={(e) => {
+                  const bVal = parseFloat(e.target.value) || 0;
+                  const autoRp = activePagu > 0 ? Math.round(((bVal / 100) * activePagu) * 100) / 100 : newDivForm.subTotal;
+                  setNewDivForm({ ...newDivForm, bobotPersen: bVal, subTotal: autoRp });
+                }}
+                className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700"
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={() => setIsAddingDivision(false)}
-              className="px-3 py-1.5 border border-slate-300 rounded text-xs font-semibold hover:bg-slate-100"
+              className="px-3 py-1.5 border border-slate-300 rounded text-xs font-semibold hover:bg-slate-100 cursor-pointer"
             >
               Batal
             </button>
             <button
               type="button"
               onClick={handleAddDivision}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold"
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer"
             >
               Simpan Divisi Baru
             </button>
@@ -836,17 +989,17 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
           <div className="flex justify-between items-center">
             <h4 className="font-extrabold text-sm text-amber-900 flex items-center gap-2">
               <Edit2 className="w-4 h-4 text-amber-600" />
-              <span>Edit Nama Divisi / Tahapan Pekerjaan</span>
+              <span>Edit Data Divisi, Jumlah Harga (Rp) & Bobot (%)</span>
             </h4>
             <button
               type="button"
               onClick={() => setEditingDivision(null)}
-              className="text-slate-400 hover:text-slate-600"
+              className="text-slate-400 hover:text-slate-600 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Kode Divisi</label>
               <input
@@ -856,7 +1009,7 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-bold uppercase"
               />
             </div>
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-3">
               <label className="block text-xs font-bold text-slate-700 mb-1">Nama Uraian Pekerjaan Divisi</label>
               <input
                 type="text"
@@ -865,19 +1018,60 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-bold uppercase"
               />
             </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-slate-700 mb-1">Jumlah Harga (Rp)</label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={editingDivision.subTotal ?? ''}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value) || 0;
+                  const autoBobot = activePagu > 0 ? parseFloat(((val / activePagu) * 100).toFixed(2)) : (editingDivision.bobotPersen || 0);
+                  setEditingDivision({ 
+                    ...editingDivision, 
+                    subTotal: val,
+                    bobotPersen: autoBobot 
+                  });
+                }}
+                className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Bobot (%) <span className="text-[10px] text-blue-600 font-normal">(Hitung Rp otomatis)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={editingDivision.bobotPersen ?? ''}
+                onChange={(e) => {
+                  const bVal = parseFloat(e.target.value) || 0;
+                  const autoRp = activePagu > 0 ? Math.round(((bVal / 100) * activePagu) * 100) / 100 : (editingDivision.subTotal || 0);
+                  setEditingDivision({ 
+                    ...editingDivision, 
+                    bobotPersen: bVal,
+                    subTotal: autoRp 
+                  });
+                }}
+                className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-blue-700"
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={() => setEditingDivision(null)}
-              className="px-3 py-1.5 border border-slate-300 rounded text-xs font-semibold hover:bg-slate-100"
+              className="px-3 py-1.5 border border-slate-300 rounded text-xs font-semibold hover:bg-slate-100 cursor-pointer"
             >
               Batal
             </button>
             <button
               type="button"
               onClick={handleSaveEditDivision}
-              className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold"
+              className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold cursor-pointer"
             >
               Simpan Perubahan
             </button>
@@ -1028,7 +1222,7 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
           </div>
 
           {/* School Header Information Editable Inputs */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
             <div>
               <label className="block font-semibold text-slate-600 mb-1">Nama Satuan Sekolah</label>
               <input
@@ -1056,6 +1250,116 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 font-medium text-slate-800"
               />
             </div>
+            <div className="bg-indigo-50/80 p-2.5 rounded-lg border border-indigo-200">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-indigo-950">Pagu Anggaran (Rp)</label>
+                <button
+                  type="button"
+                  onClick={handleSetPaguFromTotalRab}
+                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                  title="Samakan Pagu dengan Total RAB saat ini"
+                >
+                  Set dari RAB
+                </button>
+              </div>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={realData.paguAnggaran ?? (currentTotalRab || 516851675.10)}
+                onChange={(e) => handleHeaderChange('paguAnggaran', e.target.value)}
+                className="w-full bg-white border border-indigo-300 rounded px-2.5 py-1.5 font-mono font-black text-indigo-900 focus:ring-2 focus:ring-indigo-500"
+                placeholder="0"
+              />
+              <span className="block text-[10px] text-indigo-700 font-medium mt-0.5">
+                {formatRupiah(activePagu)}
+              </span>
+            </div>
+          </div>
+
+          {/* Budget Allocation Monitor Card */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-gradient-to-r from-slate-900 to-indigo-950 p-4 rounded-xl text-white shadow-sm text-xs">
+            <div>
+              <span className="text-slate-400 font-semibold text-[11px] block">TOTAL PAGU ANGGARAN (ACUAN 100%):</span>
+              <span className="text-base font-mono font-black text-amber-300">
+                {formatRupiah(activePagu)}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 font-semibold text-[11px] block">TOTAL RAB TERKINI (HASIL DIVISI):</span>
+              <span className="text-base font-mono font-black text-emerald-300">
+                {formatRupiah(currentTotalRab)}
+              </span>
+              <span className="text-[10px] text-slate-300 ml-1">
+                ({totalBobotTerkini.toFixed(2)}%)
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 font-semibold text-[11px] block">STATUS ALOKASI / SISA PAGU:</span>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {Math.abs(sisaPagu) < 1 ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    <CheckCircle className="w-3 h-3 text-emerald-400" />
+                    Pas Sesuai Pagu (100.00%)
+                  </span>
+                ) : sisaPagu > 0 ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    Sisa Pagu: {formatRupiah(sisaPagu)} ({((sisaPagu / activePagu) * 100).toFixed(2)}%)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                    Melebihi Pagu: {formatRupiah(Math.abs(sisaPagu))}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Toolbar Actions for Rekap Table */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-700">Tabel Rekapitulasi:</span>
+              <span className="text-[11px] text-slate-500">
+                {realData.divisions.length} Divisi Pekerjaan
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsEditingRekapTable(!isEditingRekapTable)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer ${
+                  isEditingRekapTable
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                    : 'bg-white hover:bg-slate-100 text-amber-800 border border-amber-300'
+                }`}
+                title="Aktifkan mode edit cepat Jumlah Harga (Rp) dan Bobot (%) langsung di tabel"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>{isEditingRekapTable ? 'Kunci Edit Nilai' : 'Edit Nilai Cepat (Rp & %)'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAutoBalanceBobotFromSubTotals}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-xs transition cursor-pointer"
+                title="Hitung ulang otomatis Bobot (%) dari seluruh Jumlah Harga agar pas 100.00%"
+              >
+                <Wand2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Hitung Ulang Bobot (100%)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setNewDivForm({ kode: '', uraian: '', subTotal: 0, bobotPersen: 0 });
+                  setIsAddingDivision(true);
+                }}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah Divisi</span>
+              </button>
+            </div>
           </div>
 
           {/* Rekap Table */}
@@ -1065,38 +1369,77 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                 <tr className="bg-slate-200 font-extrabold text-slate-800 uppercase text-center">
                   <th className="border border-slate-400 py-2.5 px-3 w-16">NO.</th>
                   <th className="border border-slate-400 py-2.5 px-4 text-left">URAIAN PEKERJAAN (DIVISI / TAHAPAN)</th>
-                  <th className="border border-slate-400 py-2.5 px-4 text-right w-48">JUMLAH HARGA (RP)</th>
-                  <th className="border border-slate-400 py-2.5 px-3 text-center w-24">BOBOT (%)</th>
-                  <th className="border border-slate-400 py-2.5 px-3 text-center w-20">AKSI</th>
+                  <th className="border border-slate-400 py-2.5 px-4 text-right w-56">JUMLAH HARGA (RP)</th>
+                  <th className="border border-slate-400 py-2.5 px-3 text-center w-32">BOBOT (%)</th>
+                  <th className="border border-slate-400 py-2.5 px-3 text-center w-24">AKSI</th>
                 </tr>
               </thead>
               <tbody>
                 {realData.divisions.map((div, divIdx) => (
                   <tr key={div.id} className="hover:bg-blue-50/50">
                     <td className="border border-slate-300 py-2 px-3 text-center font-extrabold text-blue-900 bg-slate-50 font-mono">
-                      {toRoman(divIdx + 1)}
+                      {div.kode || toRoman(divIdx + 1)}
                     </td>
-                    <td className="border border-slate-300 py-2 px-4 font-semibold text-slate-800">{div.uraian}</td>
-                    <td className="border border-slate-300 py-2 px-4 text-right font-mono font-medium">
-                      {formatRupiah(div.subTotal)}
+                    <td className="border border-slate-300 py-2 px-4 font-semibold text-slate-800">
+                      {div.uraian}
+                    </td>
+                    <td className="border border-slate-300 py-2 px-3 text-right font-mono font-medium">
+                      {isEditingRekapTable ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-[10px] text-slate-500 font-bold">Rp</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={div.subTotal || ''}
+                            onChange={(e) => handleDivisionSubTotalChange(div.id, e.target.value)}
+                            placeholder="0"
+                            className="w-36 text-right font-mono font-bold text-slate-900 px-2 py-1 bg-amber-50/60 border border-amber-400 rounded focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden text-xs"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end group cursor-pointer" onClick={() => setEditingDivision(div)}>
+                          <span className="font-semibold">{formatRupiah(div.subTotal)}</span>
+                          <Edit3 className="w-3 h-3 ml-1 text-slate-400 opacity-0 group-hover:opacity-100 transition" />
+                        </div>
+                      )}
                     </td>
                     <td className="border border-slate-300 py-2 px-3 text-center font-mono font-bold text-blue-700">
-                      {div.bobotPersen.toFixed(2)}%
+                      {isEditingRekapTable ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={div.bobotPersen || ''}
+                            onChange={(e) => handleDivisionBobotChange(div.id, e.target.value)}
+                            placeholder="0.00"
+                            className="w-20 text-center font-mono font-bold text-blue-900 px-1.5 py-1 bg-blue-50 border border-blue-400 rounded focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden text-xs"
+                          />
+                          <span className="text-[10px] text-blue-800 font-bold">%</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center group cursor-pointer" onClick={() => setEditingDivision(div)}>
+                          <span>{div.bobotPersen.toFixed(2)}%</span>
+                          <Edit3 className="w-3 h-3 ml-1 text-blue-400 opacity-0 group-hover:opacity-100 transition" />
+                        </div>
+                      )}
                     </td>
                     <td className="border border-slate-300 py-2 px-2 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
                           onClick={() => setEditingDivision(div)}
-                          className="p-1 text-slate-500 hover:text-amber-600 rounded transition"
-                          title="Edit nama divisi ini"
+                          className="p-1.5 text-slate-600 hover:text-amber-700 hover:bg-amber-100 rounded transition cursor-pointer"
+                          title="Edit lengkap divisi, jumlah harga & bobot"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteDivision(div.id, div.kode)}
-                          className="p-1 text-slate-400 hover:text-rose-600 rounded transition"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
                           title="Hapus divisi ini"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1115,7 +1458,7 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                     {formatRupiah(currentTotalRab)}
                   </td>
                   <td className="border border-slate-400 py-3 px-3 text-center font-mono text-sm text-blue-900">
-                    100.00%
+                    {realData.divisions.reduce((s, d) => s + (d.bobotPersen || 0), 0).toFixed(2)}%
                   </td>
                   <td className="border border-slate-400"></td>
                 </tr>
