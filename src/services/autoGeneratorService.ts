@@ -1192,8 +1192,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
     }
   });
 
-  // 6. Process UPAH & Weekly Wage Report
-  // If upah was calculated from real items, use that; otherwise calculate from active workers
+  // 6. Process UPAH & Weekly Wage Report with Full-Capacity Sequential Core Worker Allocation
   const activeWorkersList: WorkerItem[] = workers && workers.length > 0 ? workers : [
     {
       id: 'w-def-1',
@@ -1233,13 +1232,41 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
     },
   ];
 
-  let currentWageReport = updatedWageReports.find((r) => r.mingguKe === targetWeek);
-  const defaultAttendance = activeWorkersList.map((w, idx) => {
-    const days: [number, number, number, number, number, number, number] = [1, 1, 1, 1, idx % 4 === 0 ? 0 : 1, 1, 1];
-    const hok = days.reduce((a, b) => a + b, 0);
+  const targetWage = totalWageAmountForWeek > 0 ? totalWageAmountForWeek : 2740737;
+  let remainingWageBudget = targetWage;
+  const sequentialAttendance: any[] = [];
+
+  for (let i = 0; i < activeWorkersList.length; i++) {
+    if (remainingWageBudget <= 0) break;
+
+    const w = activeWorkersList[i];
     const safeDomisili: 'Dalam Desa' | 'Luar Desa' = w.domisili === 'Luar Desa' ? 'Luar Desa' : 'Dalam Desa';
     const exactRate = getAhspWageRateForRole(w.peran, w.peranLabel, realSchoolData?.ahspList, w.upahHarian);
-    return {
+    const isLastWorker = i === activeWorkersList.length - 1;
+
+    let assignedHok = 0;
+    let assignedTotal = 0;
+    let assignedDailyRate = exactRate;
+
+    if (isLastWorker || remainingWageBudget < exactRate * 2) {
+      assignedTotal = remainingWageBudget;
+      let calculatedHok = Math.round(assignedTotal / exactRate);
+      assignedHok = Math.min(7, Math.max(1, calculatedHok));
+      assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
+      remainingWageBudget = 0;
+    } else {
+      const maxHokPossible = Math.min(7, Math.max(1, Math.floor(remainingWageBudget / exactRate)));
+      assignedHok = maxHokPossible;
+      assignedTotal = Math.round(assignedHok * exactRate);
+      remainingWageBudget -= assignedTotal;
+    }
+
+    const days: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
+    for (let d = 0; d < Math.min(7, assignedHok); d++) {
+      days[d] = 1;
+    }
+
+    sequentialAttendance.push({
       workerId: w.id,
       nama: w.nama,
       jenisKelamin: w.jenisKelamin,
@@ -1247,15 +1274,20 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
       peran: w.peran,
       peranLabel: w.peranLabel,
       days,
-      hok,
-      upahHarian: exactRate,
-      totalUpah: hok * exactRate,
-    };
-  });
+      hok: assignedHok,
+      upahHarian: assignedDailyRate,
+      totalUpah: assignedTotal,
+    });
+  }
 
-  const totCalculatedUpah = totalWageAmountForWeek > 0
-    ? totalWageAmountForWeek
-    : defaultAttendance.reduce((s, a) => s + a.totalUpah, 0);
+  // Sisa selisih terakhir diserap tepat
+  if (remainingWageBudget > 0 && sequentialAttendance.length > 0) {
+    const lastIdx = sequentialAttendance.length - 1;
+    sequentialAttendance[lastIdx].totalUpah += remainingWageBudget;
+    sequentialAttendance[lastIdx].upahHarian = Math.round((sequentialAttendance[lastIdx].totalUpah / (sequentialAttendance[lastIdx].hok || 1)) * 100) / 100;
+  }
+
+  const totCalculatedUpah = sequentialAttendance.reduce((s, a) => s + a.totalUpah, 0);
 
   const wageDocId = `wage-rep-m${targetWeek}`;
   const wageIdx = updatedWageReports.findIndex((r) => r.mingguKe === targetWeek);
@@ -1270,7 +1302,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
     noBuktiKwitansi: `UK/${targetWeek < 10 ? '0' + targetWeek : targetWeek}/${yearStr}`,
     penerimaNama: activeWorkersList[0]?.nama || 'Kepala Tukang',
     penerimaJabatan: activeWorkersList[0]?.peranLabel || 'Kepala Tukang',
-    attendance: defaultAttendance,
+    attendance: sequentialAttendance,
     totalUpah: totCalculatedUpah,
     bobotMingguIni: weekObj.bobotRealisasi || 0,
     bobotKumulatif: weekObj.bobotRealisasi || 0,
@@ -1437,7 +1469,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
       }
 
       // 3. Fallback: Detailed worker role attendance list (Mandor, Kepala Tukang, Pekerja)
-      return defaultAttendance.map((att) => ({
+      return sequentialAttendance.map((att: any) => ({
         namaBarang: `Upah ${att.peranLabel} (${att.nama})`,
         volume: att.hok,
         satuan: 'HOK',

@@ -286,59 +286,60 @@ export const WageManager: React.FC<WageManagerProps> = ({
     const numWorkers = currentAttendance.length;
     if (numWorkers === 0) return;
 
-    // 2. Realistic Integer Balancing across active workers
+    // 2. Full-Capacity Sequential Core Worker Allocation Algorithm:
+    // Maksimalkan hari kerja (hingga 7 hari penuh) untuk pekerja utama secara konsisten dari awal hingga akhir.
+    // Jika masih ada sisa pagu yang belum terserap, barulah alokasikan ke pekerja berikutnya.
     let remainingBudget = target;
-    const balancedAttendance = currentAttendance.map((att, idx) => {
-      const isLast = idx === numWorkers - 1;
+    const balancedAttendance: typeof currentAttendance = [];
+
+    for (let i = 0; i < currentAttendance.length; i++) {
+      if (remainingBudget <= 0) break;
+
+      const att = currentAttendance[i];
       const workerRate = att.upahHarian || 120000;
+      const isLastAvailable = i === currentAttendance.length - 1;
+
+      // Maksimal 7 hari kerja per minggu untuk pekerja ini
+      const maxPossibleHok = Math.min(7, Math.max(1, Math.floor(remainingBudget / workerRate)));
 
       let assignedHok = 0;
-      let assignedDays: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
       let assignedTotal = 0;
+      let assignedDailyRate = workerRate;
 
-      if (isLast) {
-        // Alokasikan sisa persis ke pekerja terakhir sehingga balance 100%
+      if (isLastAvailable || remainingBudget < workerRate * 2) {
+        // Alokasikan sisa dana penuh ke pekerja ini agar 100% balance
         assignedTotal = remainingBudget;
         let calculatedHok = Math.round(assignedTotal / workerRate);
-        if (calculatedHok < 1 && assignedTotal > 0) calculatedHok = 1;
         assignedHok = Math.min(7, Math.max(1, calculatedHok));
-
-        for (let d = 0; d < Math.min(7, assignedHok); d++) {
-          assignedDays[d] = 1;
-        }
-
-        const exactDailyRate = Math.round(assignedTotal / (assignedHok || 1));
-
-        return {
-          ...att,
-          days: assignedDays,
-          hok: assignedHok,
-          upahHarian: exactDailyRate,
-          totalUpah: assignedTotal,
-        };
+        assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
+        remainingBudget = 0;
       } else {
-        const workerShare = 1 / numWorkers;
-        const roughNominal = Math.round(target * workerShare);
-        let calculatedHok = Math.round(roughNominal / workerRate);
-        calculatedHok = Math.min(7, Math.max(1, calculatedHok));
-
-        assignedHok = calculatedHok;
-        assignedTotal = assignedHok * workerRate;
+        // Maksimalkan 7 hari kerja (atau sisa max hari yang muat)
+        assignedHok = Math.min(7, Math.max(1, maxPossibleHok));
+        assignedTotal = Math.round(assignedHok * workerRate);
         remainingBudget -= assignedTotal;
-
-        for (let d = 0; d < Math.min(7, assignedHok); d++) {
-          assignedDays[d] = 1;
-        }
-
-        return {
-          ...att,
-          days: assignedDays,
-          hok: assignedHok,
-          upahHarian: workerRate,
-          totalUpah: assignedTotal,
-        };
       }
-    });
+
+      const assignedDays: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
+      for (let d = 0; d < Math.min(7, assignedHok); d++) {
+        assignedDays[d] = 1;
+      }
+
+      balancedAttendance.push({
+        ...att,
+        days: assignedDays,
+        hok: assignedHok,
+        upahHarian: assignedDailyRate,
+        totalUpah: assignedTotal,
+      });
+    }
+
+    // Jika seluruh worker yang ada sudah 7 hari penuh tapi masih ada sisa dana, serap ke pekerja terakhir
+    if (remainingBudget > 0 && balancedAttendance.length > 0) {
+      const lastIdx = balancedAttendance.length - 1;
+      balancedAttendance[lastIdx].totalUpah += remainingBudget;
+      balancedAttendance[lastIdx].upahHarian = Math.round((balancedAttendance[lastIdx].totalUpah / (balancedAttendance[lastIdx].hok || 1)) * 100) / 100;
+    }
 
     const finalTotalUpah = balancedAttendance.reduce((s, a) => s + a.totalUpah, 0);
 
@@ -421,6 +422,148 @@ export const WageManager: React.FC<WageManagerProps> = ({
         finalTotalUpah
       )} (100% Balance & Klop).`
     );
+    setTimeout(() => setAutoGenMsg(null), 5000);
+  };
+
+  // Handler: Sinkronkan seluruh minggu (Minggu 1 s/d selesai) dengan model pekerja konsisten penuh
+  const handleSyncAllWeeksToFullCapacity = () => {
+    let updatedKwList = kwitansiList ? [...kwitansiList] : [];
+    let processedWeeksCount = 0;
+
+    const updatedReports = wageReports.map((rep) => {
+      // Hitung target upah minggu ini dari kwitansi / bobot progres / totalUpah
+      const matchedKw = updatedKwList.find(
+        (k: any) =>
+          k.tipe === 'UPAH' &&
+          (k.mingguKeRef === rep.mingguKe ||
+            k.noBukti === rep.noBuktiKwitansi ||
+            (k.uraian && k.uraian.toLowerCase().includes(`minggu ke-${rep.mingguKe}`)) ||
+            (k.uraian && k.uraian.toLowerCase().includes(`minggu ${rep.mingguKe}`)))
+      );
+
+      const targetNominal = matchedKw && matchedKw.nominal > 0 ? matchedKw.nominal : rep.totalUpah > 0 ? rep.totalUpah : 2740737;
+
+      let remaining = targetNominal;
+      const balancedAttendance: any[] = [];
+
+      for (let i = 0; i < workers.length; i++) {
+        if (remaining <= 0) break;
+        const w = workers[i];
+        const exactRate = getAhspWageRateForRole(w.peran, w.peranLabel, ahspWageMap, w.upahHarian);
+        const isLastWorker = i === workers.length - 1;
+
+        let assignedHok = 0;
+        let assignedTotal = 0;
+        let assignedDailyRate = exactRate;
+
+        if (isLastWorker || remaining < exactRate * 2) {
+          assignedTotal = remaining;
+          let calculatedHok = Math.round(assignedTotal / exactRate);
+          assignedHok = Math.min(7, Math.max(1, calculatedHok));
+          assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
+          remaining = 0;
+        } else {
+          const maxHokPossible = Math.min(7, Math.max(1, Math.floor(remaining / exactRate)));
+          assignedHok = maxHokPossible;
+          assignedTotal = Math.round(assignedHok * exactRate);
+          remaining -= assignedTotal;
+        }
+
+        const days: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
+        for (let d = 0; d < Math.min(7, assignedHok); d++) {
+          days[d] = 1;
+        }
+
+        balancedAttendance.push({
+          workerId: w.id,
+          nama: w.nama,
+          jenisKelamin: w.jenisKelamin,
+          domisili: w.domisili === 'Luar Desa' ? 'Luar Desa' : 'Dalam Desa',
+          peran: w.peran,
+          peranLabel: w.peranLabel,
+          days,
+          hok: assignedHok,
+          upahHarian: assignedDailyRate,
+          totalUpah: assignedTotal,
+        });
+      }
+
+      if (remaining > 0 && balancedAttendance.length > 0) {
+        const lastIdx = balancedAttendance.length - 1;
+        balancedAttendance[lastIdx].totalUpah += remaining;
+        balancedAttendance[lastIdx].upahHarian = Math.round((balancedAttendance[lastIdx].totalUpah / (balancedAttendance[lastIdx].hok || 1)) * 100) / 100;
+      }
+
+      const finalTotal = balancedAttendance.reduce((s, a) => s + a.totalUpah, 0);
+      processedWeeksCount++;
+
+      // Update Kwitansi
+      if (onUpdateKwitansiList && updatedKwList) {
+        const itemsForKwitansi = balancedAttendance.map((a) => ({
+          namaBarang: `Upah ${a.peranLabel || a.peran} (${a.nama})`,
+          volume: a.hok,
+          satuan: 'HOK',
+          hargaSatuan: a.upahHarian,
+          jumlah: a.totalUpah,
+        }));
+
+        let kwFound = false;
+        updatedKwList = updatedKwList.map((kw: any) => {
+          if (
+            kw.tipe === 'UPAH' &&
+            (kw.mingguKeRef === rep.mingguKe ||
+              kw.noBukti === rep.noBuktiKwitansi ||
+              (kw.uraian && kw.uraian.toLowerCase().includes(`minggu ke-${rep.mingguKe}`)) ||
+              (kw.uraian && kw.uraian.toLowerCase().includes(`minggu ${rep.mingguKe}`)))
+          ) {
+            kwFound = true;
+            return {
+              ...kw,
+              nominal: finalTotal,
+              items: itemsForKwitansi,
+            };
+          }
+          return kw;
+        });
+
+        if (!kwFound) {
+          updatedKwList.push({
+            id: `kw-upah-w${rep.mingguKe}-${Date.now()}`,
+            noBukti: rep.noBuktiKwitansi || `UK/${String(rep.mingguKe).padStart(2, '0')}/2025`,
+            tipe: 'UPAH',
+            tanggal: rep.tanggalKwitansi || `${20 + rep.mingguKe}/10/2025`,
+            tanggalFormatted: rep.tanggalKwitansi || `${20 + rep.mingguKe} Oktober 2025`,
+            bulan: rep.bulan || 'Oktober 2025',
+            uraian: `Pembayaran Upah Tenaga Kerja Mingguan Minggu Ke-${rep.mingguKe}`,
+            penerimaNama: rep.penerimaNama || 'Budiman',
+            penerimaPekerjaan: rep.penerimaJabatan || 'Kepala Tukang',
+            penerimaAlamat: school.desa || school.lokasi || 'Lokasi Pekerjaan',
+            items: itemsForKwitansi,
+            nominal: finalTotal,
+            isPpn: false,
+            isPph22: false,
+            isPph23: false,
+            ppnAmount: 0,
+            pph22Amount: 0,
+            pph23Amount: 0,
+            mingguKeRef: rep.mingguKe,
+          });
+        }
+      }
+
+      return {
+        ...rep,
+        attendance: balancedAttendance,
+        totalUpah: finalTotal,
+      };
+    });
+
+    onUpdateWageReports(updatedReports);
+    if (onUpdateKwitansiList) {
+      onUpdateKwitansiList(updatedKwList);
+    }
+
+    setAutoGenMsg(`✅ Berhasil merapikan & menyinkronkan seluruh ${processedWeeksCount} minggu dengan sistem tim pekerja tetap kapasitas penuh (7 hari).`);
     setTimeout(() => setAutoGenMsg(null), 5000);
   };
 
@@ -664,6 +807,15 @@ export const WageManager: React.FC<WageManagerProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSyncAllWeeksToFullCapacity}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold shadow-sm transition cursor-pointer"
+            title="Optimalkan seluruh minggu: Pekerja konsisten, hari kerja dimaksimalkan 7 hari, dan 100% klop dengan target pagu"
+          >
+            <Zap className="w-4 h-4 text-amber-300" />
+            <span>⚡ Rapikan Seluruh Minggu (Penuh 7 Hari)</span>
+          </button>
           <button
             type="button"
             onClick={handleAutoGenerateMissingRoles}
