@@ -187,26 +187,26 @@ export function recalculateAllWeeksProgress(weeks: ProjectProgressWeek[]): Proje
       const ini = Number(d.prestasiMingguIni) || 0;
       const sdIni = Math.min(
         d.bobotTotal,
-        Math.round((mingguLalu + ini) * 100) / 100
+        Math.round((mingguLalu + ini) * 1000) / 1000
       );
 
       return {
         ...d,
-        prestasiMingguLalu: Math.round(mingguLalu * 100) / 100,
+        prestasiMingguLalu: Math.round(mingguLalu * 1000) / 1000,
         prestasiSdMingguIni: sdIni,
       };
     });
 
     const totalSdIni = Math.min(
       100,
-      Math.round(updatedDivs.reduce((s, d) => s + (d.prestasiSdMingguIni || 0), 0) * 100) / 100
+      Math.round(updatedDivs.reduce((s, d) => s + (d.prestasiSdMingguIni || 0), 0) * 1000) / 1000
     );
 
     sorted[i] = {
       ...currentW,
       divisions: updatedDivs,
       bobotRealisasi: totalSdIni,
-      deviasi: Math.round((totalSdIni - currentW.bobotRencana) * 100) / 100,
+      deviasi: Math.round((totalSdIni - currentW.bobotRencana) * 1000) / 1000,
     };
   }
 

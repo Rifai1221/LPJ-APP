@@ -77,6 +77,28 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
   const [isEditingBobotMaster, setIsEditingBobotMaster] = useState<boolean>(false);
 
+  // User decimal precision toggle (2 digits or 3 digits behind comma)
+  const [decimalPrecision, setDecimalPrecision] = useState<2 | 3>(() => {
+    try {
+      const saved = localStorage.getItem('lpj_progress_decimal_precision');
+      return saved === '3' ? 3 : 2;
+    } catch {
+      return 2;
+    }
+  });
+
+  const handleToggleDecimalPrecision = (precision: 2 | 3) => {
+    setDecimalPrecision(precision);
+    try {
+      localStorage.setItem('lpj_progress_decimal_precision', precision.toString());
+    } catch {}
+  };
+
+  const formatProg = (val: number | null | undefined): string => {
+    if (val === null || val === undefined || isNaN(val)) return '0';
+    return formatNumber(val, decimalPrecision, decimalPrecision);
+  };
+
   // States for adding and editing division items
   const [addingCategory, setAddingCategory] = useState<'FISIK' | 'MANAJEMEN' | null>(null);
   const [newUraianText, setNewUraianText] = useState<string>('');
@@ -446,11 +468,11 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       const ini = Number(d.prestasiMingguIni) || 0;
       const sdIni = Math.min(
         d.bobotTotal,
-        Math.round((mingguLalu + ini) * 100) / 100
+        Math.round((mingguLalu + ini) * 1000) / 1000
       );
       return {
         ...d,
-        prestasiMingguLalu: Math.round(mingguLalu * 100) / 100,
+        prestasiMingguLalu: Math.round(mingguLalu * 1000) / 1000,
         prestasiSdMingguIni: sdIni,
       };
     });
@@ -464,13 +486,16 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
 
   // Compute column totals automatically
   const rawTotalBobot = divisions.reduce((s, d) => s + (Number(d.bobotTotal) || 0), 0);
-  const roundedRawTotalBobot = Math.round(rawTotalBobot * 100) / 100;
-  // Tetap maksimal di 100,00% sesuai instruksi user
-  const cappedTotalBobot = Math.min(100, roundedRawTotalBobot);
+  const roundedRawTotalBobot = Math.round(rawTotalBobot * 1000) / 1000;
+  // Toleransi pembulatan desimal Excel (±0.05% diakui pas 100,00% sesuai akumulasi tabel dinas/teknis)
+  const isBobotWithinExcelTolerance = Math.abs(roundedRawTotalBobot - 100) <= 0.05;
+  const isBobotBalanced = Math.abs(roundedRawTotalBobot - 100) < 0.0001 || isBobotWithinExcelTolerance;
+  // Tetap terkunci di 100,00% jika berada dalam toleransi pembulatan Excel
+  const cappedTotalBobot = isBobotWithinExcelTolerance ? 100 : Math.min(100, roundedRawTotalBobot);
 
   const totalMingguLalu = divisions.reduce((s, d) => s + d.prestasiMingguLalu, 0);
   const totalMingguIni = divisions.reduce((s, d) => s + d.prestasiMingguIni, 0);
-  const totalSdMingguIni = Math.min(100, Math.round(divisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100);
+  const totalSdMingguIni = Math.min(100, Math.round(divisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 1000) / 1000);
 
   // Active Realisasi & Target: user can adjust either manually or use table calculations
   const activeRealisasi =
@@ -483,15 +508,15 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       : 0;
 
   // LEBIH CEPAT DARI RENCANA / TERLAMBAT DARI RENCANA (Menghitung Otomatis Real-Time)
-  const deviasi = Math.round((activeRealisasi - activeTarget) * 100) / 100;
+  const deviasi = Math.round((activeRealisasi - activeTarget) * 1000) / 1000;
   const isFaster = deviasi >= 0;
 
   // Handler to adjust PRESTASI PELAKSANAAN (REALISASI) manually
   const handleManualRealisasiChange = (valStr: string) => {
     setCustomRealisasiStr((prev) => ({ ...prev, [selectedWeekNum]: valStr }));
     const val = parseFloat(valStr);
-    const newRealisasi = isNaN(val) ? 0 : Math.max(0, Math.min(100, Math.round(val * 100) / 100));
-    const newDev = Math.round((newRealisasi - activeTarget) * 100) / 100;
+    const newRealisasi = isNaN(val) ? 0 : Math.max(0, Math.min(100, Math.round(val * 1000) / 1000));
+    const newDev = Math.round((newRealisasi - activeTarget) * 1000) / 1000;
 
     const updatedAllWeeks = progressWeeks.map((w) => {
       if (w.mingguKe === selectedWeekNum) {
@@ -514,7 +539,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       delete copy[selectedWeekNum];
       return copy;
     });
-    const newDev = Math.round((totalSdMingguIni - activeTarget) * 100) / 100;
+    const newDev = Math.round((totalSdMingguIni - activeTarget) * 1000) / 1000;
 
     const updatedAllWeeks = progressWeeks.map((w) => {
       if (w.mingguKe === selectedWeekNum) {
@@ -534,8 +559,8 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   const handleManualTargetChange = (valStr: string) => {
     setCustomTargetStr((prev) => ({ ...prev, [selectedWeekNum]: valStr }));
     const val = parseFloat(valStr);
-    const newTarget = isNaN(val) ? 0 : Math.max(0, Math.min(100, Math.round(val * 100) / 100));
-    const newDev = Math.round((activeRealisasi - newTarget) * 100) / 100;
+    const newTarget = isNaN(val) ? 0 : Math.max(0, Math.min(100, Math.round(val * 1000) / 1000));
+    const newDev = Math.round((activeRealisasi - newTarget) * 1000) / 1000;
 
     const updatedAllWeeks = progressWeeks.map((w) => {
       if (w.mingguKe === selectedWeekNum) {
@@ -554,7 +579,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   // Handler to adjust Bobot % of any division row
   const handleBobotTotalChange = (divisionId: string, valueStr: string) => {
     const val = parseFloat(valueStr);
-    const newBobot = isNaN(val) ? 0 : Math.max(0, Math.round(val * 100) / 100);
+    const newBobot = isNaN(val) ? 0 : Math.max(0, Math.round(val * 1000) / 1000);
 
     const updatedAllWeeks = progressWeeks.map((w) => {
       const currentDivs = w.divisions && w.divisions.length > 0 ? w.divisions : divisions;
@@ -583,7 +608,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     if (!newUraianText.trim()) return;
 
     const newId = `div-${kategori.toLowerCase()}-${Date.now()}`;
-    const newBobot = Math.max(0, Math.round((parseFloat(newBobotText) || 0) * 100) / 100);
+    const newBobot = Math.max(0, Math.round((parseFloat(newBobotText) || 0) * 1000) / 1000);
     const uraianUpper = newUraianText.trim().toUpperCase();
 
     const updatedAllWeeks = progressWeeks.map((w) => {
@@ -611,7 +636,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       const renumbered = renumberDivisions(combined);
       const newTotalSdIni = Math.min(
         100,
-        Math.round(renumbered.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100
+        Math.round(renumbered.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 1000) / 1000
       );
 
       return {
@@ -692,9 +717,9 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
 
   // Helper to automatically balance surplus / deficit to exact 100,00%
   const handleAutoBalanceBobot = () => {
-    const diff = Math.round((100 - roundedRawTotalBobot) * 100) / 100;
-    if (Math.abs(diff) < 0.001) {
-      setSyncSuccessMsg('Total Bobot sudah tepat 100,00%!');
+    const diff = Math.round((100 - roundedRawTotalBobot) * 1000) / 1000;
+    if (Math.abs(diff) < 0.0001) {
+      setSyncSuccessMsg('Total Bobot sudah tepat 100%!');
       setTimeout(() => setSyncSuccessMsg(null), 3000);
       return;
     }
@@ -704,7 +729,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
       const currentDivs = w.divisions && w.divisions.length > 0 ? w.divisions : divisions;
       const targetDiv = currentDivs[currentDivs.length - 1];
       if (!targetDiv) return w;
-      const newTargetBobot = Math.max(0, Math.round((targetDiv.bobotTotal + diff) * 100) / 100);
+      const newTargetBobot = Math.max(0, Math.round((targetDiv.bobotTotal + diff) * 1000) / 1000);
 
       const updatedDivs = currentDivs.map((d, idx) => {
         if (idx === currentDivs.length - 1) {
@@ -724,7 +749,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     });
 
     onUpdateWeeks(updatedAllWeeks);
-    setSyncSuccessMsg(`Total Bobot berhasil diseimbangkan tepat 100,00% (penyesuaian ${diff > 0 ? '+' : ''}${formatNumber(diff, 2, 2)}% pada ${divisions[divisions.length - 1]?.uraian || 'divisi terakhir'}).`);
+    setSyncSuccessMsg(`Total Bobot berhasil diseimbangkan tepat 100% (penyesuaian ${diff > 0 ? '+' : ''}${formatProg(diff)}% pada ${divisions[divisions.length - 1]?.uraian || 'divisi terakhir'}).`);
     setTimeout(() => setSyncSuccessMsg(null), 4000);
   };
 
@@ -755,7 +780,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     // Calculate this week's updated divisions
     const updatedDivisions = divisions.map((d) => {
       if (d.id === divisionId) {
-        const sdIni = Math.min(d.bobotTotal, Math.round(((Number(d.prestasiMingguLalu) || 0) + val) * 100) / 100);
+        const sdIni = Math.min(d.bobotTotal, Math.round(((Number(d.prestasiMingguLalu) || 0) + val) * 1000) / 1000);
         return {
           ...d,
           prestasiMingguIni: val,
@@ -1076,6 +1101,37 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             <span>+ Biaya Manajemen</span>
           </button>
 
+          {/* Toggle Decimal Places (2 vs 3 Digit Desimal) */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-300 text-xs shadow-2xs">
+            <span className="text-[11px] font-bold text-slate-600 px-2 py-1 flex items-center gap-1">
+              Desimal:
+            </span>
+            <button
+              type="button"
+              onClick={() => handleToggleDecimalPrecision(2)}
+              className={`px-2.5 py-1 rounded-md font-bold text-xs transition cursor-pointer ${
+                decimalPrecision === 2
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
+              title="Tampilkan 2 angka di belakang koma (contoh: 2,66%)"
+            >
+              2 Digit (0,00)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleDecimalPrecision(3)}
+              className={`px-2.5 py-1 rounded-md font-bold text-xs transition cursor-pointer ${
+                decimalPrecision === 3
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
+              title="Tampilkan 3 angka di belakang koma (contoh: 2,658%)"
+            >
+              3 Digit (0,000)
+            </button>
+          </div>
+
           {/* Button to toggle Adjust Bobot % */}
           <button
             type="button"
@@ -1090,7 +1146,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             <span>{isEditingBobotMaster ? 'Kunci Nilai Bobot %' : 'Sesuaikan Bobot %'}</span>
           </button>
 
-          {isEditingBobotMaster && roundedRawTotalBobot !== 100 && (
+          {isEditingBobotMaster && !isBobotBalanced && (
             <button
               type="button"
               onClick={handleAutoBalanceBobot}
@@ -1442,7 +1498,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              {roundedRawTotalBobot !== 100 && (
+              {!isBobotBalanced && (
                 <button
                   type="button"
                   onClick={handleAutoBalanceBobot}
@@ -1609,12 +1665,12 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                       <div className="flex items-center justify-end gap-1">
                         <input
                           type="number"
-                          step="0.01"
+                          step="0.001"
                           min="0"
                           max="100"
                           value={item.bobotTotal}
                           onChange={(e) => handleBobotTotalChange(item.id, e.target.value)}
-                          className="w-20 text-right font-mono font-bold text-amber-950 px-2 py-1 bg-white border border-amber-400 rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                          className="w-24 text-right font-mono font-bold text-amber-950 px-2 py-1 bg-white border border-amber-400 rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
                         />
                         <span className="text-[10px] text-amber-700 font-semibold">%</span>
                       </div>
@@ -1625,7 +1681,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                         title="Klik untuk menyesuaikan bobot pekerjaan ini"
                       >
                         <span className="font-mono font-semibold text-slate-800 group-hover:text-amber-800">
-                          {formatNumber(item.bobotTotal, 2, 2)}%
+                          {formatProg(item.bobotTotal)}%
                         </span>
                         <Edit3 className="w-3 h-3 text-slate-400 group-hover:text-amber-600 opacity-0 group-hover:opacity-100 transition" />
                       </div>
@@ -1635,12 +1691,12 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         max={item.bobotTotal}
                         value={item.prestasiMingguLalu === 0 ? '' : item.prestasiMingguLalu}
                         onChange={(e) => handlePrestasiMingguLaluChange(item.id, e.target.value)}
-                        placeholder="0,00"
+                        placeholder={decimalPrecision === 3 ? '0,000' : '0,00'}
                         className={`w-full text-right font-mono font-medium px-2 py-1 bg-white border rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden transition ${
                           item.isManualMingguLalu
                             ? 'border-amber-500 text-amber-950 font-bold bg-amber-50/60 shadow-xs'
@@ -1669,17 +1725,17 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                   <td className="py-1.5 px-2 border border-slate-300 text-right bg-blue-50/60">
                     <input
                       type="number"
-                      step="0.01"
+                      step="0.001"
                       min="0"
                       max={item.bobotTotal}
                       value={item.prestasiMingguIni === 0 ? '' : item.prestasiMingguIni}
                       onChange={(e) => handlePrestasiChange(item.id, e.target.value)}
-                      placeholder="0,00"
+                      placeholder={decimalPrecision === 3 ? '0,000' : '0,00'}
                       className="w-full text-right font-mono font-bold text-blue-900 px-2 py-1 bg-white border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                     />
                   </td>
                   <td className="py-2 px-3 border border-slate-300 text-right font-mono font-bold text-slate-900">
-                    {item.prestasiSdMingguIni > 0 ? formatNumber(item.prestasiSdMingguIni, 2, 2) : ''}
+                    {item.prestasiSdMingguIni > 0 ? formatProg(item.prestasiSdMingguIni) : ''}
                   </td>
                 </tr>
               ))}
@@ -1845,12 +1901,12 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                       <div className="flex items-center justify-end gap-1">
                         <input
                           type="number"
-                          step="0.01"
+                          step="0.001"
                           min="0"
                           max="100"
                           value={item.bobotTotal}
                           onChange={(e) => handleBobotTotalChange(item.id, e.target.value)}
-                          className="w-20 text-right font-mono font-bold text-amber-950 px-2 py-1 bg-white border border-amber-400 rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                          className="w-24 text-right font-mono font-bold text-amber-950 px-2 py-1 bg-white border border-amber-400 rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
                         />
                         <span className="text-[10px] text-amber-700 font-semibold">%</span>
                       </div>
@@ -1861,7 +1917,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                         title="Klik untuk menyesuaikan bobot pekerjaan ini"
                       >
                         <span className="font-mono font-semibold text-slate-800 group-hover:text-amber-800">
-                          {formatNumber(item.bobotTotal, 2, 2)}%
+                          {formatProg(item.bobotTotal)}%
                         </span>
                         <Edit3 className="w-3 h-3 text-slate-400 group-hover:text-amber-600 opacity-0 group-hover:opacity-100 transition" />
                       </div>
@@ -1871,12 +1927,12 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         max={item.bobotTotal}
                         value={item.prestasiMingguLalu === 0 ? '' : item.prestasiMingguLalu}
                         onChange={(e) => handlePrestasiMingguLaluChange(item.id, e.target.value)}
-                        placeholder="0,00"
+                        placeholder={decimalPrecision === 3 ? '0,000' : '0,00'}
                         className={`w-full text-right font-mono font-medium px-2 py-1 bg-white border rounded focus:ring-2 focus:ring-amber-500 focus:outline-hidden transition ${
                           item.isManualMingguLalu
                             ? 'border-amber-500 text-amber-950 font-bold bg-amber-50/60 shadow-xs'
@@ -1905,17 +1961,17 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                   <td className="py-1.5 px-2 border border-slate-300 text-right bg-blue-50/60">
                     <input
                       type="number"
-                      step="0.01"
+                      step="0.001"
                       min="0"
                       max={item.bobotTotal}
                       value={item.prestasiMingguIni === 0 ? '' : item.prestasiMingguIni}
                       onChange={(e) => handlePrestasiChange(item.id, e.target.value)}
-                      placeholder="0,00"
+                      placeholder={decimalPrecision === 3 ? '0,000' : '0,00'}
                       className="w-full text-right font-mono font-bold text-indigo-900 px-2 py-1 bg-white border border-indigo-300 rounded focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                     />
                   </td>
                   <td className="py-2 px-3 border border-slate-300 text-right font-mono font-bold text-slate-900">
-                    {item.prestasiSdMingguIni > 0 ? formatNumber(item.prestasiSdMingguIni, 2, 2) : ''}
+                    {item.prestasiSdMingguIni > 0 ? formatProg(item.prestasiSdMingguIni) : ''}
                   </td>
                 </tr>
               ))}
@@ -1995,12 +2051,16 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                 <td className="py-3 px-3 border border-slate-300 text-right font-mono bg-slate-50">
                   <div className="flex flex-col items-end">
                     <span className="text-sm font-extrabold text-blue-950">
-                      {formatNumber(cappedTotalBobot, 2, 2)}%
+                      {formatProg(cappedTotalBobot)}%
                     </span>
-                    {roundedRawTotalBobot > 100 ? (
+                    {isBobotBalanced ? (
+                      <span className="text-[9px] font-bold text-emerald-700 mt-0.5">
+                        ✓ Pas {decimalPrecision === 3 ? '100,000%' : '100,00%'}
+                      </span>
+                    ) : roundedRawTotalBobot > 100 ? (
                       <div className="flex flex-col items-end mt-0.5">
                         <span className="text-[9px] font-semibold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded leading-tight">
-                          Maksimal 100,00% (Input: {formatNumber(roundedRawTotalBobot, 2, 2)}%)
+                          Maksimal {decimalPrecision === 3 ? '100,000%' : '100,00%'} (Input: {formatProg(roundedRawTotalBobot)}%)
                         </span>
                         <button
                           type="button"
@@ -2010,25 +2070,21 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                           Seimbangkan ke 100%
                         </button>
                       </div>
-                    ) : roundedRawTotalBobot < 100 ? (
-                      <span className="text-[9px] font-medium text-slate-500 mt-0.5">
-                        (Sisa: {formatNumber(100 - roundedRawTotalBobot, 2, 2)}%)
-                      </span>
                     ) : (
-                      <span className="text-[9px] font-bold text-emerald-700 mt-0.5">
-                        ✓ Pas 100,00%
+                      <span className="text-[9px] font-medium text-slate-500 mt-0.5">
+                        (Sisa: {formatProg(100 - roundedRawTotalBobot)}%)
                       </span>
                     )}
                   </div>
                 </td>
                 <td className="py-3 px-3 border border-slate-300 text-right font-mono text-slate-700">
-                  {totalMingguLalu > 0 ? `${formatNumber(totalMingguLalu, 2, 2)}%` : '-'}
+                  {totalMingguLalu > 0 ? `${formatProg(totalMingguLalu)}%` : '-'}
                 </td>
                 <td className="py-3 px-3 border border-slate-300 text-right font-mono text-blue-900 bg-blue-100/70 font-extrabold">
-                  {totalMingguIni > 0 ? `${formatNumber(totalMingguIni, 2, 2)}%` : '-'}
+                  {totalMingguIni > 0 ? `${formatProg(totalMingguIni)}%` : '-'}
                 </td>
                 <td className="py-3 px-3 border border-slate-300 text-right font-mono text-slate-950 bg-slate-200/80 font-black">
-                  {formatNumber(totalSdMingguIni, 2, 2)}%
+                  {formatProg(totalSdMingguIni)}%
                 </td>
               </tr>
             </tbody>
@@ -2060,10 +2116,10 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                       <button
                         type="button"
                         onClick={handleResetRealisasiToTable}
-                        title={`Klik untuk menyamakan kembali dengan hitungan tabel (${formatNumber(totalSdMingguIni, 2)}%)`}
+                        title={`Klik untuk menyamakan kembali dengan hitungan tabel (${formatProg(totalSdMingguIni)}%)`}
                         className="text-[10px] text-amber-700 hover:text-amber-900 bg-amber-100/80 hover:bg-amber-200 px-1.5 py-0.5 rounded cursor-pointer transition font-medium"
                       >
-                        Reset ke Tabel ({formatNumber(totalSdMingguIni, 2)}%)
+                        Reset ke Tabel ({formatProg(totalSdMingguIni)}%)
                       </button>
                     )}
                   </div>
@@ -2072,7 +2128,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                     <div className="relative flex items-center">
                       <input
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         max="100"
                         value={
@@ -2099,7 +2155,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                     <div className="relative flex items-center">
                       <input
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         max="100"
                         value={
@@ -2141,7 +2197,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                   <div className="flex items-center gap-1 font-mono font-black text-xs">
                     <span>:</span>
                     <span className="w-24 text-right">
-                      {isFaster ? `+${formatNumber(deviasi, 2)}` : formatNumber(deviasi, 2)} %
+                      {isFaster ? `+${formatProg(deviasi)}` : formatProg(deviasi)} %
                     </span>
                   </div>
                 </div>

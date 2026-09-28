@@ -1862,15 +1862,18 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                 .filter((w) => !selectedWeekNum || w.mingguKe === selectedWeekNum)
                 .map((week) => {
                   const divisions = week.divisions || [];
+                  const savedDec = typeof window !== 'undefined' ? localStorage.getItem('lpj_progress_decimal_precision') : null;
+                  const decPlaces = savedDec === '3' ? 3 : 2;
+
                   const fisikDivs = divisions.filter((d) => d.kategori === 'FISIK');
                   const manDivs = divisions.filter((d) => d.kategori === 'MANAJEMEN');
                   const totBobot = divisions.reduce((s, d) => s + (Number(d.bobotTotal) || 0), 0);
-                  const cappedTotBobot = Math.min(100, Math.round(totBobot * 100) / 100);
+                  const cappedTotBobot = Math.abs(totBobot - 100) <= 0.05 ? 100 : Math.min(100, Math.round(totBobot * 1000) / 1000);
                   const totLalu = divisions.reduce((s, d) => s + d.prestasiMingguLalu, 0);
                   const totIni = divisions.reduce((s, d) => s + d.prestasiMingguIni, 0);
-                  const totSdIni = Math.min(100, Math.round(divisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 100) / 100);
+                  const totSdIni = Math.min(100, Math.round(divisions.reduce((s, d) => s + d.prestasiSdMingguIni, 0) * 1000) / 1000);
                   const activeRealisasi = week.bobotRealisasi !== undefined && week.bobotRealisasi !== null ? week.bobotRealisasi : totSdIni;
-                  const dev = Math.round((activeRealisasi - week.bobotRencana) * 100) / 100;
+                  const dev = Math.round((activeRealisasi - week.bobotRencana) * 1000) / 1000;
                   const isFaster = dev >= 0;
 
                   return (
@@ -1915,10 +1918,10 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                                   <tr key={d.id}>
                                     <td className="border border-black p-1 text-center font-bold">{d.kode || toRoman(idx + 1)}</td>
                                     <td className="border border-black p-1">{d.uraian}</td>
-                                    <td className="border border-black p-1 text-right font-mono">{formatNumber(d.bobotTotal, 2, 2)}</td>
-                                    <td className="border border-black p-1 text-right font-mono">{d.prestasiMingguLalu > 0 ? formatNumber(d.prestasiMingguLalu, 2, 2) : ''}</td>
-                                    <td className="border border-black p-1 text-right font-mono font-bold">{d.prestasiMingguIni > 0 ? formatNumber(d.prestasiMingguIni, 2, 2) : ''}</td>
-                                    <td className="border border-black p-1 text-right font-mono font-bold">{d.prestasiSdMingguIni > 0 ? formatNumber(d.prestasiSdMingguIni, 2, 2) : ''}</td>
+                                    <td className="border border-black p-1 text-right font-mono">{formatNumber(d.bobotTotal, decPlaces, decPlaces)}</td>
+                                    <td className="border border-black p-1 text-right font-mono">{d.prestasiMingguLalu > 0 ? formatNumber(d.prestasiMingguLalu, decPlaces, decPlaces) : ''}</td>
+                                    <td className="border border-black p-1 text-right font-mono font-bold">{d.prestasiMingguIni > 0 ? formatNumber(d.prestasiMingguIni, decPlaces, decPlaces) : ''}</td>
+                                    <td className="border border-black p-1 text-right font-mono font-bold">{d.prestasiSdMingguIni > 0 ? formatNumber(d.prestasiSdMingguIni, decPlaces, decPlaces) : ''}</td>
                                   </tr>
                                 ))}
                                 <tr className="bg-slate-50 font-bold">
@@ -1929,19 +1932,19 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                                   <tr key={d.id}>
                                     <td className="border border-black p-1 text-center font-bold">{d.kode || toRoman(idx + 1)}</td>
                                     <td className="border border-black p-1">{d.uraian}</td>
-                                    <td className="border border-black p-1 text-right font-mono">{formatNumber(d.bobotTotal, 2, 2)}</td>
-                                    <td className="border border-black p-1 text-right font-mono">{d.prestasiMingguLalu > 0 ? formatNumber(d.prestasiMingguLalu, 2, 2) : ''}</td>
-                                    <td className="border border-black p-1 text-right font-mono font-bold">{d.prestasiMingguIni > 0 ? formatNumber(d.prestasiMingguIni, 2, 2) : ''}</td>
-                                    <td className="border border-black p-1 text-right font-mono font-bold">{d.prestasiSdMingguIni > 0 ? formatNumber(d.prestasiSdMingguIni, 2, 2) : ''}</td>
+                                    <td className="border border-black p-1 text-right font-mono">{formatNumber(d.bobotTotal, decPlaces, decPlaces)}</td>
+                                    <td className="border border-black p-1 text-right font-mono">{d.prestasiMingguLalu > 0 ? formatNumber(d.prestasiMingguLalu, decPlaces, decPlaces) : ''}</td>
+                                    <td className="border border-black p-1 text-right font-mono font-bold">{d.prestasiMingguIni > 0 ? formatNumber(d.prestasiMingguIni, decPlaces, decPlaces) : ''}</td>
+                                    <td className="border border-black p-1 text-right font-mono font-bold">{d.prestasiSdMingguIni > 0 ? formatNumber(d.prestasiSdMingguIni, decPlaces, decPlaces) : ''}</td>
                                   </tr>
                                 ))}
                                 <tr className="bg-slate-100 font-bold">
                                   <td className="border border-black p-1 text-center"></td>
                                   <td className="border border-black p-1 text-right uppercase">TOTAL</td>
-                                  <td className="border border-black p-1 text-right font-mono font-bold">{formatNumber(cappedTotBobot, 2, 2)}%</td>
-                                  <td className="border border-black p-1 text-right font-mono">{totLalu > 0 ? formatNumber(totLalu, 2) : ''}</td>
-                                  <td className="border border-black p-1 text-right font-mono font-bold">{totIni > 0 ? formatNumber(totIni, 2) : ''}</td>
-                                  <td className="border border-black p-1 text-right font-mono font-bold">{formatNumber(totSdIni, 2)}</td>
+                                  <td className="border border-black p-1 text-right font-mono font-bold">{formatNumber(cappedTotBobot, decPlaces, decPlaces)}%</td>
+                                  <td className="border border-black p-1 text-right font-mono">{totLalu > 0 ? formatNumber(totLalu, decPlaces, decPlaces) : ''}</td>
+                                  <td className="border border-black p-1 text-right font-mono font-bold">{totIni > 0 ? formatNumber(totIni, decPlaces, decPlaces) : ''}</td>
+                                  <td className="border border-black p-1 text-right font-mono font-bold">{formatNumber(totSdIni, decPlaces, decPlaces)}</td>
                                 </tr>
                               </tbody>
                             </table>
@@ -1952,17 +1955,17 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                               <div className="grid grid-cols-12 gap-1 font-semibold">
                                 <span className="col-span-5">PRESTASI PELAKSANAAN (REALISASI)</span>
                                 <span className="col-span-1">:</span>
-                                <span className="col-span-6 font-mono font-bold">{formatNumber(activeRealisasi, 2)} %</span>
+                                <span className="col-span-6 font-mono font-bold">{formatNumber(activeRealisasi, decPlaces, decPlaces)} %</span>
                               </div>
                               <div className="grid grid-cols-12 gap-1">
                                 <span className="col-span-5">PRESTASI YANG DIRENCANAKAN (TARGET)</span>
                                 <span className="col-span-1">:</span>
-                                <span className="col-span-6 font-mono font-bold">{formatNumber(week.bobotRencana, 2)} %</span>
+                                <span className="col-span-6 font-mono font-bold">{formatNumber(week.bobotRencana, decPlaces, decPlaces)} %</span>
                               </div>
                               <div className="grid grid-cols-12 gap-1">
                                 <span className="col-span-5">{isFaster ? 'LEBIH CEPAT DARI RENCANA' : 'TERLAMBAT DARI RENCANA'}</span>
                                 <span className="col-span-1">:</span>
-                                <span className="col-span-6 font-mono font-bold">{isFaster ? `+${formatNumber(dev, 2)}` : formatNumber(dev, 2)} %</span>
+                                <span className="col-span-6 font-mono font-bold">{isFaster ? `+${formatNumber(dev, decPlaces, decPlaces)}` : formatNumber(dev, decPlaces, decPlaces)} %</span>
                               </div>
                               <div className="grid grid-cols-12 gap-1 pt-1 border-t border-slate-300">
                                 <span className="col-span-5">RENCANA WAKTU PELAKSANAAN</span>
