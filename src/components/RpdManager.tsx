@@ -67,10 +67,16 @@ export const RpdManager: React.FC<RpdManagerProps> = ({
     return matchCat && matchQuery;
   });
 
-  // Calculate totals
-  const totalAnggaran100 = items.reduce((sum, item) => sum + item.jumlahAnggaran, 0);
-  const totalTermin1 = items.reduce((sum, item) => sum + item.jumlahTermin1, 0);
-  const totalTermin2 = items.reduce((sum, item) => sum + item.jumlahTermin2, 0);
+  // Calculate totals from RealSchoolData Pagu Anggaran (or fallback to RPD items sum if not set)
+  const paguMaster = realSchoolData?.paguAnggaran && realSchoolData.paguAnggaran > 0
+    ? realSchoolData.paguAnggaran
+    : realSchoolData?.totalNilaiRab && realSchoolData.totalNilaiRab > 0
+    ? realSchoolData.totalNilaiRab
+    : items.reduce((sum, item) => sum + item.jumlahAnggaran, 0);
+
+  const totalAnggaran100 = paguMaster > 0 ? paguMaster : items.reduce((sum, item) => sum + item.jumlahAnggaran, 0);
+  const totalTermin1 = Math.round(totalAnggaran100 * 0.7);
+  const totalTermin2 = totalAnggaran100 - totalTermin1; // Exactly 30% without 1 rupiah rounding difference
 
   const handleStartEdit = (item: RpdItem) => {
     setEditingId(item.id);
