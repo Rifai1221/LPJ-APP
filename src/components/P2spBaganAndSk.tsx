@@ -157,8 +157,8 @@ export const P2spOrgChart: React.FC<P2spProps> = ({ school, onPrint }) => {
             <div className="absolute right-0 top-0 w-0.5 h-6 bg-indigo-600"></div>
           </div>
 
-          {/* Level 3: TIGA PILAR PELAKSANA OPERASIONAL */}
-          <div className="w-full max-w-5xl grid grid-cols-3 gap-5 pt-6">
+          {/* Level 3: TIGA PILAR PELAKSANA OPERASIONAL + FASILITATOR TEKNIS */}
+          <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-5 pt-6">
 
             {/* 1. TIM TEKNIS PERENCANA */}
             <div className="bg-white border-2 border-sky-500 rounded-xl shadow-xs p-4 flex flex-col justify-between hover:shadow-md transition">
@@ -187,7 +187,7 @@ export const P2spOrgChart: React.FC<P2spProps> = ({ school, onPrint }) => {
                   <div className="pt-1 border-t border-slate-100">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold">Anggota Tim:</span>
                     <p className="text-[11px] font-semibold text-slate-700">
-                      {school.anggotaPerencana || 'Rahmat Hidayat, A.Md'}
+                      {school.anggotaPerencana || 'Rahmat Hidayat, A.Md (Asisten Teknis)'}
                     </p>
                   </div>
                 </div>
@@ -242,7 +242,7 @@ export const P2spOrgChart: React.FC<P2spProps> = ({ school, onPrint }) => {
               </div>
             </div>
 
-            {/* 3. TIM PELAKSANA KEGIATAN */}
+            {/* 3. TIM PELAKSANA KEGIATAN & FASILITATOR */}
             <div className="bg-white border-2 border-amber-500 rounded-xl shadow-xs p-4 flex flex-col justify-between hover:shadow-md transition">
               <div>
                 <div className="flex items-center justify-between border-b border-amber-100 pb-2 mb-2.5">
@@ -262,15 +262,15 @@ export const P2spOrgChart: React.FC<P2spProps> = ({ school, onPrint }) => {
                       {school.namaKepalaPelaksana || school.namaPelaksana || 'T. Jeffri Lazharu'}
                     </p>
                     <p className="text-[10px] text-amber-700 font-medium">
-                      {school.jabatanPelaksana || 'Ketua / Kepala Pelaksana Teknis Lapangan'}
+                      {school.jabatanPelaksana || 'Kepala Pelaksana / Mandor Konstruksi'}
                     </p>
                   </div>
 
                   <div className="pt-1 border-t border-slate-100 grid grid-cols-3 gap-1.5 text-left">
                     <div>
                       <span className="text-[9px] text-slate-400 uppercase font-semibold">Keamanan:</span>
-                      <p className="text-[10px] font-semibold text-slate-800 truncate" title={school.namaKeamanan || 'Syamsuddin'}>
-                        {school.namaKeamanan || 'Syamsuddin'}
+                      <p className="text-[10px] font-semibold text-slate-800 truncate" title={school.namaKeamanan || 'Keamanan'}>
+                        {school.namaKeamanan || 'Keamanan'}
                       </p>
                     </div>
                     <div>
@@ -286,6 +286,14 @@ export const P2spOrgChart: React.FC<P2spProps> = ({ school, onPrint }) => {
                       </p>
                     </div>
                   </div>
+
+                  {school.namaFasilitator && (
+                    <div className="mt-2 pt-1.5 border-t border-amber-200 bg-amber-50/80 p-1.5 rounded">
+                      <span className="text-[9px] text-amber-800 uppercase font-bold block">Fasilitator Teknis / Pendamping:</span>
+                      <p className="text-[10px] font-bold text-slate-900">{school.namaFasilitator}</p>
+                      <p className="text-[9px] text-slate-600">{school.jabatanFasilitator || 'Fasilitator Teknis / Pendamping Dinas'}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -481,85 +489,49 @@ export const P2spSkDocument: React.FC<P2spProps> = ({ school, onPrint }) => {
           <table className="w-full border-collapse border border-black text-[11px]">
             <thead>
               <tr className="bg-slate-100 text-center font-bold">
-                <th className="border border-black p-1.5 w-8">NO</th>
-                <th className="border border-black p-1.5 text-left">JABATAN DALAM PANITIA</th>
+                <th className="border border-black p-1.5 w-10">NO</th>
+                <th className="border border-black p-1.5 text-left w-56">JABATAN DALAM PANITIA</th>
                 <th className="border border-black p-1.5 text-left">NAMA LENGKAP</th>
                 <th className="border border-black p-1.5 text-left">UNSUR / KETERANGAN</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td className="border border-black p-1.5 text-center font-mono">1</td>
-                <td className="border border-black p-1.5 font-bold">Penanggung Jawab</td>
-                <td className="border border-black p-1.5 uppercase font-bold">{school.namaKepalaSekolah}</td>
-                <td className="border border-black p-1.5">Kepala Satuan Pendidikan (NIP. {school.nipKepalaSekolah})</td>
+                <td className="border border-black p-2 text-center font-mono font-bold">1</td>
+                <td className="border border-black p-2 font-bold">Penanggung Jawab</td>
+                <td className="border border-black p-2 uppercase font-bold">{school.namaKepalaSekolah}</td>
+                <td className="border border-black p-2">Kepala Satuan Pendidikan (NIP. {school.nipKepalaSekolah || '-'})</td>
               </tr>
               <tr>
-                <td className="border border-black p-1.5 text-center font-mono">2</td>
-                <td className="border border-black p-1.5 font-bold">Ketua Panitia (P2SP)</td>
-                <td className="border border-black p-1.5 uppercase font-bold">{school.namaKetuaP2SP}</td>
-                <td className="border border-black p-1.5">{school.unsurKetuaP2SP || 'Komite Sekolah / Tokoh Masyarakat'}</td>
+                <td className="border border-black p-2 text-center font-mono font-bold">2</td>
+                <td className="border border-black p-2 font-bold">Ketua Panitia (P2SP)</td>
+                <td className="border border-black p-2 uppercase font-bold">{school.namaKetuaP2SP}</td>
+                <td className="border border-black p-2">{school.unsurKetuaP2SP || 'Komite Sekolah'}</td>
               </tr>
               <tr>
-                <td className="border border-black p-1.5 text-center font-mono">3</td>
-                <td className="border border-black p-1.5 font-bold">Sekretaris</td>
-                <td className="border border-black p-1.5 uppercase font-semibold">{school.namaSekretaris || 'NURUL AINI, S.Pd'}</td>
-                <td className="border border-black p-1.5">{school.jabatanSekretaris || 'Guru / Tenaga Administrasi'}</td>
+                <td className="border border-black p-2 text-center font-mono font-bold">3</td>
+                <td className="border border-black p-2 font-bold">Sekretaris</td>
+                <td className="border border-black p-2 uppercase font-semibold">{school.namaSekretaris || 'SEKRETARIS'}</td>
+                <td className="border border-black p-2">{school.jabatanSekretaris || 'Sekretaris P2SP'}</td>
               </tr>
               <tr>
-                <td className="border border-black p-1.5 text-center font-mono">4</td>
-                <td className="border border-black p-1.5 font-bold">Bendahara</td>
-                <td className="border border-black p-1.5 uppercase font-semibold">{school.namaBendahara}</td>
-                <td className="border border-black p-1.5">Bendahara P2SP (NIP. {school.nipBendahara})</td>
+                <td className="border border-black p-2 text-center font-mono font-bold">4</td>
+                <td className="border border-black p-2 font-bold">Bendahara</td>
+                <td className="border border-black p-2 uppercase font-semibold">{school.namaBendahara || 'BENDAHARA'}</td>
+                <td className="border border-black p-2">Bendahara P2SP (NIP. {school.nipBendahara || '-'})</td>
               </tr>
               <tr>
-                <td className="border border-black p-1.5 text-center font-mono">5</td>
-                <td className="border border-black p-1.5 font-bold">Tim Teknis Perencana</td>
-                <td className="border border-black p-1.5 uppercase">
-                  <p className="font-semibold">{school.namaPerencana}</p>
-                  <p className="text-[10px] text-slate-600">{school.anggotaPerencana || 'Rahmat Hidayat, A.Md'}</p>
-                </td>
-                <td className="border border-black p-1.5">{school.jabatanPerencana || 'Arsitek / Tenaga Ahli Perencana Teknis'}</td>
+                <td className="border border-black p-2 text-center font-mono font-bold">5</td>
+                <td className="border border-black p-2 font-bold">Kepala Pelaksana</td>
+                <td className="border border-black p-2 uppercase font-semibold">{school.namaKepalaPelaksana || school.namaPelaksana || 'KEPALA PELAKSANA'}</td>
+                <td className="border border-black p-2">{school.jabatanPelaksana || 'Kepala Pelaksana Lapangan / Mandor Konstruksi'}</td>
               </tr>
               <tr>
-                <td className="border border-black p-1.5 text-center font-mono">6</td>
-                <td className="border border-black p-1.5 font-bold">Tim Teknis Pengawas</td>
-                <td className="border border-black p-1.5 uppercase">
-                  <p className="font-semibold">{school.namaPengawas}</p>
-                  <p className="text-[10px] text-slate-600">{school.anggotaPengawas || 'H. Mansyur (Unsur Masyarakat)'}</p>
-                </td>
-                <td className="border border-black p-1.5">{school.jabatanPengawas || 'Tenaga Ahli Pengawas Lapangan'}</td>
+                <td className="border border-black p-2 text-center font-mono font-bold">6</td>
+                <td className="border border-black p-2 font-bold">Petugas Keamanan</td>
+                <td className="border border-black p-2 uppercase font-semibold">{school.namaKeamanan || 'PETUGAS KEAMANAN'}</td>
+                <td className="border border-black p-2">{school.jabatanKeamanan || 'Petugas Keamanan'}</td>
               </tr>
-              <tr>
-                <td className="border border-black p-1.5 text-center font-mono">7</td>
-                <td className="border border-black p-1.5 font-bold">Tim Pelaksana Lapangan</td>
-                <td className="border border-black p-1.5 uppercase">
-                  <p className="font-semibold">{school.namaKepalaPelaksana || school.namaPelaksana}</p>
-                  <p className="text-[10px] text-slate-600">
-                    Logistik: {school.namaLogistik || 'Kamaruddin'} • Mandor: {school.namaMandor || 'Budiman'} • Keamanan: {school.namaKeamanan || 'Syamsuddin'}
-                  </p>
-                </td>
-                <td className="border border-black p-1.5">{school.jabatanPelaksana || 'Ketua / Kepala Pelaksana Lapangan'}</td>
-              </tr>
-              {school.namaKeamanan && (
-                <tr>
-                  <td className="border border-black p-1.5 text-center font-mono">8</td>
-                  <td className="border border-black p-1.5 font-bold">Petugas Keamanan</td>
-                  <td className="border border-black p-1.5 uppercase font-semibold">{school.namaKeamanan}</td>
-                  <td className="border border-black p-1.5">{school.jabatanKeamanan || 'Petugas Keamanan & Ketertiban Lapangan'}</td>
-                </tr>
-              )}
-              {school.namaFasilitator && (
-                <tr>
-                  <td className="border border-black p-1.5 text-center font-mono">{school.namaKeamanan ? '9' : '8'}</td>
-                  <td className="border border-black p-1.5 font-bold">Fasilitator Teknis</td>
-                  <td className="border border-black p-1.5 uppercase font-semibold">{school.namaFasilitator}</td>
-                  <td className="border border-black p-1.5">
-                    {school.jabatanFasilitator || 'Fasilitator Teknis / Pendamping Dinas'}
-                    {school.nipFasilitator ? ` (NIP. ${school.nipFasilitator})` : ''}
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>

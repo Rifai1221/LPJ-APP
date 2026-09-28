@@ -498,68 +498,41 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border border-black p-1 text-center font-mono">1</td>
-                      <td className="border border-black p-1 font-bold">Penanggung Jawab</td>
-                      <td className="border border-black p-1 font-bold uppercase">{school.namaKepalaSekolah}</td>
-                      <td className="border border-black p-1">Kepala Sekolah (NIP. {school.nipKepalaSekolah})</td>
+                      <td className="border border-black p-1.5 text-center font-mono font-bold">1</td>
+                      <td className="border border-black p-1.5 font-bold">Penanggung Jawab</td>
+                      <td className="border border-black p-1.5 font-bold uppercase">{school.namaKepalaSekolah}</td>
+                      <td className="border border-black p-1.5">Kepala Satuan Pendidikan (NIP. {school.nipKepalaSekolah || '-'})</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-1 text-center font-mono">2</td>
-                      <td className="border border-black p-1 font-bold">Ketua Panitia (P2SP)</td>
-                      <td className="border border-black p-1 font-bold uppercase">{school.namaKetuaP2SP}</td>
-                      <td className="border border-black p-1">{school.unsurKetuaP2SP || 'Komite Sekolah / Tokoh Masyarakat'}</td>
+                      <td className="border border-black p-1.5 text-center font-mono font-bold">2</td>
+                      <td className="border border-black p-1.5 font-bold">Ketua Panitia (P2SP)</td>
+                      <td className="border border-black p-1.5 font-bold uppercase">{school.namaKetuaP2SP}</td>
+                      <td className="border border-black p-1.5">{school.unsurKetuaP2SP || 'Komite Sekolah'}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-1 text-center font-mono">3</td>
-                      <td className="border border-black p-1 font-bold">Sekretaris</td>
-                      <td className="border border-black p-1 uppercase">{school.namaSekretaris || 'NURUL AINI, S.Pd'}</td>
-                      <td className="border border-black p-1">{school.jabatanSekretaris || 'Guru / Tenaga Administrasi'}</td>
+                      <td className="border border-black p-1.5 text-center font-mono font-bold">3</td>
+                      <td className="border border-black p-1.5 font-bold">Sekretaris</td>
+                      <td className="border border-black p-1.5 uppercase font-semibold">{school.namaSekretaris || 'SEKRETARIS'}</td>
+                      <td className="border border-black p-1.5">{school.jabatanSekretaris || 'Sekretaris P2SP'}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-1 text-center font-mono">4</td>
-                      <td className="border border-black p-1 font-bold">Bendahara</td>
-                      <td className="border border-black p-1 uppercase">{school.namaBendahara}</td>
-                      <td className="border border-black p-1">Bendahara P2SP (NIP. {school.nipBendahara})</td>
+                      <td className="border border-black p-1.5 text-center font-mono font-bold">4</td>
+                      <td className="border border-black p-1.5 font-bold">Bendahara</td>
+                      <td className="border border-black p-1.5 uppercase font-semibold">{school.namaBendahara || 'BENDAHARA'}</td>
+                      <td className="border border-black p-1.5">Bendahara P2SP (NIP. {school.nipBendahara || '-'})</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-1 text-center font-mono">5</td>
-                      <td className="border border-black p-1 font-bold">Tim Teknis Perencana</td>
-                      <td className="border border-black p-1 uppercase">{school.namaPerencana} ({school.anggotaPerencana || 'Rahmat Hidayat, A.Md'})</td>
-                      <td className="border border-black p-1">{school.jabatanPerencana || 'Arsitek / Tenaga Ahli Teknis'}</td>
+                      <td className="border border-black p-1.5 text-center font-mono font-bold">5</td>
+                      <td className="border border-black p-1.5 font-bold">Kepala Pelaksana</td>
+                      <td className="border border-black p-1.5 uppercase font-semibold">{school.namaKepalaPelaksana || school.namaPelaksana || 'KEPALA PELAKSANA'}</td>
+                      <td className="border border-black p-1.5">{school.jabatanPelaksana || 'Kepala Pelaksana Lapangan / Mandor Konstruksi'}</td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-1 text-center font-mono">6</td>
-                      <td className="border border-black p-1 font-bold">Tim Teknis Pengawas</td>
-                      <td className="border border-black p-1 uppercase">{school.namaPengawas} ({school.anggotaPengawas || 'H. Mansyur'})</td>
-                      <td className="border border-black p-1">{school.jabatanPengawas || 'Tenaga Ahli Pengawas Lapangan'}</td>
+                      <td className="border border-black p-1.5 text-center font-mono font-bold">6</td>
+                      <td className="border border-black p-1.5 font-bold">Petugas Keamanan</td>
+                      <td className="border border-black p-1.5 uppercase font-semibold">{school.namaKeamanan || 'PETUGAS KEAMANAN'}</td>
+                      <td className="border border-black p-1.5">{school.jabatanKeamanan || 'Petugas Keamanan'}</td>
                     </tr>
-                    <tr>
-                      <td className="border border-black p-1 text-center font-mono">7</td>
-                      <td className="border border-black p-1 font-bold">Tim Pelaksana Lapangan</td>
-                      <td className="border border-black p-1 uppercase">
-                        {school.namaKepalaPelaksana || school.namaPelaksana} (Logistik: {school.namaLogistik || 'Kamaruddin'} • Mandor: {school.namaMandor || 'Budiman'} • Keamanan: {school.namaKeamanan || 'Syamsuddin'})
-                      </td>
-                      <td className="border border-black p-1">{school.jabatanPelaksana || 'Ketua / Kepala Pelaksana Lapangan'}</td>
-                    </tr>
-                    {school.namaKeamanan && (
-                      <tr>
-                        <td className="border border-black p-1 text-center font-mono">8</td>
-                        <td className="border border-black p-1 font-bold">Petugas Keamanan</td>
-                        <td className="border border-black p-1 uppercase font-semibold">{school.namaKeamanan}</td>
-                        <td className="border border-black p-1">{school.jabatanKeamanan || 'Petugas Keamanan & Ketertiban Lapangan'}</td>
-                      </tr>
-                    )}
-                    {school.namaFasilitator && (
-                      <tr>
-                        <td className="border border-black p-1 text-center font-mono">{school.namaKeamanan ? '9' : '8'}</td>
-                        <td className="border border-black p-1 font-bold">Fasilitator Teknis</td>
-                        <td className="border border-black p-1 uppercase font-semibold">{school.namaFasilitator}</td>
-                        <td className="border border-black p-1">
-                          {school.jabatanFasilitator || 'Fasilitator Teknis / Pendamping Dinas'}
-                          {school.nipFasilitator ? ` (NIP. ${school.nipFasilitator})` : ''}
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
@@ -595,112 +568,166 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
               {/* Organizational Tree Chart for Print */}
               <div className="flex flex-col items-center pt-2 space-y-1">
 
-                {/* Level 1: PENANGGUNG JAWAB */}
-                <div className="w-72 border-2 border-black p-2 text-center rounded bg-slate-50">
-                  <span className="font-bold uppercase text-[9px] tracking-wider block bg-black text-white py-0.5 mb-1">
-                    PENANGGUNG JAWAB
-                  </span>
-                  <p className="font-black text-[11px] uppercase">{school.namaKepalaSekolah}</p>
-                  <p className="text-[9px] font-mono">NIP. {school.nipKepalaSekolah}</p>
-                  <p className="text-[8.5px] italic text-slate-600">Kepala {school.namaSekolah}</p>
+                {/* Level 1: PENANGGUNG JAWAB & FASILITATOR TEKNIS */}
+                <div className="w-full flex items-center justify-center relative">
+                  {/* Wing Kiri: FASILITATOR TEKNIS / PENDAMPING */}
+                  <div className="w-48 border border-black p-1.5 text-center rounded bg-slate-50">
+                    <span className="font-bold uppercase text-[8.5px] block bg-slate-200 border-b border-black pb-0.5 mb-1 text-black">
+                      FASILITATOR TEKNIS
+                    </span>
+                    <p className="font-bold text-[10px] uppercase">{school.namaFasilitator || 'Fasilitator Teknis'}</p>
+                    <p className="text-[8px] text-slate-600">
+                      {school.jabatanFasilitator || 'Fasilitator Teknis / Pendamping Dinas'}
+                      {school.nipFasilitator ? ` (NIP. ${school.nipFasilitator})` : ''}
+                    </p>
+                  </div>
+
+                  {/* Horizontal dash arm */}
+                  <div className="w-6 h-0.5 bg-black border-t border-dashed border-black" />
+
+                  {/* Node Utama: PENANGGUNG JAWAB */}
+                  <div className="w-64 border-2 border-black p-2 text-center rounded bg-slate-100">
+                    <span className="font-bold uppercase text-[9px] tracking-wider block bg-black text-white py-0.5 mb-1">
+                      PENANGGUNG JAWAB
+                    </span>
+                    <p className="font-black text-[11px] uppercase">{school.namaKepalaSekolah}</p>
+                    <p className="text-[9px] font-mono">NIP. {school.nipKepalaSekolah || '-'}</p>
+                    <p className="text-[8.5px] italic text-slate-600">Kepala Satuan Pendidikan {school.namaSekolah}</p>
+                  </div>
+
+                  {/* Horizontal dash arm (spacer) */}
+                  <div className="w-6 h-0.5 bg-transparent" />
+                  <div className="w-48 invisible" />
                 </div>
 
                 {/* Vertical Line */}
                 <div className="w-0.5 h-6 bg-black" />
 
-                {/* Level 2: KETUA & STAFF WINGS */}
+                {/* Level 2: KETUA & STAFF WINGS (Sekretaris & Bendahara) */}
                 <div className="w-full flex items-center justify-center">
                   {/* Wing Kiri: SEKRETARIS */}
                   <div className="w-48 border border-black p-1.5 text-center rounded bg-slate-50">
                     <span className="font-bold uppercase text-[8.5px] block border-b border-black pb-0.5 mb-1">
                       SEKRETARIS
                     </span>
-                    <p className="font-bold text-[10px] uppercase">{school.namaSekretaris || 'NURUL AINI, S.Pd'}</p>
-                    <p className="text-[8px]">{school.jabatanSekretaris || 'Guru / Tenaga Administrasi'}</p>
+                    <p className="font-bold text-[10px] uppercase">{school.namaSekretaris || 'SEKRETARIS'}</p>
+                    <p className="text-[8px] text-slate-600">{school.jabatanSekretaris || 'Sekretaris P2SP'}</p>
+                    <p className="text-[7.5px] text-slate-500 mt-0.5">Administrasi & Notulensi</p>
                   </div>
 
                   {/* Horizontal dash arm */}
-                  <div className="w-8 h-0.5 bg-black border-t border-dashed border-black" />
+                  <div className="w-6 h-0.5 bg-black border-t border-dashed border-black" />
 
                   {/* Node Tengah: KETUA P2SP */}
-                  <div className="w-56 border-2 border-black p-2 text-center rounded bg-slate-100">
+                  <div className="w-64 border-2 border-black p-2 text-center rounded bg-slate-100">
                     <span className="font-bold uppercase text-[9px] tracking-wider block bg-black text-white py-0.5 mb-1">
                       KETUA PANITIA (P2SP)
                     </span>
                     <p className="font-black text-[11px] uppercase">{school.namaKetuaP2SP}</p>
-                    <p className="text-[8.5px] font-semibold">{school.jabatanKetuaP2SP || 'Ketua Komite Sekolah'}</p>
+                    <p className="text-[8.5px] font-semibold text-slate-800">{school.jabatanKetuaP2SP || 'Ketua Komite Sekolah'}</p>
                     <p className="text-[8px] text-slate-600">Unsur: {school.unsurKetuaP2SP || 'Komite / Tokoh Masyarakat'}</p>
                   </div>
 
                   {/* Horizontal dash arm */}
-                  <div className="w-8 h-0.5 bg-black border-t border-dashed border-black" />
+                  <div className="w-6 h-0.5 bg-black border-t border-dashed border-black" />
 
                   {/* Wing Kanan: BENDAHARA */}
                   <div className="w-48 border border-black p-1.5 text-center rounded bg-slate-50">
                     <span className="font-bold uppercase text-[8.5px] block border-b border-black pb-0.5 mb-1">
                       BENDAHARA
                     </span>
-                    <p className="font-bold text-[10px] uppercase">{school.namaBendahara}</p>
-                    <p className="text-[8px] font-mono">{school.nipBendahara ? 'NIP. ' + school.nipBendahara : 'Bendahara Bantuan'}</p>
+                    <p className="font-bold text-[10px] uppercase">{school.namaBendahara || 'BENDAHARA'}</p>
+                    <p className="text-[8px] font-mono text-slate-600">{school.nipBendahara ? 'NIP. ' + school.nipBendahara : 'Bendahara P2SP'}</p>
+                    <p className="text-[7.5px] text-slate-500 mt-0.5">Keuangan, BKU & Kwitansi</p>
                   </div>
                 </div>
 
-                {/* Vertical Central Line down to 3 teams */}
+                {/* Vertical Central Line down to Teams */}
                 <div className="w-0.5 h-6 bg-black" />
 
-                {/* Horizontal Bar for 3 teams */}
-                <div className="w-[85%] h-0.5 bg-black relative">
+                {/* Horizontal Bar for 3 operational blocks */}
+                <div className="w-[88%] h-0.5 bg-black relative">
                   <div className="absolute left-0 top-0 w-0.5 h-4 bg-black" />
                   <div className="absolute left-1/2 -translate-x-1/2 top-0 w-0.5 h-4 bg-black" />
                   <div className="absolute right-0 top-0 w-0.5 h-4 bg-black" />
                 </div>
 
-                {/* Level 3: Tiga Tim Kerja */}
+                {/* Level 3: 3 PILAR TEKNIS & OPERASIONAL */}
                 <div className="w-full grid grid-cols-3 gap-3 pt-4 text-left">
-                  {/* Tim Perencana */}
+                  {/* 1. TIM TEKNIS PERENCANA */}
                   <div className="border border-black p-2 rounded bg-slate-50 flex flex-col justify-between">
                     <div>
-                      <span className="font-bold uppercase text-[8.5px] block bg-slate-200 text-black px-1 py-0.5 text-center border-b border-black mb-1">
+                      <span className="font-bold uppercase text-[8.5px] block bg-slate-200 text-black px-1 py-0.5 text-center border-b border-black mb-1.5">
                         TIM TEKNIS PERENCANA
                       </span>
-                      <p className="font-bold text-[10px] uppercase">{school.namaPerencana}</p>
-                      <p className="text-[8px] text-slate-600">{school.jabatanPerencana || 'Tenaga Ahli Perencana'}</p>
-                      <p className="text-[8px] font-medium pt-1">Anggota: {school.anggotaPerencana || 'Rahmat Hidayat, A.Md'}</p>
+                      <div>
+                        <span className="text-[7.5px] text-slate-500 uppercase font-bold block">Penanggung Jawab:</span>
+                        <p className="font-bold text-[10px] uppercase">{school.namaPerencana}</p>
+                        <p className="text-[8px] text-slate-600">{school.jabatanPerencana || 'Arsitek / Tenaga Ahli Perencana Teknis'}</p>
+                      </div>
+                      <div className="mt-1.5 pt-1 border-t border-slate-200">
+                        <span className="text-[7.5px] text-slate-500 uppercase font-bold block">Anggota Tim:</span>
+                        <p className="text-[8.5px] font-semibold">{school.anggotaPerencana || 'Rahmat Hidayat, A.Md (Asisten Teknis)'}</p>
+                      </div>
                     </div>
                     <div className="mt-2 pt-1 border-t border-slate-300 text-[7.5px] text-slate-600">
-                      Tugas: Rencana Gambar, RAB/RPD, Kurva S
+                      Tugas: Gambar Denah, RAB/RPD, Kurva S
                     </div>
                   </div>
 
-                  {/* Tim Pengawas */}
+                  {/* 2. TIM TEKNIS PENGAWAS */}
                   <div className="border border-black p-2 rounded bg-slate-50 flex flex-col justify-between">
                     <div>
-                      <span className="font-bold uppercase text-[8.5px] block bg-slate-200 text-black px-1 py-0.5 text-center border-b border-black mb-1">
+                      <span className="font-bold uppercase text-[8.5px] block bg-slate-200 text-black px-1 py-0.5 text-center border-b border-black mb-1.5">
                         TIM TEKNIS PENGAWAS
                       </span>
-                      <p className="font-bold text-[10px] uppercase">{school.namaPengawas}</p>
-                      <p className="text-[8px] text-slate-600">{school.jabatanPengawas || 'Tenaga Ahli Pengawas'}</p>
-                      <p className="text-[8px] font-medium pt-1">Anggota: {school.anggotaPengawas || 'H. Mansyur'}</p>
+                      <div>
+                        <span className="text-[7.5px] text-slate-500 uppercase font-bold block">Penanggung Jawab:</span>
+                        <p className="font-bold text-[10px] uppercase">{school.namaPengawas}</p>
+                        <p className="text-[8px] text-slate-600">{school.jabatanPengawas || 'Tenaga Ahli Pengawas Lapangan'}</p>
+                      </div>
+                      <div className="mt-1.5 pt-1 border-t border-slate-200">
+                        <span className="text-[7.5px] text-slate-500 uppercase font-bold block">Anggota Tim:</span>
+                        <p className="text-[8.5px] font-semibold">{school.anggotaPengawas || 'H. Mansyur (Unsur Masyarakat / Komite)'}</p>
+                      </div>
                     </div>
                     <div className="mt-2 pt-1 border-t border-slate-300 text-[7.5px] text-slate-600">
                       Tugas: Mutu Bahan, Opname Prestasi Fisik Mingguan
                     </div>
                   </div>
 
-                  {/* Tim Pelaksana */}
+                  {/* 3. TIM PELAKSANA LAPANGAN */}
                   <div className="border border-black p-2 rounded bg-slate-50 flex flex-col justify-between">
                     <div>
-                      <span className="font-bold uppercase text-[8.5px] block bg-slate-200 text-black px-1 py-0.5 text-center border-b border-black mb-1">
-                        TIM PELAKSANA KEGIATAN
+                      <span className="font-bold uppercase text-[8.5px] block bg-slate-200 text-black px-1 py-0.5 text-center border-b border-black mb-1.5">
+                        TIM PELAKSANA LAPANGAN
                       </span>
-                      <p className="font-bold text-[10px] uppercase">{school.namaKepalaPelaksana || school.namaPelaksana}</p>
-                      <p className="text-[8px] text-slate-600">{school.jabatanPelaksana || 'Ketua / Kepala Pelaksana'}</p>
-                      <p className="text-[8px] font-medium pt-1">
-                        Keamanan: {school.namaKeamanan || 'Syamsuddin'} • Logistik: {school.namaLogistik || 'Kamaruddin'} • Mandor: {school.namaMandor || 'Budiman'}
-                      </p>
+                      <div>
+                        <span className="text-[7.5px] text-slate-500 uppercase font-bold block">Kepala Pelaksana / Mandor:</span>
+                        <p className="font-bold text-[10px] uppercase">{school.namaKepalaPelaksana || school.namaPelaksana || 'KEPALA PELAKSANA'}</p>
+                        <p className="text-[8px] text-slate-600">{school.jabatanPelaksana || 'Kepala Pelaksana Lapangan / Mandor Konstruksi'}</p>
+                      </div>
+                      
+                      {/* Sub-staff Lapangan */}
+                      <div className="mt-1.5 pt-1 border-t border-slate-200 space-y-1 text-[8px]">
+                        <div>
+                          <span className="font-bold block text-[7.5px] text-slate-500">Petugas Keamanan:</span>
+                          <p className="font-semibold text-[8.5px] uppercase">{school.namaKeamanan || 'PETUGAS KEAMANAN'}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                          <div>
+                            <span className="font-bold block text-[7.5px] text-slate-500">Logistik & Bahan:</span>
+                            <p className="font-semibold">{school.namaLogistik || 'Kamaruddin'}</p>
+                          </div>
+                          <div>
+                            <span className="font-bold block text-[7.5px] text-slate-500">Mandor Tukang:</span>
+                            <p className="font-semibold">{school.namaMandor || 'Budiman'}</p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <div className="mt-2 pt-1 border-t border-slate-300 text-[7.5px] text-slate-600">
-                      Tugas: Pelaksanaan Lapangan, Logistik, Keamanan Proyek
+                      Tugas: Pekerjaan Fisik, Logistik, Keamanan & Buku Harian
                     </div>
                   </div>
                 </div>
