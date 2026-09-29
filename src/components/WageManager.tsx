@@ -25,6 +25,7 @@ import {
 import { WeeklyWageReport, WorkerItem, SchoolMasterData } from '../types';
 import { formatRupiah, formatNumber } from '../utils/formatters';
 import { getAhspWageRatesMap, getAhspWageRateForRole } from '../utils/divisionHelper';
+import { getBalancedBoronganAttendance, DEFAULT_BORONGAN_CORE_TEAM } from '../utils/boronganHelper';
 
 interface WageManagerProps {
   wageReports: WeeklyWageReport[];
@@ -240,124 +241,52 @@ export const WageManager: React.FC<WageManagerProps> = ({
     handleSyncAllWeeksToFullCapacity();
   };
 
-  // Helper: Build a balanced Borongan team attendance with Mandor, KT, Tukang, and Pekerja
-  const getBalancedBoronganAttendance = (
-    targetBudget: number,
-    masterWorkers: WorkerItem[],
-    ahspMap: Record<string, number>
-  ) => {
-    // 1. Ambil worker dari Master Data yang ber-kategori 'BORONGAN' atau 'SEMUA'
-    let candidates = masterWorkers.filter(
-      (w) => w.kategoriPenugasan === 'BORONGAN' || w.kategoriPenugasan === 'SEMUA' || !w.kategoriPenugasan
-    );
-
-    if (candidates.length === 0) {
-      candidates = masterWorkers;
-    }
-
-    // 2. Pastikan minimal ada 1 Mandor, 1 KT, Tukang, dan Pekerja
-    const hasMandor = candidates.some((w) => w.peran === 'MANDOR' || (w.peranLabel || '').toLowerCase().includes('mandor'));
-    const hasKt = candidates.some((w) => w.peran === 'KT' || (w.peranLabel || '').toLowerCase().includes('kepala tukang'));
-    const hasPekerja = candidates.some((w) => w.peran === 'P' || (w.peranLabel || '').toLowerCase().includes('pekerja'));
-
-    const fullTeam: WorkerItem[] = [...candidates];
-
-    if (!hasMandor) {
-      fullTeam.unshift({
-        id: `w-auto-mandor-${Date.now()}`,
-        nama: 'Budiman (Mandor)',
-        jenisKelamin: 'L',
-        domisili: 'Dalam Desa',
-        peran: 'MANDOR',
-        peranLabel: 'Ketua Kelompok / Mandor',
-        upahHarian: getAhspWageRateForRole('MANDOR', 'Mandor', ahspMap, 199782),
-        kategoriPenugasan: 'BORONGAN',
-      });
-    }
-
-    if (!hasKt) {
-      fullTeam.splice(1, 0, {
-        id: `w-auto-kt-${Date.now()}`,
-        nama: 'Suparman (Kepala Tukang)',
-        jenisKelamin: 'L',
-        domisili: 'Dalam Desa',
-        peran: 'KT',
-        peranLabel: 'Kepala Tukang',
-        upahHarian: getAhspWageRateForRole('KT', 'Kepala Tukang', ahspMap, 199782),
-        kategoriPenugasan: 'BORONGAN',
-      });
-    }
-
-    if (!hasPekerja) {
-      fullTeam.push(
-        {
-          id: `w-auto-p1-${Date.now()}`,
-          nama: 'Dedi Kurniawan (Pekerja 1)',
-          jenisKelamin: 'L',
-          domisili: 'Dalam Desa',
-          peran: 'P',
-          peranLabel: 'Pekerja Lapangan / Laden',
-          upahHarian: getAhspWageRateForRole('P', 'Pekerja', ahspMap, 146909),
-          kategoriPenugasan: 'BORONGAN',
-        },
-        {
-          id: `w-auto-p2-${Date.now()}`,
-          nama: 'Eko Prasetyo (Pekerja 2)',
-          jenisKelamin: 'L',
-          domisili: 'Dalam Desa',
-          peran: 'P',
-          peranLabel: 'Pekerja Lapangan / Laden',
-          upahHarian: getAhspWageRateForRole('P', 'Pekerja', ahspMap, 146909),
-          kategoriPenugasan: 'BORONGAN',
-        }
-      );
-    }
-
-    // Sort by role hierarchy: MANDOR -> KT -> T / Tukang -> P / Pekerja
-    const getRoleWeight = (w: WorkerItem) => {
-      if (w.peran === 'MANDOR' || (w.peranLabel || '').toLowerCase().includes('mandor')) return 1;
-      if (w.peran === 'KT' || (w.peranLabel || '').toLowerCase().includes('kepala tukang')) return 2;
-      if (w.peran === 'P' || (w.peranLabel || '').toLowerCase().includes('pekerja')) return 4;
-      return 3; // Tukang
-    };
-
-    fullTeam.sort((a, b) => getRoleWeight(a) - getRoleWeight(b));
-
-    // 3. Proportional AHSP Weighted Distribution
-    const totalAhspRateSum = fullTeam.reduce((sum, w) => {
-      const rate = getAhspWageRateForRole(w.peran, w.peranLabel, ahspMap, w.upahHarian);
-      return sum + rate;
-    }, 0);
-
-    let allocatedSum = 0;
-    const resultAttendance = fullTeam.map((w) => {
-      const exactRate = getAhspWageRateForRole(w.peran, w.peranLabel, ahspMap, w.upahHarian);
-      let assignedTotal = Math.round((targetBudget * exactRate) / (totalAhspRateSum || 1));
-      allocatedSum += assignedTotal;
-
-      return {
-        workerId: w.id,
-        nama: w.nama,
-        jenisKelamin: w.jenisKelamin,
-        domisili: w.domisili || 'Dalam Desa',
-        peran: w.peran,
-        peranLabel: w.peranLabel,
-        days: [1, 1, 1, 1, 0, 1, 1] as [number, number, number, number, number, number, number],
-        hok: 6,
-        upahHarian: exactRate,
-        totalUpah: assignedTotal,
-      };
+  // Pastikan Master Data Tenaga Kerja memiliki pemisahan tegas antara HARIAN dan BORONGAN
+  React.useEffect(() => {
+    let hasChanges = false;
+    const updated = workers.map((w) => {
+      if (!w.kategoriPenugasan) {
+        hasChanges = true;
+        return {
+          ...w,
+          kategoriPenugasan: 'HARIAN' as const,
+        };
+      }
+      return w;
     });
 
-    // Adjust difference to last worker (Pekerja) so total is 100% klop (Rp 0 difference)
-    const diff = targetBudget - allocatedSum;
-    if (diff !== 0 && resultAttendance.length > 0) {
-      const lastIdx = resultAttendance.length - 1;
-      resultAttendance[lastIdx].totalUpah += diff;
+    const hasBorongan = updated.some((w) => w.kategoriPenugasan === 'BORONGAN');
+    if (!hasBorongan) {
+      hasChanges = true;
+      const coreTeamWithAhsp = DEFAULT_BORONGAN_CORE_TEAM.map((w) => ({
+        ...w,
+        upahHarian: getAhspWageRateForRole(w.peran, w.peranLabel, ahspWageMap, w.upahHarian),
+      }));
+      updated.push(...coreTeamWithAhsp);
     }
 
-    return resultAttendance;
-  };
+    if (hasChanges) {
+      onUpdateWorkers(updated);
+    }
+  }, []);
+
+  // Dedicated memoized list for Borongan mode (strictly locked to Borongan personnel)
+  const currentBoronganList = useMemo(() => {
+    if (activeReport?.boronganAttendance && activeReport.boronganAttendance.length > 0) {
+      const hasP = activeReport.boronganAttendance.some(
+        (w) =>
+          w.peran === 'P' ||
+          (w.peranLabel || '').toLowerCase().includes('pekerja') ||
+          (w.peranLabel || '').toLowerCase().includes('laden')
+      );
+      if (hasP) return activeReport.boronganAttendance;
+    }
+    return getBalancedBoronganAttendance(
+      targetWageBudget || activeReport?.boronganTotalUpah || activeReport?.totalUpah || 0,
+      workers,
+      ahspWageMap
+    );
+  }, [activeReport, targetWageBudget, workers, ahspWageMap]);
 
   // Handler: Balance Attendance & Sync with RAB/Kwitansi
   const handleSyncWithRabAndKwitansi = (customTarget?: number) => {
@@ -374,92 +303,198 @@ export const WageManager: React.FC<WageManagerProps> = ({
       return;
     }
 
-    let balancedAttendance: any[] = [];
-
     if (activeTab === 'borongan') {
-      // Use balanced Borongan team structure (Mandor, KT, Tukang, Pekerja)
-      balancedAttendance = getBalancedBoronganAttendance(target, workers, ahspWageMap);
-    } else {
-      // 1. Ambil list kehadiran saat ini atau semua worker terdaftar untuk Mode Harian HOK
-      let currentAttendance =
-        activeReport.attendance.length > 0
-          ? [...activeReport.attendance]
-          : workers.map((w) => ({
-              workerId: w.id,
-              nama: w.nama,
-              jenisKelamin: w.jenisKelamin,
-              domisili: w.domisili,
-              peran: w.peran,
-              peranLabel: w.peranLabel,
-              days: [1, 1, 1, 1, 0, 1, 1] as [number, number, number, number, number, number, number],
-              hok: 6,
-              upahHarian: w.upahHarian,
-              totalUpah: 6 * w.upahHarian,
-            }));
+      // Use balanced Borongan team structure (strictly locked to 1 Mandor, 1 KT, 2 Tukang, 3 Pekerja + extra if overflow)
+      const balancedAttendance = getBalancedBoronganAttendance(target, workers, ahspWageMap);
+      const finalTotalUpah = balancedAttendance.reduce((s, a) => s + a.totalUpah, 0);
 
-      // Standardize daily rates strictly using AHSP master standard
-      currentAttendance = currentAttendance.map((att) => {
-        const standardRate = getAhspWageRateForRole(att.peran, att.peranLabel || att.peran, ahspWageMap, att.upahHarian);
-        return {
-          ...att,
-          upahHarian: standardRate,
-        };
+      // Pastikan personil borongan tersimpan di master workers jika belum lengkap
+      const existingBorongan = workers.filter((w) => w.kategoriPenugasan === 'BORONGAN');
+      if (existingBorongan.length < 4) {
+        const toAdd: WorkerItem[] = balancedAttendance
+          .filter(
+            (att) =>
+              !workers.some(
+                (w) =>
+                  w.nama.toLowerCase() === att.nama.toLowerCase() &&
+                  w.kategoriPenugasan === 'BORONGAN'
+              )
+          )
+          .map((att) => ({
+            id: att.workerId,
+            nama: att.nama,
+            jenisKelamin: att.jenisKelamin,
+            domisili: att.domisili,
+            peran: att.peran,
+            peranLabel: att.peranLabel,
+            upahHarian: att.upahHarian,
+            kategoriPenugasan: 'BORONGAN',
+          }));
+        if (toAdd.length > 0) {
+          onUpdateWorkers([...workers, ...toAdd]);
+        }
+      }
+
+      // Update Weekly Wage Report: SIMPAN KHUSUS KE boronganAttendance & boronganTotalUpah (Harian tetap utuh!)
+      const updatedWageReports = wageReports.map((rep) => {
+        if (rep.mingguKe === selectedWeekNum) {
+          return {
+            ...rep,
+            boronganAttendance: balancedAttendance,
+            boronganTotalUpah: finalTotalUpah,
+            totalUpah: finalTotalUpah,
+          };
+        }
+        return rep;
       });
 
-      const numWorkers = currentAttendance.length;
-      if (numWorkers === 0) return;
+      onUpdateWageReports(updatedWageReports);
 
-      let remainingBudget = target;
+      // Update Kwitansi
+      if (onUpdateKwitansiList && kwitansiList) {
+        const itemsForKwitansi = balancedAttendance.map((a) => ({
+          namaBarang: `Upah Borongan ${a.peranLabel || a.peran} (${a.nama})`,
+          volume: a.hok,
+          satuan: 'HOK',
+          hargaSatuan: a.upahHarian,
+          jumlah: a.totalUpah,
+        }));
 
-      for (let i = 0; i < currentAttendance.length; i++) {
-        if (remainingBudget <= 0) break;
-
-        const att = currentAttendance[i];
-        const workerRate = att.upahHarian || 120000;
-        const isLastAvailable = i === currentAttendance.length - 1;
-
-        const maxPossibleHok = Math.min(7, Math.max(1, Math.floor(remainingBudget / workerRate)));
-
-        let assignedHok = 0;
-        let assignedTotal = 0;
-        let assignedDailyRate = workerRate;
-
-        if (isLastAvailable || remainingBudget < workerRate * 2) {
-          assignedTotal = remainingBudget;
-          let calculatedHok = Math.round(assignedTotal / workerRate);
-          assignedHok = Math.min(7, Math.max(1, calculatedHok));
-          assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
-          remainingBudget = 0;
-        } else {
-          assignedHok = Math.min(7, Math.max(1, maxPossibleHok));
-          assignedTotal = Math.round(assignedHok * workerRate);
-          remainingBudget -= assignedTotal;
-        }
-
-        const assignedDays: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
-        for (let d = 0; d < Math.min(7, assignedHok); d++) {
-          assignedDays[d] = 1;
-        }
-
-        balancedAttendance.push({
-          ...att,
-          days: assignedDays,
-          hok: assignedHok,
-          upahHarian: assignedDailyRate,
-          totalUpah: assignedTotal,
+        let kwUpdated = false;
+        const updatedKwList = kwitansiList.map((kw: any) => {
+          if (
+            kw.tipe === 'UPAH' &&
+            (kw.mingguKeRef === selectedWeekNum ||
+              kw.noBukti === activeReport.noBuktiKwitansi ||
+              kw.id === activeReport.id ||
+              (kw.uraian && kw.uraian.toLowerCase().includes(`minggu ke-${selectedWeekNum}`)) ||
+              (kw.uraian && kw.uraian.toLowerCase().includes(`minggu ${selectedWeekNum}`)))
+          ) {
+            kwUpdated = true;
+            return {
+              ...kw,
+              nominal: finalTotalUpah,
+              items: itemsForKwitansi,
+            };
+          }
+          return kw;
         });
+
+        if (!kwUpdated) {
+          const newKw: any = {
+            id: `kw-upah-w${selectedWeekNum}-${Date.now()}`,
+            noBukti: activeReport.noBuktiKwitansi || `UK/${String(selectedWeekNum).padStart(2, '0')}/2025`,
+            tipe: 'UPAH',
+            tanggal: activeReport.tanggalKwitansi || `${20 + selectedWeekNum}/10/2025`,
+            tanggalFormatted: activeReport.tanggalKwitansi || `${20 + selectedWeekNum} Oktober 2025`,
+            bulan: activeReport.bulan || 'Oktober 2025',
+            uraian: `Pembayaran Upah Borongan Fisik Minggu Ke-${selectedWeekNum}`,
+            penerimaNama: activeReport.penerimaNama || 'Budiman',
+            penerimaPekerjaan: activeReport.penerimaJabatan || 'Mandor / Ketua Kelompok',
+            penerimaAlamat: school.desa || school.lokasi || 'Lokasi Pekerjaan',
+            items: itemsForKwitansi,
+            nominal: finalTotalUpah,
+            isPpn: false,
+            isPph22: false,
+            isPph23: false,
+            ppnAmount: 0,
+            pph22Amount: 0,
+            pph23Amount: 0,
+            mingguKeRef: selectedWeekNum,
+          };
+          updatedKwList.push(newKw);
+        }
+
+        onUpdateKwitansiList(updatedKwList);
       }
 
-      if (remainingBudget > 0 && balancedAttendance.length > 0) {
-        const lastIdx = balancedAttendance.length - 1;
-        balancedAttendance[lastIdx].totalUpah += remainingBudget;
-        balancedAttendance[lastIdx].upahHarian = Math.round((balancedAttendance[lastIdx].totalUpah / (balancedAttendance[lastIdx].hok || 1)) * 100) / 100;
+      setAutoGenMsg(
+        `✅ Berhasil menyeimbangkan & mengunci Tim Borongan Minggu Ke-${selectedWeekNum} ke pagu Rp ${formatNumber(
+          finalTotalUpah
+        )} (100% Klop tanpa selisih).`
+      );
+      setTimeout(() => setAutoGenMsg(null), 5000);
+      return;
+    }
+
+    // MODE HARIAN (HOK)
+    let currentAttendance =
+      activeReport.attendance.length > 0
+        ? [...activeReport.attendance]
+        : workers.map((w) => ({
+            workerId: w.id,
+            nama: w.nama,
+            jenisKelamin: w.jenisKelamin,
+            domisili: w.domisili,
+            peran: w.peran,
+            peranLabel: w.peranLabel,
+            days: [1, 1, 1, 1, 0, 1, 1] as [number, number, number, number, number, number, number],
+            hok: 6,
+            upahHarian: w.upahHarian,
+            totalUpah: 6 * w.upahHarian,
+          }));
+
+    currentAttendance = currentAttendance.map((att) => {
+      const standardRate = getAhspWageRateForRole(att.peran, att.peranLabel || att.peran, ahspWageMap, att.upahHarian);
+      return {
+        ...att,
+        upahHarian: standardRate,
+      };
+    });
+
+    const numWorkers = currentAttendance.length;
+    if (numWorkers === 0) return;
+
+    let remainingBudget = target;
+    const balancedAttendance: typeof currentAttendance = [];
+
+    for (let i = 0; i < currentAttendance.length; i++) {
+      if (remainingBudget <= 0) break;
+
+      const att = currentAttendance[i];
+      const workerRate = att.upahHarian || 120000;
+      const isLastAvailable = i === currentAttendance.length - 1;
+
+      const maxPossibleHok = Math.min(7, Math.max(1, Math.floor(remainingBudget / workerRate)));
+
+      let assignedHok = 0;
+      let assignedTotal = 0;
+      let assignedDailyRate = workerRate;
+
+      if (isLastAvailable || remainingBudget < workerRate * 2) {
+        assignedTotal = remainingBudget;
+        let calculatedHok = Math.round(assignedTotal / workerRate);
+        assignedHok = Math.min(7, Math.max(1, calculatedHok));
+        assignedDailyRate = Math.round((assignedTotal / assignedHok) * 100) / 100;
+        remainingBudget = 0;
+      } else {
+        assignedHok = Math.min(7, Math.max(1, maxPossibleHok));
+        assignedTotal = Math.round(assignedHok * workerRate);
+        remainingBudget -= assignedTotal;
       }
+
+      const assignedDays: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
+      for (let d = 0; d < Math.min(7, assignedHok); d++) {
+        assignedDays[d] = 1;
+      }
+
+      balancedAttendance.push({
+        ...att,
+        days: assignedDays,
+        hok: assignedHok,
+        upahHarian: assignedDailyRate,
+        totalUpah: assignedTotal,
+      });
+    }
+
+    if (remainingBudget > 0 && balancedAttendance.length > 0) {
+      const lastIdx = balancedAttendance.length - 1;
+      balancedAttendance[lastIdx].totalUpah += remainingBudget;
+      balancedAttendance[lastIdx].upahHarian = Math.round((balancedAttendance[lastIdx].totalUpah / (balancedAttendance[lastIdx].hok || 1)) * 100) / 100;
     }
 
     const finalTotalUpah = balancedAttendance.reduce((s, a) => s + a.totalUpah, 0);
 
-    // Update Weekly Wage Report
     const updatedWageReports = wageReports.map((rep) => {
       if (rep.mingguKe === selectedWeekNum) {
         return {
@@ -472,6 +507,7 @@ export const WageManager: React.FC<WageManagerProps> = ({
     });
 
     onUpdateWageReports(updatedWageReports);
+
 
     // 4. Update or Create Synchronized Kwitansi for this Week
     if (onUpdateKwitansiList && kwitansiList) {
@@ -1781,12 +1817,12 @@ export const WageManager: React.FC<WageManagerProps> = ({
                     <span>Kontrol Kesesuaian & Balance Upah Borongan Minggu Ke-{activeReport.mingguKe}</span>
                   </h5>
                   <p className="text-slate-600 text-[11px]">
-                    Target Pagu RAB/Kwitansi: <strong className="font-mono text-indigo-900">{formatRupiah(targetWageBudget || activeReport.totalUpah || 0)}</strong> • Terdistribusi ke Kelompok: <strong className="font-mono text-indigo-900">{formatRupiah(activeReport.totalUpah || 0)}</strong>
+                    Target Pagu RAB/Kwitansi: <strong className="font-mono text-indigo-900">{formatRupiah(targetWageBudget || activeReport.boronganTotalUpah || activeReport.totalUpah || 0)}</strong> • Terdistribusi ke Kelompok: <strong className="font-mono text-indigo-900">{formatRupiah(currentBoronganList.reduce((s, a) => s + (a.totalUpah || 0), 0))}</strong>
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {Math.abs((targetWageBudget || activeReport.totalUpah || 0) - (activeReport.totalUpah || 0)) === 0 ? (
+                  {Math.abs((targetWageBudget || activeReport.boronganTotalUpah || activeReport.totalUpah || 0) - currentBoronganList.reduce((s, a) => s + (a.totalUpah || 0), 0)) === 0 ? (
                     <span className="px-3 py-1.5 bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold rounded-lg text-[11px] flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                       <span>100% Klop (Selisih Rp 0)</span>
@@ -1794,7 +1830,7 @@ export const WageManager: React.FC<WageManagerProps> = ({
                   ) : (
                     <span className="px-3 py-1.5 bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded-lg text-[11px] flex items-center gap-1">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Selisih: {formatRupiah(Math.abs((targetWageBudget || 0) - (activeReport.totalUpah || 0)))}</span>
+                      <span>Selisih: {formatRupiah(Math.abs((targetWageBudget || activeReport.boronganTotalUpah || activeReport.totalUpah || 0) - currentBoronganList.reduce((s, a) => s + (a.totalUpah || 0), 0)))}</span>
                     </span>
                   )}
 
@@ -1821,7 +1857,7 @@ export const WageManager: React.FC<WageManagerProps> = ({
                 <div>
                   <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Daftar Kelompok Tukang & Tenaga Kerja Borongan ({activeReport.attendance.length > 0 ? activeReport.attendance.length : workers.length} Orang)</span>
+                    <span>Daftar Kelompok Tukang & Tenaga Kerja Borongan ({currentBoronganList.length} Orang)</span>
                   </h4>
                   <p className="text-xs text-slate-500">
                     Nama-nama tenaga kerja di bawah ini tercantum resmi sebagai anggota kelompok penerima upah borongan (1 Mandor, 1 KT, 2 Tukang, 3 Pekerja + Tambahan jika over-capacity).
@@ -1843,13 +1879,16 @@ export const WageManager: React.FC<WageManagerProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(activeReport.attendance.length > 0 ? activeReport.attendance : workers).map((w: any, idx: number) => (
+                    {currentBoronganList.map((w: any, idx: number) => (
                       <tr key={w.workerId || w.id || idx} className="hover:bg-indigo-50/40 transition">
                         <td className="py-2.5 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
                         <td className="py-2.5 px-4 font-bold text-slate-900">{w.nama}</td>
                         <td className="py-2.5 px-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            idx === 0 ? 'bg-amber-100 text-amber-800 font-black' : 'bg-slate-100 text-slate-700'
+                            idx === 0 ? 'bg-amber-100 text-amber-800 font-black' :
+                            w.peran === 'KT' ? 'bg-rose-100 text-rose-800' :
+                            w.peran === 'P' ? 'bg-blue-100 text-blue-800' :
+                            'bg-slate-100 text-slate-700'
                           }`}>
                             {idx === 0 ? 'Ketua Kelompok / Mandor' : w.peranLabel || w.peran}
                           </span>
@@ -1873,7 +1912,7 @@ export const WageManager: React.FC<WageManagerProps> = ({
                         Total Nilai Pembayaran Upah Borongan Minggu Ke-{activeReport.mingguKe}:
                       </td>
                       <td colSpan={2} className="py-3 px-4 text-right font-mono text-base text-indigo-950 font-black">
-                        {formatRupiah(activeReport.totalUpah || targetWageBudget)}
+                        {formatRupiah(activeReport.boronganTotalUpah || activeReport.totalUpah || targetWageBudget)}
                       </td>
                     </tr>
                   </tfoot>

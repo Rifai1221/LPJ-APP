@@ -14,8 +14,9 @@ import {
 } from '../types';
 import { formatRupiah, formatNumber } from '../utils/formatters';
 import { terbilangRupiah } from '../utils/terbilang';
-import { toRoman } from '../utils/divisionHelper';
+import { toRoman, getAhspWageRatesMap } from '../utils/divisionHelper';
 import { getAvailableMonthsForSchool, parseTxDateToIso, resolveWeekDates } from '../utils/monthHelper';
+import { getBalancedBoronganAttendance } from '../utils/boronganHelper';
 
 import { SkTimTeknisDocument } from './SkTimTeknisDocument';
 import { normalizeMaterialItems } from '../services/autoGeneratorService';
@@ -37,6 +38,8 @@ interface PrintDocumentViewerProps {
   bkbList: BkbTransaction[];
   taxRecords: TaxRecord[];
   progressWeeks: ProjectProgressWeek[];
+  workers?: any[];
+  realSchoolData?: any;
 }
 
 const StandardKopSurat: React.FC<{ school: SchoolMasterData }> = ({ school }) => {
@@ -141,6 +144,8 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
   bkbList,
   taxRecords,
   progressWeeks,
+  workers,
+  realSchoolData,
 }) => {
   const [selectedDoc, setSelectedDoc] = React.useState<string>(documentType);
 
@@ -1892,10 +1897,21 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                   const boronganUraianText = wage.boronganUraian || `Pekerjaan Konstruksi Fisik & Pasangan (Minggu Ke-${wage.mingguKe})`;
                   const mandorNama = wage.penerimaNama || 'Budiman';
                   const spkNo = wage.boronganNoSpk || `SPK-BOR/${String(wage.mingguKe).padStart(2, '0')}/${school.tahunAnggaran || '2026'}`;
-                  const nominalBorongan = wage.totalUpah || 0;
+                  const nominalBorongan = wage.boronganTotalUpah || wage.totalUpah || 0;
+                  const ahspWageMap = getAhspWageRatesMap(realSchoolData?.ahspList);
 
-                  // Ambil anggota tim pekerja (1 Mandor, 1 KT, 2 Tukang, 3 Pekerja + ekstra jika over-capacity)
-                  const boronganAttendance = wage.attendance && wage.attendance.length > 0 ? wage.attendance : [];
+                  // Ambil anggota tim pekerja borongan khusus (1 Mandor, 1 KT, 2 Tukang, 3 Pekerja + ekstra jika over-capacity)
+                  const boronganAttendance =
+                    wage.boronganAttendance &&
+                    wage.boronganAttendance.length > 0 &&
+                    wage.boronganAttendance.some(
+                      (w) =>
+                        w.peran === 'P' ||
+                        (w.peranLabel || '').toLowerCase().includes('pekerja') ||
+                        (w.peranLabel || '').toLowerCase().includes('laden')
+                    )
+                      ? wage.boronganAttendance
+                      : getBalancedBoronganAttendance(nominalBorongan, workers || [], ahspWageMap);
 
                   return (
                     <div key={`print-borongan-${wage.id}`} className="space-y-8">

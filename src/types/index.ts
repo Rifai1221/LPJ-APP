@@ -176,6 +176,8 @@ export interface WeeklyWageReport {
   boronganHargaSatuan?: number;
   boronganNoSpk?: string;
   boronganAnggotaKelompok?: string[];
+  boronganAttendance?: WeeklyAttendance[];
+  boronganTotalUpah?: number;
 }
 
 export interface TokoItem {

@@ -1149,6 +1149,8 @@ Lanjutkan pengosongan data transaksi?`)
         bkbList={appState.bkbRecords}
         taxRecords={taxRecords}
         progressWeeks={appState.progressWeeks}
+        workers={appState.workers}
+        realSchoolData={appState.realSchoolData}
       />
 
       {/* Confirmation Modal: Delete School & Database */}
