@@ -23,20 +23,27 @@ import {
   AlertTriangle,
   Sparkles,
   CheckCircle2,
-  Wand2
+  Wand2,
+  Eye,
 } from 'lucide-react';
 import { defaultRealSchoolData } from '../data/realSchoolData';
 import { downloadRealDataExcelTemplate, parseRealDataExcelFile } from '../utils/excelHelper';
-import { toRoman } from '../utils/formatters';
+import { toRoman, formatRupiah } from '../utils/formatters';
+import { SchoolMasterData, StoreVendor } from '../types';
+import { RabAhspDocumentPreviewModal } from './RabAhspDocumentPreviewModal';
 
 interface RealSchoolDataManagerProps {
   realData: RealSchoolData;
+  school?: SchoolMasterData;
+  stores?: StoreVendor[];
   onUpdateRealData: (newData: RealSchoolData) => void;
   onApplyToAllModules: (data: RealSchoolData) => void;
 }
 
 export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
   realData = defaultRealSchoolData,
+  school,
+  stores = [],
   onUpdateRealData,
   onApplyToAllModules,
 }) => {
@@ -47,6 +54,51 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
     'div-3': true,
     'div-4': true,
   });
+
+  // RAB Item AHSP & Document Preview Modal
+  const [selectedPreviewItem, setSelectedPreviewItem] = useState<RabSubItem | null>(null);
+  const [selectedPreviewDivision, setSelectedPreviewDivision] = useState<RabDivision | null>(null);
+  const [isRabAhspModalOpen, setIsRabAhspModalOpen] = useState(false);
+
+  const handleOpenRabAhspPreview = (div: RabDivision, item: RabSubItem) => {
+    setSelectedPreviewDivision(div);
+    setSelectedPreviewItem(item);
+    setIsRabAhspModalOpen(true);
+  };
+
+  const handleUpdateRabItem = (divId: string, itemId: string, updatedFields: Partial<RabSubItem>) => {
+    const updatedDivs = realData.divisions.map((d) => {
+      if (d.id !== divId) return d;
+      const updatedItems = d.items.map((it) => (it.id === itemId ? { ...it, ...updatedFields } : it));
+      const subTotal = updatedItems.reduce((acc, it) => acc + (it.jumlah || 0), 0);
+      return { ...d, items: updatedItems, subTotal };
+    });
+    const totalNilaiRab = updatedDivs.reduce((acc, d) => acc + d.subTotal, 0);
+    const divsWithBobot = updatedDivs.map((d) => ({
+      ...d,
+      bobotPersen: totalNilaiRab > 0 ? (d.subTotal / totalNilaiRab) * 100 : 0,
+    }));
+    onUpdateRealData({
+      ...realData,
+      divisions: divsWithBobot,
+      totalNilaiRab,
+    });
+    if (selectedPreviewItem && selectedPreviewItem.id === itemId) {
+      setSelectedPreviewItem({ ...selectedPreviewItem, ...updatedFields });
+    }
+  };
+
+  const handleUpdateAhspItem = (updatedAhsp: AhspItem) => {
+    const currentList = realData.ahspList || [];
+    const exists = currentList.some((a) => a.id === updatedAhsp.id);
+    const updatedList = exists
+      ? currentList.map((a) => (a.id === updatedAhsp.id ? updatedAhsp : a))
+      : [...currentList, updatedAhsp];
+    onUpdateRealData({
+      ...realData,
+      ahspList: updatedList,
+    });
+  };
 
   // Division Modal / Form state
   const [editingDivision, setEditingDivision] = useState<RabDivision | null>(null);
@@ -1715,12 +1767,23 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                               {it.kode || idx + 1}
                             </td>
                             <td className="py-2 px-3 border-r border-slate-200">
-                              <input
-                                type="text"
-                                value={it.uraian}
-                                onChange={(e) => handleItemChange(div.id, it.id, 'uraian', e.target.value)}
-                                className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent focus:border-blue-400 rounded px-1.5 py-0.5 font-medium text-slate-800"
-                              />
+                              <div className="flex items-center gap-1.5 group/item">
+                                <input
+                                  type="text"
+                                  value={it.uraian}
+                                  onChange={(e) => handleItemChange(div.id, it.id, 'uraian', e.target.value)}
+                                  className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent focus:border-blue-400 rounded px-1.5 py-0.5 font-medium text-slate-800"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRabAhspPreview(div, it)}
+                                  className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 shadow-2xs flex items-center gap-1 transition cursor-pointer"
+                                  title="Lihat Pratinjau AHSP & Tercetak di Bon/SPB"
+                                >
+                                  <Eye className="w-3 h-3 text-blue-600" />
+                                  <span>AHSP & Bon</span>
+                                </button>
+                              </div>
                             </td>
                             <td className="py-2 px-2 border-r border-slate-200 text-center">
                               <select
@@ -1778,14 +1841,24 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                               {formatRupiah(it.jumlah)}
                             </td>
                             <td className="py-2 px-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteItem(div.id, it.id)}
-                                className="p-1 text-slate-400 hover:text-rose-600 transition rounded"
-                                title="Hapus baris item ini"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex items-center justify-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenRabAhspPreview(div, it)}
+                                  className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition rounded cursor-pointer"
+                                  title="Pratinjau AHSP & Dokumen Bon/SPB"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteItem(div.id, it.id)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 transition rounded cursor-pointer"
+                                  title="Hapus baris item ini"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -2006,6 +2079,19 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
         </div>
       </div>
     )}
+
+      {/* RAB to AHSP & Document (Bon/SPB/Upah) Live Preview Modal */}
+      <RabAhspDocumentPreviewModal
+        isOpen={isRabAhspModalOpen}
+        onClose={() => setIsRabAhspModalOpen(false)}
+        rabItem={selectedPreviewItem}
+        division={selectedPreviewDivision}
+        realData={realData}
+        school={school}
+        stores={stores}
+        onUpdateRabItem={handleUpdateRabItem}
+        onUpdateAhsp={handleUpdateAhspItem}
+      />
     </div>
   );
 };

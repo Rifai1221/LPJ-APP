@@ -1011,6 +1011,8 @@ Lanjutkan pengosongan data transaksi?`)
         {activeTab === 'realdata' && (
           <RealSchoolDataManager
             realData={appState.realSchoolData || defaultRealSchoolData}
+            school={appState.school}
+            stores={appState.stores || []}
             onUpdateRealData={handleUpdateRealData}
             onApplyToAllModules={handleApplyRealDataToAll}
           />

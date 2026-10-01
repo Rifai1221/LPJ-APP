@@ -332,6 +332,7 @@ export interface RabSubItem {
   hargaSatuan: number;
   jumlah: number;
   kategoriBiaya?: 'BAHAN' | 'UPAH' | 'ALAT' | 'SMKK' | 'UPAH_BAHAN' | 'LAINNYA';
+  ahspIdRef?: string;
 }
 
 export interface RabDivision {
