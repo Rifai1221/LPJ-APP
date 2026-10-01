@@ -39,15 +39,18 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
   const [formAlamat, setFormAlamat] = useState('');
   const [formTelepon, setFormTelepon] = useState('');
   const [formNpwp, setFormNpwp] = useState('');
-  const [formKategori, setFormKategori] = useState<'MATERIAL' | 'PERABOT' | 'KONSULTAN' | 'OPERASIONAL' | 'UMUM'>('MATERIAL');
+  const [formKategori, setFormKategori] = useState<'MATERIAL' | 'PERABOT' | 'KONSULTAN' | 'OPERASIONAL' | 'SIPLAH' | 'UMUM'>('MATERIAL');
+  const [formMitraSiplah, setFormMitraSiplah] = useState('SipLah Blibli / Telkom');
+  const [formNoMitraSiplah, setFormNoMitraSiplah] = useState('');
 
   const filteredStores = stores.filter((s) => {
-    const matchCat = selectedKategori === 'ALL' || s.kategori === selectedKategori;
+    const matchCat = selectedKategori === 'ALL' || s.kategori === selectedKategori || (selectedKategori === 'SIPLAH' && (s.kategori === 'SIPLAH' || s.isSiplah));
     const matchSearch =
       s.namaToko.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.pemilikNama.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.alamat.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.pekerjaan && s.pekerjaan.toLowerCase().includes(searchQuery.toLowerCase()));
+      (s.pekerjaan && s.pekerjaan.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (s.mitraSiplah && s.mitraSiplah.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchCat && matchSearch;
   });
 
@@ -59,6 +62,8 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
     setFormTelepon('');
     setFormNpwp('');
     setFormKategori('MATERIAL');
+    setFormMitraSiplah('SipLah Blibli / Telkom');
+    setFormNoMitraSiplah('');
     setEditingId(null);
     setIsAdding(false);
   };
@@ -72,12 +77,52 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
     setFormTelepon(store.telepon || '');
     setFormNpwp(store.npwp || '');
     setFormKategori(store.kategori || 'MATERIAL');
+    setFormMitraSiplah(store.mitraSiplah || 'SipLah Blibli / Telkom');
+    setFormNoMitraSiplah(store.noMitraSiplah || '');
     setIsAdding(true);
+  };
+
+  // Helper to add sample SipLah vendor if needed
+  const handleAddSampleSiplahStores = () => {
+    const sampleSiplahStores: StoreVendor[] = [
+      {
+        id: `siplah-${Date.now()}-1`,
+        namaToko: 'UD. SIPLAH MEDIA EDUKASI',
+        pemilikNama: 'T. Rahmad Hidayat',
+        pekerjaan: 'Mitra Penyedia SipLah Resmi',
+        alamat: 'Jl. Samudera No. 45, Lhokseumawe',
+        telepon: '0812-6900-8899',
+        npwp: '01.888.777.6-123.000',
+        kategori: 'SIPLAH',
+        isSiplah: true,
+        mitraSiplah: 'SipLah Blibli',
+        noMitraSiplah: 'SIPLAH-BLI-2026-091',
+      },
+      {
+        id: `siplah-${Date.now()}-2`,
+        namaToko: 'CV. SIPLAH SARANA BANGUN',
+        pemilikNama: 'M. Faisal Abrar',
+        pekerjaan: 'Penyedia Bahan & Perabot SipLah',
+        alamat: 'Jl. Merdeka No. 88, Lhokseumawe',
+        telepon: '0852-7788-9900',
+        npwp: '02.999.555.4-123.000',
+        kategori: 'SIPLAH',
+        isSiplah: true,
+        mitraSiplah: 'SipLah Telkom',
+        noMitraSiplah: 'SIPLAH-TLK-2026-042',
+      },
+    ];
+
+    const updated = [...stores, ...sampleSiplahStores];
+    onUpdateStores(updated);
+    setSelectedKategori('SIPLAH');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formNamaToko.trim()) return;
+
+    const isSiplahCat = formKategori === 'SIPLAH';
 
     if (editingId) {
       // Edit existing
@@ -92,6 +137,9 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
               telepon: formTelepon.trim() || undefined,
               npwp: formNpwp.trim() || undefined,
               kategori: formKategori,
+              isSiplah: isSiplahCat,
+              mitraSiplah: isSiplahCat ? formMitraSiplah.trim() : undefined,
+              noMitraSiplah: isSiplahCat ? formNoMitraSiplah.trim() : undefined,
             }
           : s
       );
@@ -107,6 +155,9 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
         telepon: formTelepon.trim() || undefined,
         npwp: formNpwp.trim() || undefined,
         kategori: formKategori,
+        isSiplah: isSiplahCat,
+        mitraSiplah: isSiplahCat ? formMitraSiplah.trim() : undefined,
+        noMitraSiplah: isSiplahCat ? formNoMitraSiplah.trim() : undefined,
       };
       onUpdateStores([...stores, newStore]);
     }
@@ -202,9 +253,40 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
                 <option value="PERABOT">Mebeler & Perabot Ruang Kelas</option>
                 <option value="KONSULTAN">Konsultan Perencana / Pengawas</option>
                 <option value="OPERASIONAL">Persiapan, K3 & Percetakan Dokumen</option>
+                <option value="SIPLAH">🛒 Penyedia SipLah (Mitra Resmi Kemendikbud)</option>
                 <option value="UMUM">Penyedia Umum Lainnya</option>
               </select>
             </div>
+
+            {formKategori === 'SIPLAH' && (
+              <>
+                <div>
+                  <label className="block text-xs font-bold text-emerald-900 mb-1">
+                    Mitra Marketplace SipLah *
+                  </label>
+                  <input
+                    type="text"
+                    value={formMitraSiplah}
+                    onChange={(e) => setFormMitraSiplah(e.target.value)}
+                    placeholder="Contoh: SipLah Blibli / SipLah Telkom / Eureka"
+                    className="w-full px-3 py-1.5 text-xs bg-emerald-50/50 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-emerald-900 mb-1">
+                    No. Mitra / ID Transaksi SipLah
+                  </label>
+                  <input
+                    type="text"
+                    value={formNoMitraSiplah}
+                    onChange={(e) => setFormNoMitraSiplah(e.target.value)}
+                    placeholder="Contoh: SIPLAH-2026-9812"
+                    className="w-full px-3 py-1.5 text-xs bg-emerald-50/50 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 font-mono"
+                  />
+                </div>
+              </>
+            )}
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -298,6 +380,7 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
         <div className="flex flex-wrap gap-1.5">
           {[
             { id: 'ALL', label: `Semua Toko (${stores.length})` },
+            { id: 'SIPLAH', label: '🛒 Penyedia SipLah' },
             { id: 'MATERIAL', label: 'Bahan Bangunan' },
             { id: 'PERABOT', label: 'Mebeler/Perabot' },
             { id: 'KONSULTAN', label: 'Konsultan/Jasa' },
@@ -315,6 +398,16 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
               {tab.label}
             </button>
           ))}
+          {selectedKategori === 'SIPLAH' && stores.filter((s) => s.kategori === 'SIPLAH' || s.isSiplah).length === 0 && (
+            <button
+              type="button"
+              onClick={handleAddSampleSiplahStores}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>+ Buat Contoh Penyedia SipLah</span>
+            </button>
+          )}
         </div>
 
         <div className="relative min-w-[220px]">
@@ -346,8 +439,14 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
                     <h4 className="font-bold text-sm text-slate-900 group-hover:text-emerald-700 transition">
                       {store.namaToko}
                     </h4>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                      {store.kategori === 'MATERIAL'
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                      store.kategori === 'SIPLAH' || store.isSiplah
+                        ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {store.kategori === 'SIPLAH' || store.isSiplah
+                        ? `🛒 SipLah Mitra (${store.mitraSiplah || 'Resmi'})`
+                        : store.kategori === 'MATERIAL'
                         ? 'Material Bangunan'
                         : store.kategori === 'PERABOT'
                         ? 'Perabot Mebeler'

@@ -14,29 +14,37 @@ import {
   Clock,
   Layers,
   RotateCcw,
+  Store,
+  AlertTriangle,
 } from 'lucide-react';
-import { BktTransaction, BkuTransaction, SchoolMasterData, ProjectProgressWeek, TransactionFilterOptions } from '../types';
+import { BktTransaction, BkuTransaction, SchoolMasterData, ProjectProgressWeek, TransactionFilterOptions, StoreVendor } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { getAvailableMonthsForSchool, resolveWeekDates, parseTxDateToIso } from '../utils/monthHelper';
+import { isRegisteredVendor, isSiplahVendor, findMasterStore, isInternalNonVendorTransaction } from '../utils/vendorValidation';
+import { VendorQuickRegisterModal } from './VendorQuickRegisterModal';
 
 interface BktManagerProps {
   bktList: BktTransaction[];
   school: SchoolMasterData;
   progressWeeks?: ProjectProgressWeek[];
+  stores?: StoreVendor[];
   onOpenPrintModal: (month?: string, filterOptions?: TransactionFilterOptions) => void;
   onAddTransaction?: (tx: Omit<BkuTransaction, 'id'>) => void;
   onUpdateTransaction?: (tx: BkuTransaction) => void;
   onDeleteTransaction?: (tx: BkuTransaction) => void;
+  onUpdateStores?: (stores: StoreVendor[]) => void;
 }
 
 export const BktManager: React.FC<BktManagerProps> = ({
   bktList,
   school,
   progressWeeks = [],
+  stores = [],
   onOpenPrintModal,
   onAddTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
+  onUpdateStores,
 }) => {
   // Filter Mode: 'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'
   const [filterMode, setFilterMode] = useState<'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'>('ALL');
@@ -45,6 +53,10 @@ export const BktManager: React.FC<BktManagerProps> = ({
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Quick Register Modal State
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
+  const [unregisteredName, setUnregisteredName] = useState('');
 
   // Modal states for manual input & editing
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -647,7 +659,47 @@ export const BktManager: React.FC<BktManagerProps> = ({
                   <tr key={tx.id} className="hover:bg-slate-50 transition">
                     <td className="py-2.5 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
                     <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap font-mono">{tx.tanggal}</td>
-                    <td className="py-2.5 px-4 font-medium text-slate-900">{tx.uraian}</td>
+                    <td className="py-2.5 px-4 font-medium text-slate-900">
+                      <div className="flex flex-col gap-1">
+                        <span>{tx.uraian}</span>
+                        {tx.pengeluaran > 0 && !isInternalNonVendorTransaction(tx.uraian) && (() => {
+                          const matchedStore = findMasterStore(tx.uraian, stores);
+                          if (matchedStore) {
+                            const isSiplah = matchedStore.kategori === 'SIPLAH' || matchedStore.isSiplah;
+                            return (
+                              <div className="flex items-center gap-1 text-[10px]">
+                                <span className={`px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
+                                  isSiplah ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                }`}>
+                                  <Store className="w-3 h-3" />
+                                  <span>{isSiplah ? `🛒 SipLah: ${matchedStore.namaToko}` : `🏢 Master: ${matchedStore.namaToko}`}</span>
+                                </span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-1.5 text-[10px]">
+                              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-900 border border-rose-300 font-bold flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                <span>⚠️ Belum Terdaftar di Master</span>
+                              </span>
+                              {onUpdateStores && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUnregisteredName(tx.uraian);
+                                    setRegisterModalOpen(true);
+                                  }}
+                                  className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md shadow-2xs cursor-pointer"
+                                >
+                                  + Daftarkan Toko
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </td>
                     <td className="py-2.5 px-3 text-center font-mono text-[11px] text-slate-600 bg-slate-50 rounded">
                       {tx.noBukti || '-'}
                     </td>
@@ -815,6 +867,18 @@ export const BktManager: React.FC<BktManagerProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Quick Register Modal for Unregistered Stores */}
+      {onUpdateStores && (
+        <VendorQuickRegisterModal
+          isOpen={registerModalOpen}
+          unregisteredName={unregisteredName}
+          onClose={() => setRegisterModalOpen(false)}
+          onSaveStore={(newStore) => {
+            onUpdateStores([...stores, newStore]);
+          }}
+        />
       )}
     </div>
   );

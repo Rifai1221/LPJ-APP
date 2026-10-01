@@ -137,7 +137,10 @@ export interface StoreVendor {
   alamat: string;
   telepon?: string;
   npwp?: string;
-  kategori: 'MATERIAL' | 'PERABOT' | 'KONSULTAN' | 'OPERASIONAL' | 'UMUM';
+  kategori: 'MATERIAL' | 'PERABOT' | 'KONSULTAN' | 'OPERASIONAL' | 'SIPLAH' | 'UMUM';
+  isSiplah?: boolean;
+  mitraSiplah?: string; // e.g. 'SipLah Blibli', 'SipLah Telkom', 'SipLah Eureka', 'SipLah Tokoko'
+  noMitraSiplah?: string;
 }
 
 export interface WeeklyAttendance {

@@ -1,22 +1,32 @@
 import React, { useState } from 'react';
-import { FileCheck2, Printer, Search, X } from 'lucide-react';
-import { TaxRecord, SchoolMasterData } from '../types';
+import { FileCheck2, Printer, Search, X, Store, AlertTriangle } from 'lucide-react';
+import { TaxRecord, SchoolMasterData, StoreVendor } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { getAvailableMonthsForSchool } from '../utils/monthHelper';
+import { isRegisteredVendor, isSiplahVendor, findMasterStore, isInternalNonVendorTransaction } from '../utils/vendorValidation';
+import { VendorQuickRegisterModal } from './VendorQuickRegisterModal';
 
 interface TaxManagerProps {
   taxRecords: TaxRecord[];
   school: SchoolMasterData;
+  stores?: StoreVendor[];
   onOpenPrintModal: (month?: string) => void;
+  onUpdateStores?: (stores: StoreVendor[]) => void;
 }
 
 export const TaxManager: React.FC<TaxManagerProps> = ({
   taxRecords,
   school,
+  stores = [],
   onOpenPrintModal,
+  onUpdateStores,
 }) => {
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Quick Register Modal State
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
+  const [unregisteredName, setUnregisteredName] = useState('');
 
   const months = getAvailableMonthsForSchool(school, [taxRecords]);
   const activeSelectedMonth = (selectedMonth === 'ALL' || months.includes(selectedMonth)) ? selectedMonth : 'ALL';
@@ -134,7 +144,45 @@ export const TaxManager: React.FC<TaxManagerProps> = ({
                   <td className="py-2.5 px-2 text-center text-slate-500 font-mono">{idx + 1}</td>
                   <td className="py-2.5 px-2 font-mono text-[11px] text-slate-700">{t.noBukti}</td>
                   <td className="py-2.5 px-2 font-mono text-slate-600 whitespace-nowrap">{t.tanggal}</td>
-                  <td className="py-2.5 px-4 font-medium text-slate-900">{t.keperluan}</td>
+                  <td className="py-2.5 px-4 font-medium text-slate-900">
+                    <div className="flex flex-col gap-1">
+                      <span>{t.keperluan}</span>
+                      {!isInternalNonVendorTransaction(t.keperluan) && (() => {
+                        const matchedStore = findMasterStore(t.keperluan, stores);
+                        if (matchedStore) {
+                          const isSiplah = matchedStore.kategori === 'SIPLAH' || matchedStore.isSiplah;
+                          return (
+                            <span className={`text-[10px] w-fit px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
+                              isSiplah ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            }`}>
+                              <Store className="w-3 h-3" />
+                              <span>{isSiplah ? `🛒 SipLah: ${matchedStore.namaToko}` : `🏢 Master Toko: ${matchedStore.namaToko}`}</span>
+                            </span>
+                          );
+                        }
+                        return (
+                          <div className="flex items-center gap-1.5 text-[10px]">
+                            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-900 border border-rose-300 font-bold flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-rose-600" />
+                              <span>⚠️ Toko Belum Terdaftar</span>
+                            </span>
+                            {onUpdateStores && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setUnregisteredName(t.keperluan);
+                                  setRegisterModalOpen(true);
+                                }}
+                                className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md shadow-2xs cursor-pointer"
+                              >
+                                + Daftarkan
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </td>
                   
                   {/* Nominal breakdown */}
                   <td className="py-2.5 px-3 text-right font-mono">
@@ -184,6 +232,18 @@ export const TaxManager: React.FC<TaxManagerProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Quick Register Modal for Unregistered Stores */}
+      {onUpdateStores && (
+        <VendorQuickRegisterModal
+          isOpen={registerModalOpen}
+          unregisteredName={unregisteredName}
+          onClose={() => setRegisterModalOpen(false)}
+          onSaveStore={(newStore) => {
+            onUpdateStores([...stores, newStore]);
+          }}
+        />
+      )}
     </div>
   );
 };
