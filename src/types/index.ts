@@ -133,11 +133,11 @@ export interface StoreVendor {
   id: string;
   namaToko: string;
   pemilikNama: string;
-  pekerjaan?: string; // e.g. 'Pemilik Toko', 'Direktur CV', 'Penyedia Bahan'
+  pekerjaan?: string; // e.g. 'Pemilik Toko', 'Direktur CV', 'Penyedia Bahan', 'Perencana Teknis', 'Pengawas Lapangan'
   alamat: string;
   telepon?: string;
   npwp?: string;
-  kategori: 'MATERIAL' | 'PERABOT' | 'KONSULTAN' | 'OPERASIONAL' | 'SIPLAH' | 'UMUM';
+  kategori: 'MATERIAL' | 'PERABOT' | 'PERENCANA' | 'PENGAWAS' | 'OPERASIONAL' | 'K3' | 'KONSULTAN' | 'SIPLAH' | 'UMUM';
   isSiplah?: boolean;
   mitraSiplah?: string; // e.g. 'SipLah Blibli', 'SipLah Telkom', 'SipLah Eureka', 'SipLah Tokoko'
   noMitraSiplah?: string;

@@ -233,14 +233,18 @@ export const TaxManager: React.FC<TaxManagerProps> = ({
         </div>
       </div>
 
-      {/* Quick Register Modal for Unregistered Stores */}
+      {/* Quick Register / Select Existing Store Modal */}
       {onUpdateStores && (
         <VendorQuickRegisterModal
           isOpen={registerModalOpen}
           unregisteredName={unregisteredName}
+          availableStores={stores}
           onClose={() => setRegisterModalOpen(false)}
           onSaveStore={(newStore) => {
             onUpdateStores([...stores, newStore]);
+          }}
+          onSelectExistingStore={() => {
+            // Store linked successfully
           }}
         />
       )}

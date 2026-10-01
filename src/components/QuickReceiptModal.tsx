@@ -90,8 +90,8 @@ export const QuickReceiptModal: React.FC<QuickReceiptModalProps> = ({
       setPenerimaPekerjaan(found.pekerjaan || 'Pemilik Toko');
       setPenerimaAlamat(found.alamat);
       if (found.kategori === 'PERABOT') setTipe('PERABOT');
-      else if (found.kategori === 'KONSULTAN') setTipe('KONSULTAN');
-      else if (found.kategori === 'OPERASIONAL') setTipe('OPERASIONAL');
+      else if (found.kategori === 'PERENCANA' || found.kategori === 'PENGAWAS' || found.kategori === 'KONSULTAN') setTipe('KONSULTAN');
+      else if (found.kategori === 'OPERASIONAL' || found.kategori === 'K3') setTipe('OPERASIONAL');
       else setTipe('MATERIAL');
     }
   };

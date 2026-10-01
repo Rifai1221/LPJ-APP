@@ -57,6 +57,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
   // Quick Register Modal State
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
   const [unregisteredName, setUnregisteredName] = useState('');
+  const [unregisteredTxId, setUnregisteredTxId] = useState<string | null>(null);
 
   // Modal states for manual input & editing
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -688,11 +689,12 @@ export const BktManager: React.FC<BktManagerProps> = ({
                                   type="button"
                                   onClick={() => {
                                     setUnregisteredName(tx.uraian);
+                                    setUnregisteredTxId(tx.id);
                                     setRegisterModalOpen(true);
                                   }}
-                                  className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md shadow-2xs cursor-pointer"
+                                  className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md shadow-2xs cursor-pointer flex items-center gap-1"
                                 >
-                                  + Daftarkan Toko
+                                  <span>+ Daftarkan / Pilih Toko</span>
                                 </button>
                               )}
                             </div>
@@ -869,14 +871,40 @@ export const BktManager: React.FC<BktManagerProps> = ({
         </div>
       )}
 
-      {/* Quick Register Modal for Unregistered Stores */}
+      {/* Quick Register / Select Existing Store Modal */}
       {onUpdateStores && (
         <VendorQuickRegisterModal
           isOpen={registerModalOpen}
           unregisteredName={unregisteredName}
+          availableStores={stores}
           onClose={() => setRegisterModalOpen(false)}
           onSaveStore={(newStore) => {
             onUpdateStores([...stores, newStore]);
+          }}
+          onSelectExistingStore={(selectedStore) => {
+            if (unregisteredTxId && onUpdateTransaction) {
+              const target = bktList.find((t) => t.id === unregisteredTxId);
+              if (target) {
+                let updatedUraian = target.uraian;
+                if (updatedUraian.includes('(') && updatedUraian.includes(')')) {
+                  updatedUraian = updatedUraian.replace(/\(([^)]+)\)/, `(${selectedStore.namaToko})`);
+                } else {
+                  updatedUraian = `${target.uraian} (${selectedStore.namaToko})`;
+                }
+                onUpdateTransaction({
+                  id: target.id,
+                  tanggal: target.tanggal,
+                  tanggalObj: target.tanggalObj,
+                  bulan: target.bulan,
+                  jenis: target.pemasukan > 0 ? 'PENERIMAAN' : 'PENGELUARAN',
+                  uraian: updatedUraian,
+                  noBukti: target.noBukti,
+                  penerimaan: target.pemasukan || 0,
+                  pengeluaran: target.pengeluaran || 0,
+                  saldo: target.saldo,
+                });
+              }
+            }
           }}
         />
       )}

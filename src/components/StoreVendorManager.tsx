@@ -39,7 +39,7 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
   const [formAlamat, setFormAlamat] = useState('');
   const [formTelepon, setFormTelepon] = useState('');
   const [formNpwp, setFormNpwp] = useState('');
-  const [formKategori, setFormKategori] = useState<'MATERIAL' | 'PERABOT' | 'KONSULTAN' | 'OPERASIONAL' | 'SIPLAH' | 'UMUM'>('MATERIAL');
+  const [formKategori, setFormKategori] = useState<'MATERIAL' | 'PERABOT' | 'PERENCANA' | 'PENGAWAS' | 'OPERASIONAL' | 'K3' | 'KONSULTAN' | 'SIPLAH' | 'UMUM'>('MATERIAL');
   const [formMitraSiplah, setFormMitraSiplah] = useState('SipLah Blibli / Telkom');
   const [formNoMitraSiplah, setFormNoMitraSiplah] = useState('');
 
@@ -251,8 +251,10 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
               >
                 <option value="MATERIAL">Bahan Bangunan & Material Konstruksi</option>
                 <option value="PERABOT">Mebeler & Perabot Ruang Kelas</option>
-                <option value="KONSULTAN">Konsultan Perencana / Pengawas</option>
-                <option value="OPERASIONAL">Persiapan, K3 & Percetakan Dokumen</option>
+                <option value="PERENCANA">📐 Konsultan Perencana Teknis / Arsitek</option>
+                <option value="PENGAWAS">🔍 Konsultan Pengawas Lapangan / Supervisi</option>
+                <option value="OPERASIONAL">📄 Operasional, Administrasi & Percetakan LPJ</option>
+                <option value="K3">🪖 Peralatan K3 & Keselamatan Kerja</option>
                 <option value="SIPLAH">🛒 Penyedia SipLah (Mitra Resmi Kemendikbud)</option>
                 <option value="UMUM">Penyedia Umum Lainnya</option>
               </select>
@@ -380,11 +382,13 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
         <div className="flex flex-wrap gap-1.5">
           {[
             { id: 'ALL', label: `Semua Toko (${stores.length})` },
-            { id: 'SIPLAH', label: '🛒 Penyedia SipLah' },
-            { id: 'MATERIAL', label: 'Bahan Bangunan' },
-            { id: 'PERABOT', label: 'Mebeler/Perabot' },
-            { id: 'KONSULTAN', label: 'Konsultan/Jasa' },
-            { id: 'OPERASIONAL', label: 'Operasional/K3' },
+            { id: 'SIPLAH', label: '🛒 SipLah' },
+            { id: 'MATERIAL', label: '📦 Material Bangunan' },
+            { id: 'PERABOT', label: '🪑 Perabot' },
+            { id: 'PERENCANA', label: '📐 Perencana' },
+            { id: 'PENGAWAS', label: '🔍 Pengawas' },
+            { id: 'OPERASIONAL', label: '📄 Operasional' },
+            { id: 'K3', label: '🪖 Peralatan K3' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -442,18 +446,32 @@ export const StoreVendorManager: React.FC<StoreVendorManagerProps> = ({
                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
                       store.kategori === 'SIPLAH' || store.isSiplah
                         ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                        : store.kategori === 'PERENCANA'
+                        ? 'bg-purple-100 text-purple-900 border-purple-300 font-bold'
+                        : store.kategori === 'PENGAWAS'
+                        ? 'bg-indigo-100 text-indigo-900 border-indigo-300 font-bold'
+                        : store.kategori === 'OPERASIONAL'
+                        ? 'bg-blue-100 text-blue-900 border-blue-300 font-bold'
+                        : store.kategori === 'K3'
+                        ? 'bg-rose-100 text-rose-900 border-rose-300 font-bold'
                         : 'bg-slate-100 text-slate-600 border-slate-200'
                     }`}>
                       {store.kategori === 'SIPLAH' || store.isSiplah
-                        ? `🛒 SipLah Mitra (${store.mitraSiplah || 'Resmi'})`
+                        ? `🛒 SipLah (${store.mitraSiplah || 'Resmi'})`
                         : store.kategori === 'MATERIAL'
-                        ? 'Material Bangunan'
+                        ? '📦 Material Bangunan'
                         : store.kategori === 'PERABOT'
-                        ? 'Perabot Mebeler'
+                        ? '🪑 Perabot Mebeler'
+                        : store.kategori === 'PERENCANA'
+                        ? '📐 Konsultan Perencana'
+                        : store.kategori === 'PENGAWAS'
+                        ? '🔍 Konsultan Pengawas'
+                        : store.kategori === 'OPERASIONAL'
+                        ? '📄 Operasional & Adm'
+                        : store.kategori === 'K3'
+                        ? '🪖 Peralatan K3'
                         : store.kategori === 'KONSULTAN'
                         ? 'Konsultan / Ahli'
-                        : store.kategori === 'OPERASIONAL'
-                        ? 'Operasional & K3'
                         : 'Penyedia Umum'}
                     </span>
                   </div>
