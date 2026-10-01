@@ -564,6 +564,59 @@ export default function App() {
     const newRpdItems: RpdItem[] = [];
     real.divisions.forEach((div) => {
       div.items.forEach((it) => {
+        if (it.kategoriBiaya === 'UPAH_BAHAN') {
+          // Split into Bahan (65%) and Upah (35%)
+          const vol100 = it.volume;
+          const jml100 = it.jumlah;
+
+          const volBahan = Math.max(0.01, Math.round(vol100 * 0.65 * 100) / 100);
+          const jmlBahan = Math.round(jml100 * 0.65);
+          const volBahanT1 = Math.round(volBahan * 0.7 * 100) / 100;
+          const volBahanT2 = Math.round((volBahan - volBahanT1) * 100) / 100;
+          const jmlBahanT1 = Math.round(jmlBahan * 0.7);
+          const jmlBahanT2 = jmlBahan - jmlBahanT1;
+
+          newRpdItems.push({
+            id: `rpd-${it.id}-bahan`,
+            no: newRpdItems.length + 1,
+            uraian: `${div.kode} - ${it.uraian} (Bahan)`,
+            satuan: it.satuan,
+            kategori: 'BAHAN_BARU',
+            hargaSatuan: it.hargaSatuan,
+            volume100: volBahan,
+            jumlahAnggaran: jmlBahan,
+            volumeTermin1: volBahanT1,
+            jumlahTermin1: jmlBahanT1,
+            volumeTermin2: volBahanT2,
+            jumlahTermin2: jmlBahanT2,
+            defaultToko: 'USAHA FAMILY',
+          });
+
+          const volUpah = Math.max(0.01, Math.round(vol100 * 0.35 * 100) / 100);
+          const jmlUpah = jml100 - jmlBahan;
+          const volUpahT1 = Math.round(volUpah * 0.7 * 100) / 100;
+          const volUpahT2 = Math.round((volUpah - volUpahT1) * 100) / 100;
+          const jmlUpahT1 = Math.round(jmlUpah * 0.7);
+          const jmlUpahT2 = jmlUpah - jmlUpahT1;
+
+          newRpdItems.push({
+            id: `rpd-${it.id}-upah`,
+            no: newRpdItems.length + 1,
+            uraian: `${div.kode} - ${it.uraian} (Upah)`,
+            satuan: 'OH',
+            kategori: 'GAJI_BARU',
+            hargaSatuan: Math.round(jmlUpah / volUpah),
+            volume100: volUpah,
+            jumlahAnggaran: jmlUpah,
+            volumeTermin1: volUpahT1,
+            jumlahTermin1: jmlUpahT1,
+            volumeTermin2: volUpahT2,
+            jumlahTermin2: jmlUpahT2,
+            defaultToko: '-',
+          });
+          return;
+        }
+
         let kategori: RpdKategori = 'BAHAN_BARU';
         if (div.kode === 'I' || it.kategoriBiaya === 'SMKK') {
           kategori = 'PERSIAPAN';
@@ -1013,6 +1066,7 @@ Lanjutkan pengosongan data transaksi?`)
             school={appState.school}
             progressWeeks={appState.progressWeeks}
             stores={appState.stores || []}
+            kwitansiList={appState.kwitansiList}
             onOpenPrintModal={(month, filterOpts) =>
               handleOpenPrint('BKU', month, filterOpts?.weekNum, undefined, filterOpts)
             }
@@ -1020,6 +1074,16 @@ Lanjutkan pengosongan data transaksi?`)
             onUpdateTransaction={handleUpdateBku}
             onDeleteTransaction={handleDeleteBku}
             onUpdateStores={handleUpdateStores}
+            onUpdateKwitansi={(updatedKw) => {
+              const exists = appState.kwitansiList.some((k) => k.id === updatedKw.id);
+              const updated = exists
+                ? appState.kwitansiList.map((k) => (k.id === updatedKw.id ? updatedKw : k))
+                : [updatedKw, ...appState.kwitansiList];
+              handleUpdateKwitansiList(updated);
+            }}
+            onOpenPrintKwitansi={(kwId, mode) =>
+              handleOpenPrint(mode || 'ALL', undefined, undefined, kwId)
+            }
           />
         )}
 
@@ -1029,6 +1093,7 @@ Lanjutkan pengosongan data transaksi?`)
             school={appState.school}
             progressWeeks={appState.progressWeeks}
             stores={appState.stores || []}
+            kwitansiList={appState.kwitansiList}
             onOpenPrintModal={(month, filterOpts) =>
               handleOpenPrint('BKT', month, filterOpts?.weekNum, undefined, filterOpts)
             }
@@ -1036,6 +1101,16 @@ Lanjutkan pengosongan data transaksi?`)
             onUpdateTransaction={handleUpdateBku}
             onDeleteTransaction={handleDeleteBku}
             onUpdateStores={handleUpdateStores}
+            onUpdateKwitansi={(updatedKw) => {
+              const exists = appState.kwitansiList.some((k) => k.id === updatedKw.id);
+              const updated = exists
+                ? appState.kwitansiList.map((k) => (k.id === updatedKw.id ? updatedKw : k))
+                : [updatedKw, ...appState.kwitansiList];
+              handleUpdateKwitansiList(updated);
+            }}
+            onOpenPrintKwitansi={(kwId, mode) =>
+              handleOpenPrint(mode || 'ALL', undefined, undefined, kwId)
+            }
           />
         )}
 

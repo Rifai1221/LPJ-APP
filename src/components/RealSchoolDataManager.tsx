@@ -1726,12 +1726,25 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                               <select
                                 value={it.kategoriBiaya || 'BAHAN'}
                                 onChange={(e) => handleItemChange(div.id, it.id, 'kategoriBiaya', e.target.value)}
-                                className="bg-slate-50 border border-slate-200 rounded px-1 py-0.5 text-[10px] font-bold text-slate-700"
+                                className={`border rounded px-1.5 py-0.5 text-[10px] font-bold cursor-pointer transition ${
+                                  it.kategoriBiaya === 'UPAH_BAHAN'
+                                    ? 'bg-amber-100 text-amber-900 border-amber-400 font-extrabold shadow-2xs'
+                                    : it.kategoriBiaya === 'UPAH'
+                                    ? 'bg-purple-100 text-purple-900 border-purple-300'
+                                    : it.kategoriBiaya === 'ALAT'
+                                    ? 'bg-blue-100 text-blue-900 border-blue-300'
+                                    : it.kategoriBiaya === 'SMKK'
+                                    ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                    : it.kategoriBiaya === 'LAINNYA'
+                                    ? 'bg-slate-100 text-slate-700 border-slate-300'
+                                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                }`}
                               >
                                 <option value="BAHAN">BAHAN</option>
                                 <option value="UPAH">UPAH</option>
                                 <option value="ALAT">ALAT</option>
                                 <option value="SMKK">SMKK</option>
+                                <option value="UPAH_BAHAN">UPAH & BAHAN</option>
                                 <option value="LAINNYA">LAINNYA</option>
                               </select>
                             </td>

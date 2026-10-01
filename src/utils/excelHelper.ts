@@ -350,8 +350,9 @@ export async function parseRealDataExcelFile(file: File): Promise<{
             const hargaSatuan = Math.max(0, col4);
             const jumlah = Math.round(volume * hargaSatuan * 100) / 100;
 
-            let katBiaya: 'BAHAN' | 'UPAH' | 'ALAT' | 'SMKK' | 'LAINNYA' = 'BAHAN';
-            if (col5.includes('UPAH') || col5.includes('GAJI')) katBiaya = 'UPAH';
+            let katBiaya: 'BAHAN' | 'UPAH' | 'ALAT' | 'SMKK' | 'UPAH_BAHAN' | 'LAINNYA' = 'BAHAN';
+            if ((col5.includes('UPAH') && col5.includes('BAHAN')) || col5.includes('UPAH&BAHAN') || col5.includes('UPAH & BAHAN')) katBiaya = 'UPAH_BAHAN';
+            else if (col5.includes('UPAH') || col5.includes('GAJI')) katBiaya = 'UPAH';
             else if (col5.includes('ALAT') || col5.includes('SEWA')) katBiaya = 'ALAT';
             else if (col5.includes('SMKK') || col5.includes('K3') || col5.includes('PERSIAPAN')) katBiaya = 'SMKK';
             else if (col5.includes('LAIN')) katBiaya = 'LAINNYA';

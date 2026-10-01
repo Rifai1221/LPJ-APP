@@ -244,6 +244,8 @@ export interface BktTransaction {
   pemasukan: number; // Debet
   pengeluaran: number; // Kredit
   saldo?: number;
+  kategoriBiaya?: string;
+  kwitansiIdRef?: string;
 }
 
 export interface BkbTransaction {
@@ -256,6 +258,8 @@ export interface BkbTransaction {
   penerimaan: number; // Debit
   pengeluaran: number; // Kredit
   saldo?: number;
+  kategoriBiaya?: string;
+  kwitansiIdRef?: string;
 }
 
 export interface TaxRecord {
@@ -327,7 +331,7 @@ export interface RabSubItem {
   satuan: string;
   hargaSatuan: number;
   jumlah: number;
-  kategoriBiaya?: 'BAHAN' | 'UPAH' | 'ALAT' | 'SMKK' | 'LAINNYA';
+  kategoriBiaya?: 'BAHAN' | 'UPAH' | 'ALAT' | 'SMKK' | 'UPAH_BAHAN' | 'LAINNYA';
 }
 
 export interface RabDivision {

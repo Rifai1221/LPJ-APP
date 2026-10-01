@@ -16,23 +16,28 @@ import {
   RotateCcw,
   Store,
   AlertTriangle,
+  Eye,
 } from 'lucide-react';
-import { BktTransaction, BkuTransaction, SchoolMasterData, ProjectProgressWeek, TransactionFilterOptions, StoreVendor } from '../types';
+import { BktTransaction, BkuTransaction, SchoolMasterData, ProjectProgressWeek, TransactionFilterOptions, StoreVendor, KwitansiDocument } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { getAvailableMonthsForSchool, resolveWeekDates, parseTxDateToIso } from '../utils/monthHelper';
 import { isRegisteredVendor, isSiplahVendor, findMasterStore, isInternalNonVendorTransaction } from '../utils/vendorValidation';
 import { VendorQuickRegisterModal } from './VendorQuickRegisterModal';
+import { BkuDocumentPreviewModal } from './BkuDocumentPreviewModal';
 
 interface BktManagerProps {
   bktList: BktTransaction[];
   school: SchoolMasterData;
   progressWeeks?: ProjectProgressWeek[];
   stores?: StoreVendor[];
+  kwitansiList?: KwitansiDocument[];
   onOpenPrintModal: (month?: string, filterOptions?: TransactionFilterOptions) => void;
   onAddTransaction?: (tx: Omit<BkuTransaction, 'id'>) => void;
   onUpdateTransaction?: (tx: BkuTransaction) => void;
   onDeleteTransaction?: (tx: BkuTransaction) => void;
   onUpdateStores?: (stores: StoreVendor[]) => void;
+  onUpdateKwitansi?: (kw: KwitansiDocument, updatedTx?: Partial<BkuTransaction>) => void;
+  onOpenPrintKwitansi?: (kwId: string, mode: 'KWITANSI' | 'FAKTUR' | 'SPB' | 'ALL') => void;
 }
 
 export const BktManager: React.FC<BktManagerProps> = ({
@@ -40,11 +45,14 @@ export const BktManager: React.FC<BktManagerProps> = ({
   school,
   progressWeeks = [],
   stores = [],
+  kwitansiList = [],
   onOpenPrintModal,
   onAddTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
   onUpdateStores,
+  onUpdateKwitansi,
+  onOpenPrintKwitansi,
 }) => {
   // Filter Mode: 'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'
   const [filterMode, setFilterMode] = useState<'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'>('ALL');
@@ -53,6 +61,40 @@ export const BktManager: React.FC<BktManagerProps> = ({
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Document Preview Modal State
+  const [previewTx, setPreviewTx] = useState<BkuTransaction | null>(null);
+  const [previewKw, setPreviewKw] = useState<KwitansiDocument | null>(null);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+
+  const handleOpenPreview = (bkt: BktTransaction) => {
+    let matchedKw: KwitansiDocument | null = null;
+    if (kwitansiList && kwitansiList.length > 0) {
+      matchedKw =
+        kwitansiList.find((k) => k.id === bkt.kwitansiIdRef) ||
+        kwitansiList.find((k) => bkt.id === `bkt-kw-${k.id}` || bkt.id === `bku-kw-${k.id}`) ||
+        kwitansiList.find((k) => bkt.noBukti && bkt.noBukti !== '-' && k.noBukti?.trim() === bkt.noBukti?.trim()) ||
+        kwitansiList.find((k) => Math.abs(k.nominal - (bkt.pengeluaran || bkt.pemasukan)) < 2) ||
+        null;
+    }
+    const bkuEquiv: BkuTransaction = {
+      id: bkt.id,
+      tanggal: bkt.tanggal,
+      tanggalObj: bkt.tanggalObj,
+      bulan: bkt.bulan,
+      jenis: bkt.pemasukan > 0 ? 'PENERIMAAN' : 'PENGELUARAN',
+      uraian: bkt.uraian,
+      noBukti: bkt.noBukti,
+      penerimaan: bkt.pemasukan || 0,
+      pengeluaran: bkt.pengeluaran || 0,
+      saldo: bkt.saldo,
+      kategoriBiaya: bkt.kategoriBiaya,
+      kwitansiIdRef: bkt.kwitansiIdRef,
+    };
+    setPreviewTx(bkuEquiv);
+    setPreviewKw(matchedKw);
+    setPreviewModalOpen(true);
+  };
 
   // Quick Register Modal State
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
@@ -662,7 +704,18 @@ export const BktManager: React.FC<BktManagerProps> = ({
                     <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap font-mono">{tx.tanggal}</td>
                     <td className="py-2.5 px-4 font-medium text-slate-900">
                       <div className="flex flex-col gap-1">
-                        <span>{tx.uraian}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPreview(tx)}
+                          className="text-left font-semibold text-slate-900 hover:text-emerald-700 transition flex items-center justify-between gap-2 group/preview cursor-pointer"
+                          title="Klik untuk Pratinjau Dokumen Kwitansi, Bon & SPB"
+                        >
+                          <span className="group-hover/preview:underline flex-1">{tx.uraian}</span>
+                          <span className="opacity-0 group-hover/preview:opacity-100 transition px-1.5 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold flex items-center gap-1 shrink-0">
+                            <Eye className="w-3 h-3 text-emerald-600" />
+                            <span>Preview</span>
+                          </span>
+                        </button>
                         {tx.pengeluaran > 0 && !isInternalNonVendorTransaction(tx.uraian) && (() => {
                           const matchedStore = findMasterStore(tx.uraian, stores);
                           if (matchedStore) {
@@ -702,7 +755,11 @@ export const BktManager: React.FC<BktManagerProps> = ({
                         })()}
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 text-center font-mono text-[11px] text-slate-600 bg-slate-50 rounded">
+                    <td
+                      onClick={() => handleOpenPreview(tx)}
+                      className="py-2.5 px-3 text-center font-mono text-[11px] text-slate-700 bg-slate-50/80 rounded hover:bg-emerald-100 hover:text-emerald-800 transition cursor-pointer font-bold"
+                      title="Klik untuk Pratinjau Dokumen Kwitansi, Bon & SPB"
+                    >
                       {tx.noBukti || '-'}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono text-emerald-700 bg-emerald-50/30">
@@ -716,6 +773,14 @@ export const BktManager: React.FC<BktManagerProps> = ({
                     </td>
                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPreview(tx)}
+                          className="p-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-900 border border-emerald-200 transition cursor-pointer"
+                          title="Pratinjau Dokumen (Kwitansi, Bon, SPB)"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleOpenEdit(tx)}
@@ -908,6 +973,42 @@ export const BktManager: React.FC<BktManagerProps> = ({
           }}
         />
       )}
+
+      {/* Live Kwitansi, Bon & SPB Preview and Quick Edit Modal */}
+      <BkuDocumentPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        transaction={previewTx}
+        kwitansi={previewKw}
+        school={school}
+        stores={stores}
+        onSaveKwitansi={(updatedKw, updatedTx) => {
+          if (onUpdateKwitansi) {
+            onUpdateKwitansi(updatedKw, updatedTx);
+          }
+          if (previewTx && onUpdateTransaction && updatedTx) {
+            onUpdateTransaction({
+              ...previewTx,
+              ...updatedTx,
+            });
+          }
+          // Update local preview state
+          setPreviewKw(updatedKw);
+          if (previewTx && updatedTx) {
+            setPreviewTx({
+              ...previewTx,
+              ...updatedTx,
+            });
+          }
+        }}
+        onPrintDocument={(docType, kwId) => {
+          if (onOpenPrintKwitansi && kwId) {
+            onOpenPrintKwitansi(kwId, docType);
+          } else {
+            onOpenPrintModal(undefined);
+          }
+        }}
+      />
     </div>
   );
 };

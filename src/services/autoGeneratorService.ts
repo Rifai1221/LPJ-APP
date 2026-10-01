@@ -793,6 +793,11 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             const isUpah = comp.kategori === 'UPAH' || /tukang|pekerja|mandor/i.test(comp.uraian);
             const isAlat = comp.kategori === 'ALAT' || /molen|sewa|scaffolding|perancah|gerobak/i.test(comp.uraian);
 
+            // If user explicitly specified single category, honor it:
+            if (it.kategoriBiaya === 'BAHAN' && (isUpah || isAlat)) return;
+            if (it.kategoriBiaya === 'UPAH' && !isUpah) return;
+            if (it.kategoriBiaya === 'ALAT' && !isAlat) return;
+
             if (isUpah) {
               divUpahTotal += compJml;
               weeklyAhspUpahComponents.push({
@@ -821,15 +826,48 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             }
           });
         } else {
-          // Direct RAB SubItem
-          const cat = it.kategoriBiaya || (
-            /upah|gaji|pekerja|tukang|mandor/i.test(it.uraian) ? 'UPAH' :
-            /alat|sewa|molen|scaffolding|perancah|gerobak/i.test(it.uraian) ? 'ALAT' :
-            /smkk|k3|helm|rompi|sepatu|p3k|rambu|papan nama/i.test(it.uraian) ? 'SMKK' :
-            'BAHAN'
-          );
+          // Direct RAB SubItem (No AHSP match or direct decomposition)
+          const isUpahBahan =
+            it.kategoriBiaya === 'UPAH_BAHAN' ||
+            (it.kategoriBiaya as string) === 'UPAH&BAHAN' ||
+            /upah.*bahan|bahan.*upah/i.test(it.kategoriBiaya || '');
 
-          if (cat === 'UPAH') {
+          const cat = isUpahBahan
+            ? 'UPAH_BAHAN'
+            : it.kategoriBiaya || (
+                /upah|gaji|pekerja|tukang|mandor/i.test(it.uraian) ? 'UPAH' :
+                /alat|sewa|molen|scaffolding|perancah|gerobak/i.test(it.uraian) ? 'ALAT' :
+                /smkk|k3|helm|rompi|sepatu|p3k|rambu|papan nama/i.test(it.uraian) ? 'SMKK' :
+                'BAHAN'
+              );
+
+          if (cat === 'UPAH_BAHAN') {
+            // Pemisahan Otomatis Paket "Upah & Bahan"
+            // Rasio Standar Konstruksi: 65% Belanja Bahan/Material, 35% Upah Tenaga Kerja/Tukang
+            const bahanNominal = Math.round(execRabJml * 0.65);
+            const upahNominal = execRabJml - bahanNominal;
+            const bahanVol = Math.max(0.01, Math.round(execRabVol * 0.65 * 100) / 100);
+            const upahVol = Math.max(0.01, Math.round(execRabVol * 0.35 * 100) / 100);
+
+            // 1. Porsi BAHAN -> Masuk ke Faktur Toko, Bon Toko, SPB, Rekap Pajak (PPN/PPh22), dan BKU Belanja Toko
+            bahanItems.push({
+              namaBarang: `Pengadaan Bahan ${it.uraian}`,
+              volume: bahanVol,
+              satuan: it.satuan || 'unit',
+              hargaSatuan: Math.round(bahanNominal / bahanVol),
+              jumlah: bahanNominal,
+            });
+
+            // 2. Porsi UPAH -> Masuk ke Kwitansi Upah, Tanda Terima/Absensi Pekerja, BKU Kas Upah, Bebas PPN Toko
+            divUpahTotal += upahNominal;
+            weeklyAhspUpahComponents.push({
+              namaBarang: `Upah Kerja Pekerja & Tukang (${it.uraian})`,
+              volume: upahVol,
+              satuan: 'OH',
+              hargaSatuan: Math.round(upahNominal / upahVol),
+              jumlah: upahNominal,
+            });
+          } else if (cat === 'UPAH') {
             divUpahTotal += execRabJml;
             weeklyAhspUpahComponents.push({
               namaBarang: it.uraian,
