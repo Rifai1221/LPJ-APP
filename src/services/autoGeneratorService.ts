@@ -779,11 +779,17 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
         const execRabJml = Math.round(execRabVol * it.hargaSatuan);
         if (execRabJml <= 0 && execRabVol <= 0) return;
 
-        // Search for matching AHSP breakdown for this RAB item
+        // Search for matching AHSP breakdown for this RAB item (Prioritize explicit ahspIdRef)
         const ahspMatch = (realSchoolData?.ahspList || []).find((ah) => {
-          const lowerAh = (ah.namaPekerjaan || '').toLowerCase();
-          const lowerRab = it.uraian.toLowerCase();
-          return lowerAh.includes(lowerRab) || lowerRab.includes(lowerAh);
+          if (it.ahspIdRef && ah.id === it.ahspIdRef) return true;
+          const lowerAh = (ah.namaPekerjaan || '').toLowerCase().trim();
+          const lowerRab = it.uraian.toLowerCase().trim();
+          if (lowerAh === lowerRab || lowerAh.includes(lowerRab) || lowerRab.includes(lowerAh)) return true;
+          const keywords = lowerRab
+            .replace(/[^a-zA-Z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length > 3 && !/pekerjaan|pasang|pemasangan|pengadaan/i.test(w));
+          return keywords.length > 0 && keywords.some((kw) => lowerAh.includes(kw));
         });
 
         if (ahspMatch && ahspMatch.komponen && ahspMatch.komponen.length > 0) {

@@ -675,6 +675,51 @@ export default function App() {
       };
     });
 
+    // 4. Automatically re-generate Kwitansi, Bon Toko, SPB, and Upah for all active progress weeks
+    const existingTargetWeeks = Array.from(
+      new Set(
+        appState.kwitansiList
+          .map((k) => k.mingguKeRef)
+          .filter((w): w is number => typeof w === 'number' && w > 0)
+      )
+    ).sort((a, b) => a - b);
+
+    const progressActiveWeeks = updatedProgressWeeks
+      .filter((pw) => (pw.bobotRealisasi || 0) > 0 || pw.mingguKe === 1)
+      .map((pw) => pw.mingguKe);
+
+    const targetWeeksToRegen = existingTargetWeeks.length > 0 ? existingTargetWeeks : progressActiveWeeks;
+
+    let updatedKwitansi = [...appState.kwitansiList];
+    let updatedWageReports = [...appState.wageReports];
+    let updatedBkb = [...appState.bkbRecords];
+
+    if (targetWeeksToRegen.length > 0) {
+      targetWeeksToRegen.forEach((targetWeek) => {
+        const weekObj = updatedProgressWeeks.find((w) => w.mingguKe === targetWeek);
+        if (!weekObj) return;
+
+        const res = generateWeeklyTransactionsFromProgressAndRealData({
+          targetWeek,
+          weekObj,
+          weeksToUse: updatedProgressWeeks,
+          school: updatedSchool,
+          workers: appState.workers,
+          stores: appState.stores || [],
+          rpdItems: newRpdItems.length > 0 ? newRpdItems : appState.rpdItems,
+          realSchoolData: real,
+          existingKwitansi: updatedKwitansi,
+          existingWageReports: updatedWageReports,
+          existingBkb: updatedBkb,
+          splitDays: true,
+        });
+
+        updatedKwitansi = res.updatedKwitansi;
+        updatedWageReports = res.updatedWageReports;
+        updatedBkb = res.updatedBkb;
+      });
+    }
+
     isDirtyRef.current = true;
     setAppState((prev) => ({
       ...prev,
@@ -682,6 +727,9 @@ export default function App() {
       realSchoolData: real,
       rpdItems: newRpdItems.length > 0 ? newRpdItems : prev.rpdItems,
       progressWeeks: updatedProgressWeeks,
+      kwitansiList: updatedKwitansi,
+      wageReports: updatedWageReports,
+      bkbRecords: updatedBkb,
     }));
 
     try {

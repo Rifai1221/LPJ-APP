@@ -1661,7 +1661,7 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
                 Ubah volume, harga satuan, kategori, atau tambah/hapus divisi dan item pekerjaan secara bebas.
               </p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <div className="text-right">
                 <span className="text-xs text-slate-500 block">Total Proyek:</span>
                 <span className="font-mono font-bold text-blue-700 text-sm">
@@ -1670,8 +1670,17 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
               </div>
               <button
                 type="button"
+                onClick={handleExecuteSync}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer"
+                title="Terapkan seluruh perubahan RAB dan AHSP ke Kwitansi, Bon Toko, SPB, dan BKU secara langsung"
+              >
+                <FolderSync className="w-3.5 h-3.5" />
+                <span>⚡ Sinkronkan ke Kwitansi & Bon</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setIsAddingDivision(true)}
-                className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-xs font-bold transition"
+                className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ Divisi Baru</span>
