@@ -18,7 +18,7 @@ import {
 import { KwitansiDocument, SchoolMasterData, ProjectProgressWeek, StoreVendor } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { terbilangRupiah } from '../utils/terbilang';
-import { normalizeMaterialItems } from '../services/autoGeneratorService';
+import { normalizeMaterialItems, getHarmonizedKwitansiUraian } from '../services/autoGeneratorService';
 import { isRegisteredVendor, isSiplahVendor, findMasterStore, isInternalNonVendorTransaction } from '../utils/vendorValidation';
 import { VendorQuickRegisterModal } from './VendorQuickRegisterModal';
 
@@ -371,7 +371,7 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
                         );
                       })()}
                     </p>
-                    <p className="text-[11px] text-slate-600 line-clamp-1">{kw.uraian}</p>
+                    <p className="text-[11px] text-slate-600 line-clamp-1">{getHarmonizedKwitansiUraian(kw)}</p>
                   </div>
 
                   <div className="text-right whitespace-nowrap">
@@ -512,8 +512,8 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
 
                   <div className="grid grid-cols-4 gap-2">
                     <span className="text-slate-600">Yaitu:</span>
-                    <span className="col-span-3 text-slate-800 leading-relaxed">
-                      {selectedKw.uraian}
+                    <span className="col-span-3 text-slate-800 leading-relaxed font-sans font-medium">
+                      {getHarmonizedKwitansiUraian(selectedKw)}
                     </span>
                   </div>
                 </div>
@@ -532,7 +532,7 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
                   const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
 
                   const displayItems =
-                    selectedKw.tipe !== 'UPAH' && selectedKw.items && selectedKw.items.length > 0
+                    selectedKw.tipe === 'MATERIAL' && selectedKw.items && selectedKw.items.length > 0
                       ? normalizeMaterialItems(selectedKw.items)
                       : selectedKw.items || [];
 

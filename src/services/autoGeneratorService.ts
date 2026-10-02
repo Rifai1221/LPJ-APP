@@ -220,6 +220,30 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
   return result;
 }
 
+/**
+ * Harmonizes Kwitansi Uraian:
+ * Ensures the parentheses inside kw.uraian accurately reflect real physical store materials
+ * without showing raw composite job sub-titles.
+ */
+export function getHarmonizedKwitansiUraian(kw: {
+  tipe?: string;
+  uraian: string;
+  items?: Array<{ namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }>;
+}): string {
+  if (!kw || !kw.uraian) return '';
+  if (kw.tipe !== 'MATERIAL' || !kw.items || kw.items.length === 0) {
+    return kw.uraian;
+  }
+  const displayItems = normalizeMaterialItems(kw.items);
+  if (displayItems.length === 0) return kw.uraian;
+
+  const topNames = displayItems.map((it) => it.namaBarang).slice(0, 3).join(', ');
+  if (/\([^)]*\)/.test(kw.uraian)) {
+    return kw.uraian.replace(/\([^)]*\)/, `(${topNames})`);
+  }
+  return kw.uraian;
+}
+
 export interface DecomposedItem {
   namaBarang: string;
   volume: number;

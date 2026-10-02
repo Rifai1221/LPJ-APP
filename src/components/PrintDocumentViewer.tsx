@@ -19,7 +19,7 @@ import { getAvailableMonthsForSchool, parseTxDateToIso, resolveWeekDates } from 
 import { getBalancedBoronganAttendance } from '../utils/boronganHelper';
 
 import { SkTimTeknisDocument } from './SkTimTeknisDocument';
-import { normalizeMaterialItems } from '../services/autoGeneratorService';
+import { normalizeMaterialItems, getHarmonizedKwitansiUraian } from '../services/autoGeneratorService';
 
 interface PrintDocumentViewerProps {
   isOpen: boolean;
@@ -1507,7 +1507,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                           <div className="grid grid-cols-12 gap-2">
                             <span className="col-span-3">Y a i t u</span>
                             <span className="col-span-1">:</span>
-                            <span className="col-span-8 leading-relaxed">{kw.uraian}</span>
+                            <span className="col-span-8 leading-relaxed font-sans font-medium">{getHarmonizedKwitansiUraian(kw)}</span>
                           </div>
                         </div>
 
@@ -1524,7 +1524,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                           const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
                           const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
                           const printItems =
-                            kw.tipe !== 'UPAH' && kw.items && kw.items.length > 0
+                            kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0
                               ? normalizeMaterialItems(kw.items)
                               : kw.items || [];
 
@@ -1640,7 +1640,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
 
                         {(() => {
                           const bonItems =
-                            kw.tipe !== 'UPAH' && kw.items && kw.items.length > 0
+                            kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0
                               ? normalizeMaterialItems(kw.items)
                               : kw.items || [];
                           return (
@@ -1722,7 +1722,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
 
                         {(() => {
                           const spbItems =
-                            kw.tipe !== 'UPAH' && kw.items && kw.items.length > 0
+                            kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0
                               ? normalizeMaterialItems(kw.items)
                               : kw.items || [];
                           return (

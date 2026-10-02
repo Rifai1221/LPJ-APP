@@ -726,7 +726,7 @@ export default function App() {
 
     // Universal Full Regeneration of ALL existing Kwitansi & Bon Toko across all weeks
     updatedKwitansi = updatedKwitansi.map((kw) => {
-      if (kw.tipe === 'MATERIAL' || kw.tipe === 'PERABOT' || !kw.tipe) {
+      if (kw.tipe === 'MATERIAL') {
         let currentItems = kw.items && kw.items.length > 0 ? kw.items : [
           {
             namaBarang: (kw.uraian || 'Material Bangunan')
