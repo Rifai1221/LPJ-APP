@@ -1061,6 +1061,7 @@ Lanjutkan pengosongan data transaksi?`)
             realData={appState.realSchoolData || defaultRealSchoolData}
             school={appState.school}
             stores={appState.stores || []}
+            kwitansiList={appState.kwitansiList || []}
             onUpdateRealData={handleUpdateRealData}
             onApplyToAllModules={handleApplyRealDataToAll}
           />

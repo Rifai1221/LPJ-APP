@@ -29,13 +29,14 @@ import {
 import { defaultRealSchoolData } from '../data/realSchoolData';
 import { downloadRealDataExcelTemplate, parseRealDataExcelFile } from '../utils/excelHelper';
 import { toRoman, formatRupiah } from '../utils/formatters';
-import { SchoolMasterData, StoreVendor } from '../types';
+import { SchoolMasterData, StoreVendor, KwitansiDocument } from '../types';
 import { RabAhspDocumentPreviewModal } from './RabAhspDocumentPreviewModal';
 
 interface RealSchoolDataManagerProps {
   realData: RealSchoolData;
   school?: SchoolMasterData;
   stores?: StoreVendor[];
+  kwitansiList?: KwitansiDocument[];
   onUpdateRealData: (newData: RealSchoolData) => void;
   onApplyToAllModules: (data: RealSchoolData) => void;
 }
@@ -44,6 +45,7 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
   realData = defaultRealSchoolData,
   school,
   stores = [],
+  kwitansiList = [],
   onUpdateRealData,
   onApplyToAllModules,
 }) => {
@@ -2098,6 +2100,7 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
         realData={realData}
         school={school}
         stores={stores}
+        kwitansiList={kwitansiList}
         onUpdateRabItem={handleUpdateRabItem}
         onUpdateAhsp={handleUpdateAhspItem}
       />

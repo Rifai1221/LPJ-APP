@@ -173,6 +173,282 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
   return result;
 }
 
+export interface DecomposedItem {
+  namaBarang: string;
+  volume: number;
+  satuan: string;
+  hargaSatuan: number;
+  jumlah: number;
+}
+
+interface MaterialTemplate {
+  nama: string;
+  satuan: string;
+  typicalPrice: number;
+  weight: number;
+}
+
+/**
+ * Intelligent Material Decomposition Engine:
+ * Transforms job-level titles (especially for UPAH_BAHAN or items without direct AHSP)
+ * into realistic, commercial store materials with exact nominal conservation.
+ */
+export function decomposeRealisticBahanAndUpah(
+  uraian: string,
+  bahanNominal: number,
+  upahNominal: number
+): {
+  bahanItems: DecomposedItem[];
+  upahComponents: DecomposedItem[];
+} {
+  const lower = uraian.toLowerCase();
+
+  const isDirectRawMaterial =
+    !/pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar/i.test(lower) &&
+    /semen|paku|pasir|cat|bata|genteng|spandek|pipa|kabel|keramik|hollow|gypsum|grc|besi|kayu|baut|engsel|kunci|saklar/i.test(lower);
+
+  let materialTemplates: MaterialTemplate[] = [];
+  let upahRoleTukang = 'Tukang Terampil Lapangan';
+  let upahRolePekerja = 'Pekerja Konstruksi';
+
+  if (isDirectRawMaterial) {
+    const typicalP = /semen/i.test(lower) ? 68000 : /pasir/i.test(lower) ? 220000 : /cat/i.test(lower) ? 350000 : 50000;
+    const vol = Math.max(1, Math.round((bahanNominal / typicalP) * 10) / 10);
+    return {
+      bahanItems: [
+        {
+          namaBarang: uraian,
+          volume: vol,
+          satuan: /semen/i.test(lower) ? 'Zak' : /pasir/i.test(lower) ? 'm³' : /cat/i.test(lower) ? 'Galon' : 'Unit',
+          hargaSatuan: Math.round(bahanNominal / vol),
+          jumlah: bahanNominal,
+        },
+      ],
+      upahComponents:
+        upahNominal > 0
+          ? [
+              {
+                namaBarang: 'Tukang Terampil',
+                volume: Math.max(1, Math.round((upahNominal * 0.6) / 135000)),
+                satuan: 'OH',
+                hargaSatuan: 135000,
+                jumlah: Math.round(upahNominal * 0.6),
+              },
+              {
+                namaBarang: 'Pekerja Lapangan',
+                volume: Math.max(1, Math.round((upahNominal * 0.4) / 110000)),
+                satuan: 'OH',
+                hargaSatuan: 110000,
+                jumlah: upahNominal - Math.round(upahNominal * 0.6),
+              },
+            ]
+          : [],
+    };
+  }
+
+  // 1. Pengecatan
+  if (/cat|pengecatan|plamir|melamik|politur/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Cat Tembok Eksterior/Interior Weatherproof', satuan: 'Pail', typicalPrice: 380000, weight: 0.55 },
+      { nama: 'Plamir Tembok / Wall Putty Instan', satuan: 'Zak', typicalPrice: 135000, weight: 0.20 },
+      { nama: 'Kuas Roll Cat, Kuas Bulu 3" & Baki Cat', satuan: 'Set', typicalPrice: 85000, weight: 0.10 },
+      { nama: 'Kertas Gosok / Amplas No. 120 & 180', satuan: 'Lembar', typicalPrice: 12000, weight: 0.08 },
+      { nama: 'Lakban Kertas / Masking Tape Pelindung', satuan: 'Roll', typicalPrice: 18000, weight: 0.07 },
+    ];
+    upahRoleTukang = 'Tukang Cat & Finishing';
+    upahRolePekerja = 'Pekerja Pengecatan';
+  }
+  // 2. Atap / Seng / Baja Ringan
+  else if (/atap|seng|genteng|baja ringan|kuda|jurai|nok|bubungan|talang/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Rangka Baja Ringan Canal C75 Standar SNI', satuan: 'Batang', typicalPrice: 115000, weight: 0.40 },
+      { nama: 'Atap Spandek Gelombang 0.30mm SNI', satuan: 'Lembar', typicalPrice: 165000, weight: 0.30 },
+      { nama: 'Reng Baja Ringan Asimetris U-30', satuan: 'Batang', typicalPrice: 55000, weight: 0.15 },
+      { nama: 'Baut Roofing / SDS Fastener Hex Head', satuan: 'Kotak', typicalPrice: 95000, weight: 0.08 },
+      { nama: 'Seng Plat Talang / Nok Bubungan 0.3mm', satuan: 'Lembar', typicalPrice: 80000, weight: 0.07 },
+    ];
+    upahRoleTukang = 'Tukang Pasang Rangka Atap';
+    upahRolePekerja = 'Pekerja Lapangan';
+  }
+  // 3. Plafon / Gypsum / GRC
+  else if (/plafon|langit|gypsum|grc|akustik|triplek|list plafon/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Papan Gypsum / GRC Tebal 9 mm Standar SNI', satuan: 'Lembar', typicalPrice: 85000, weight: 0.45 },
+      { nama: 'Rangka Besi Hollow Galvanis 4x4 & 2x4', satuan: 'Batang', typicalPrice: 38000, weight: 0.30 },
+      { nama: 'Compound Tepung Gypsum & Kasa Textile Tape', satuan: 'Zak', typicalPrice: 65000, weight: 0.10 },
+      { nama: 'List Profil Plafon / Cornice Gypsum', satuan: 'Batang', typicalPrice: 28000, weight: 0.08 },
+      { nama: 'Sekrup Fastener Gypsum Hitam 1"', satuan: 'Kotak', typicalPrice: 45000, weight: 0.07 },
+    ];
+    upahRoleTukang = 'Tukang Plafon Gypsum';
+    upahRolePekerja = 'Pekerja Pasang Plafon';
+  }
+  // 4. Keramik / Lantai
+  else if (/keramik|lantai|ubin|granit|homogeneous|tegel|plint/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Ubin Keramik Lantai 40x40 / 50x50 SNI', satuan: 'Dus', typicalPrice: 95000, weight: 0.52 },
+      { nama: 'Semen Portland (PC) 50 Kg', satuan: 'Zak', typicalPrice: 68000, weight: 0.26 },
+      { nama: 'Pasir Pasang Ayak Halus', satuan: 'm³', typicalPrice: 220000, weight: 0.15 },
+      { nama: 'Semen Warna Pengisi Nat Keramik (Grouting)', satuan: 'Kg', typicalPrice: 18000, weight: 0.07 },
+    ];
+    upahRoleTukang = 'Tukang Pasang Keramik';
+    upahRolePekerja = 'Pekerja Adukan & Langsir';
+  }
+  // 5. Pintu / Jendela / Kusen / Kaca
+  else if (/pintu|jendela|kusen|kaca|ventilasi|boven|jalusi/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Kusen & Daun Pintu/Jendela Kayu/Alumunium', satuan: 'Unit', typicalPrice: 850000, weight: 0.65 },
+      { nama: 'Kunci Tanam / Handle Silinder Stainless', satuan: 'Set', typicalPrice: 165000, weight: 0.13 },
+      { nama: 'Kaca Polos Bening Tebal 5 mm', satuan: 'm²', typicalPrice: 140000, weight: 0.12 },
+      { nama: 'Engsel Pintu/Jendela Stainless Steel 4"', satuan: 'Set', typicalPrice: 45000, weight: 0.10 },
+    ];
+    upahRoleTukang = 'Tukang Kayu / Kusen';
+    upahRolePekerja = 'Pekerja Pembantu Tukang';
+  }
+  // 6. Listrik / Lampu
+  else if (/listrik|lampu|stop kontak|saklar|kabel|penerangan|titik/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Kabel Listrik NYM 2x1.5 mm / 2x2.5 mm Standar SNI', satuan: 'Roll', typicalPrice: 450000, weight: 0.40 },
+      { nama: 'Lampu LED Hemat Energi 18W / 24W SNI', satuan: 'Buah', typicalPrice: 65000, weight: 0.28 },
+      { nama: 'Saklar Ganda & Tunggal Inbow Standar Broco', satuan: 'Buah', typicalPrice: 28000, weight: 0.12 },
+      { nama: 'Stop Kontak Dinding & Box Inbow', satuan: 'Buah', typicalPrice: 28000, weight: 0.12 },
+      { nama: 'Pipa Konduit Pelindung Kabel & Klem', satuan: 'Batang', typicalPrice: 15000, weight: 0.08 },
+    ];
+    upahRoleTukang = 'Tukang Instalasi Listrik';
+    upahRolePekerja = 'Pekerja Pembantu Listrik';
+  }
+  // 7. Sanitasi / Kloset / Pipa / Toilet / Saluran
+  else if (/sanitasi|toilet|kloset|wc|pipa|saluran|air bersih|drainase|kran|wastafel|septictank|floor drain/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Kloset Jongkok Porselen Putih Standar SNI', satuan: 'Unit', typicalPrice: 280000, weight: 0.38 },
+      { nama: 'Pipa PVC AW 3" & 1/2" Air Bersih/Kotor', satuan: 'Batang', typicalPrice: 95000, weight: 0.32 },
+      { nama: 'Kran Air Stainless Steel & Sambungan Knee/Socket', satuan: 'Buah', typicalPrice: 45000, weight: 0.16 },
+      { nama: 'Lem Pipa PVC, Seal Tape & Floor Drain Stainless', satuan: 'Set', typicalPrice: 35000, weight: 0.14 },
+    ];
+    upahRoleTukang = 'Tukang Pipa & Sanitasi';
+    upahRolePekerja = 'Pekerja Galian & Saluran';
+  }
+  // 8. Cor Beton / Pondasi / Kolom / Balok / Sloof / Ringbalk
+  else if (/beton|cor|pondasi|kolom|balok|sloof|ringbalk|pembesian|begisting|plat/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Besi Beton Ulir / Polos Standar SNI', satuan: 'Batang', typicalPrice: 95000, weight: 0.42 },
+      { nama: 'Semen Portland (PC) 50 Kg', satuan: 'Zak', typicalPrice: 68000, weight: 0.28 },
+      { nama: 'Pasir Beton Ayak Bersih', satuan: 'm³', typicalPrice: 240000, weight: 0.14 },
+      { nama: 'Batu Split / Kerikil Beton 2/3', satuan: 'm³', typicalPrice: 260000, weight: 0.10 },
+      { nama: 'Kawat Ikat Beton / Bendrat & Paku', satuan: 'Kg', typicalPrice: 28000, weight: 0.06 },
+    ];
+    upahRoleTukang = 'Tukang Besi & Cor Beton';
+    upahRolePekerja = 'Pekerja Adukan & Cor';
+  }
+  // 9. Dinding / Bata / Plesteran / Acian
+  else if (/dinding|bata|batako|hebel|plesteran|acian/i.test(lower)) {
+    const isOnlyPlester = /plesteran|acian/i.test(lower) && !/bata|batako|hebel/i.test(lower);
+    if (isOnlyPlester) {
+      materialTemplates = [
+        { nama: 'Semen Portland (PC) 50 Kg', satuan: 'Zak', typicalPrice: 68000, weight: 0.65 },
+        { nama: 'Pasir Pasang Ayak Halus', satuan: 'm³', typicalPrice: 220000, weight: 0.35 },
+      ];
+    } else {
+      materialTemplates = [
+        { nama: 'Bata Merah Bakar Standar Konstruksi', satuan: 'Buah', typicalPrice: 900, weight: 0.45 },
+        { nama: 'Semen Portland (PC) 50 Kg', satuan: 'Zak', typicalPrice: 68000, weight: 0.32 },
+        { nama: 'Pasir Pasang Ayak Bersih', satuan: 'm³', typicalPrice: 220000, weight: 0.23 },
+      ];
+    }
+    upahRoleTukang = 'Tukang Batu & Plester';
+    upahRolePekerja = 'Pekerja Adukan Semen';
+  }
+  // 10. Persiapan / Bouwplank / Pengukuran / Pagar
+  else if (/persiapan|bouwplank|bowplank|pengukuran|pembersihan|pagar/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Kayu Kaso 5/7 cm Meranti / Sengon', satuan: 'Batang', typicalPrice: 35000, weight: 0.50 },
+      { nama: 'Kayu Papan 3/20 cm Standar Bekisting', satuan: 'Lembar', typicalPrice: 45000, weight: 0.30 },
+      { nama: 'Paku Campuran 5 cm - 10 cm', satuan: 'Kg', typicalPrice: 25000, weight: 0.20 },
+    ];
+    upahRoleTukang = 'Tukang Kayu Persiapan';
+    upahRolePekerja = 'Pekerja Pembersihan Lapangan';
+  }
+  // 11. Perabot / Meja / Kursi / Whiteboard / Mebeler
+  else if (/meja|kursi|lemari|whiteboard|perabot|mebeler/i.test(lower)) {
+    materialTemplates = [
+      { nama: 'Meja Siswa / Guru Rangka Besi & Kayu Solid', satuan: 'Unit', typicalPrice: 450000, weight: 0.50 },
+      { nama: 'Kursi Siswa / Guru Rangka Besi Dudukan Kayu', satuan: 'Unit', typicalPrice: 280000, weight: 0.40 },
+      { nama: 'Papan Tulis Whiteboard Magnetik & Aksesoris', satuan: 'Set', typicalPrice: 350000, weight: 0.10 },
+    ];
+    upahRoleTukang = 'Tukang Perakitan Mebeler';
+    upahRolePekerja = 'Pekerja Langsir Perabot';
+  }
+  // 12. Fallback Umum
+  else {
+    materialTemplates = [
+      { nama: 'Semen Portland (PC) 50 Kg', satuan: 'Zak', typicalPrice: 68000, weight: 0.45 },
+      { nama: 'Pasir Pasang Pilihan', satuan: 'm³', typicalPrice: 220000, weight: 0.25 },
+      { nama: 'Kayu Kaso 5/7 cm', satuan: 'Batang', typicalPrice: 35000, weight: 0.20 },
+      { nama: 'Paku Campuran 5 cm - 10 cm', satuan: 'Kg', typicalPrice: 25000, weight: 0.10 },
+    ];
+    upahRoleTukang = 'Tukang Terampil';
+    upahRolePekerja = 'Pekerja Lapangan';
+  }
+
+  // Decompose Bahan
+  const bahanItems: DecomposedItem[] = [];
+  let allocatedBahanNominal = 0;
+
+  materialTemplates.forEach((tpl, idx) => {
+    const isLast = idx === materialTemplates.length - 1;
+    const subJml = isLast ? bahanNominal - allocatedBahanNominal : Math.round(bahanNominal * tpl.weight);
+    allocatedBahanNominal += subJml;
+
+    if (subJml <= 0) return;
+
+    let subVol = Math.max(1, Math.round((subJml / tpl.typicalPrice) * 10) / 10);
+    if (/zak|buah|dus|set|batang|lembar|pail|unit|roll|kotak/i.test(tpl.satuan)) {
+      subVol = Math.max(1, Math.round(subVol));
+    }
+    const hargaSatuan = Math.round(subJml / subVol);
+
+    bahanItems.push({
+      namaBarang: tpl.nama,
+      volume: subVol,
+      satuan: tpl.satuan,
+      hargaSatuan: hargaSatuan,
+      jumlah: subJml,
+    });
+  });
+
+  // Decompose Upah
+  const upahComponents: DecomposedItem[] = [];
+  if (upahNominal > 0) {
+    const tukangNominal = Math.round(upahNominal * 0.62);
+    const pekerjaNominal = upahNominal - tukangNominal;
+
+    const rateTukang = 135000;
+    const ratePekerja = 110000;
+
+    const volTukang = Math.max(0.5, Math.round((tukangNominal / rateTukang) * 10) / 10);
+    const volPekerja = Math.max(0.5, Math.round((pekerjaNominal / ratePekerja) * 10) / 10);
+
+    upahComponents.push({
+      namaBarang: upahRoleTukang,
+      volume: volTukang,
+      satuan: 'OH',
+      hargaSatuan: Math.round(tukangNominal / volTukang),
+      jumlah: tukangNominal,
+    });
+
+    if (pekerjaNominal > 0) {
+      upahComponents.push({
+        namaBarang: upahRolePekerja,
+        volume: volPekerja,
+        satuan: 'OH',
+        hargaSatuan: Math.round(pekerjaNominal / volPekerja),
+        jumlah: pekerjaNominal,
+      });
+    }
+  }
+
+  return { bahanItems, upahComponents };
+}
+
 
 export function calculateBkuFromTransactions(
   kwitansiList: KwitansiDocument[],
@@ -852,36 +1128,28 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
             // Rasio Standar Konstruksi: 65% Belanja Bahan/Material, 35% Upah Tenaga Kerja/Tukang
             const bahanNominal = Math.round(execRabJml * 0.65);
             const upahNominal = execRabJml - bahanNominal;
-            const bahanVol = Math.max(0.01, Math.round(execRabVol * 0.65 * 100) / 100);
-            const upahVol = Math.max(0.01, Math.round(execRabVol * 0.35 * 100) / 100);
 
-            // 1. Porsi BAHAN -> Masuk ke Faktur Toko, Bon Toko, SPB, Rekap Pajak (PPN/PPh22), dan BKU Belanja Toko
-            bahanItems.push({
-              namaBarang: `Pengadaan Bahan ${it.uraian}`,
-              volume: bahanVol,
-              satuan: it.satuan || 'unit',
-              hargaSatuan: Math.round(bahanNominal / bahanVol),
-              jumlah: bahanNominal,
-            });
+            // 1. Porsi BAHAN -> Terdekomposisi cerdas menjadi rincian barang nyata toko bangunan (bukan judul pekerjaan)
+            const decomposed = decomposeRealisticBahanAndUpah(it.uraian, bahanNominal, upahNominal);
+            bahanItems.push(...decomposed.bahanItems);
 
-            // 2. Porsi UPAH -> Masuk ke Kwitansi Upah, Tanda Terima/Absensi Pekerja, BKU Kas Upah, Bebas PPN Toko
+            // 2. Porsi UPAH -> Masuk ke Kwitansi Upah, Tanda Terima/Absensi Pekerja, BKU Kas Upah
             divUpahTotal += upahNominal;
-            weeklyAhspUpahComponents.push({
-              namaBarang: `Upah Kerja Pekerja & Tukang (${it.uraian})`,
-              volume: upahVol,
-              satuan: 'OH',
-              hargaSatuan: Math.round(upahNominal / upahVol),
-              jumlah: upahNominal,
-            });
+            weeklyAhspUpahComponents.push(...decomposed.upahComponents);
           } else if (cat === 'UPAH') {
             divUpahTotal += execRabJml;
-            weeklyAhspUpahComponents.push({
-              namaBarang: it.uraian,
-              volume: execRabVol,
-              satuan: it.satuan,
-              hargaSatuan: it.hargaSatuan,
-              jumlah: execRabJml,
-            });
+            const decomposedUpah = decomposeRealisticBahanAndUpah(it.uraian, 0, execRabJml);
+            if (decomposedUpah.upahComponents.length > 0) {
+              weeklyAhspUpahComponents.push(...decomposedUpah.upahComponents);
+            } else {
+              weeklyAhspUpahComponents.push({
+                namaBarang: it.uraian,
+                volume: execRabVol,
+                satuan: it.satuan,
+                hargaSatuan: it.hargaSatuan,
+                jumlah: execRabJml,
+              });
+            }
           } else if (cat === 'ALAT') {
             alatItems.push({
               namaBarang: it.uraian,
@@ -899,13 +1167,20 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
               jumlah: execRabJml,
             });
           } else {
-            bahanItems.push({
-              namaBarang: it.uraian,
-              volume: execRabVol,
-              satuan: it.satuan,
-              hargaSatuan: it.hargaSatuan,
-              jumlah: execRabJml,
-            });
+            // Kategori BAHAN langsung: Dekomposisi jika merupakan judul pekerjaan komposit agar di bon toko tampil rincian material riil
+            const isCompositeJob = /pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar/i.test(it.uraian);
+            if (isCompositeJob && execRabJml >= 300000) {
+              const decomposedBahan = decomposeRealisticBahanAndUpah(it.uraian, execRabJml, 0);
+              bahanItems.push(...decomposedBahan.bahanItems);
+            } else {
+              bahanItems.push({
+                namaBarang: it.uraian,
+                volume: execRabVol,
+                satuan: it.satuan,
+                hargaSatuan: it.hargaSatuan,
+                jumlah: execRabJml,
+              });
+            }
           }
         }
       });

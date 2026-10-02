@@ -20,9 +20,19 @@ import {
   ArrowRight,
   Info,
 } from 'lucide-react';
-import { RabSubItem, RabDivision, RealSchoolData, AhspItem, AhspKomponen, SchoolMasterData, StoreVendor } from '../types';
+import {
+  RabSubItem,
+  RabDivision,
+  RealSchoolData,
+  AhspItem,
+  AhspKomponen,
+  SchoolMasterData,
+  StoreVendor,
+  KwitansiDocument,
+} from '../types';
 import { formatRupiah, formatNumber } from '../utils/formatters';
 import { terbilangRupiah } from '../utils/terbilang';
+import { decomposeRealisticBahanAndUpah } from '../services/autoGeneratorService';
 
 interface RabAhspDocumentPreviewModalProps {
   isOpen: boolean;
@@ -32,6 +42,7 @@ interface RabAhspDocumentPreviewModalProps {
   realData: RealSchoolData;
   school?: SchoolMasterData;
   stores?: StoreVendor[];
+  kwitansiList?: KwitansiDocument[];
   onUpdateRabItem?: (divId: string, itemId: string, updatedFields: Partial<RabSubItem>) => void;
   onUpdateAhsp?: (updatedAhsp: AhspItem) => void;
 }
@@ -44,6 +55,7 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
   realData,
   school,
   stores = [],
+  kwitansiList = [],
   onUpdateRabItem,
   onUpdateAhsp,
 }) => {
@@ -52,6 +64,69 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
   const [isEditing, setIsEditing] = useState(false);
   const [editableComponents, setEditableComponents] = useState<AhspKomponen[]>([]);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
+
+  // Determine standard fiscal year
+  const yearStr = school?.tahunAnggaran?.trim() || realData?.tahunAnggaran || '2026';
+
+  // Find actual Kwitansi documents matching this RAB item from the Kwitansi Bon & SPB / Upah list
+  const matchedMaterialKw = useMemo(() => {
+    if (!rabItem || !kwitansiList || kwitansiList.length === 0) return null;
+    const lowerRab = rabItem.uraian.toLowerCase().trim();
+    const lowerDiv = division?.uraian.toLowerCase().trim() || '';
+
+    // 1. Direct item match or uraian match in MATERIAL kwitansi
+    const direct = kwitansiList.find((k) => {
+      if (k.tipe !== 'MATERIAL') return false;
+      const kUraian = (k.uraian || '').toLowerCase();
+      if (kUraian.includes(lowerRab) || (lowerDiv && kUraian.includes(lowerDiv))) return true;
+      return (k.items || []).some((it) => {
+        const itName = (it.namaBarang || '').toLowerCase();
+        return itName.includes(lowerRab) || lowerRab.includes(itName);
+      });
+    });
+    if (direct) return direct;
+
+    // 2. Division match
+    const divMatch = kwitansiList.find(
+      (k) => k.tipe === 'MATERIAL' && lowerDiv && (k.uraian || '').toLowerCase().includes(lowerDiv)
+    );
+    if (divMatch) return divMatch;
+
+    // 3. Fallback to first material kwitansi
+    return kwitansiList.find((k) => k.tipe === 'MATERIAL') || null;
+  }, [rabItem, division, kwitansiList]);
+
+  const matchedUpahKw = useMemo(() => {
+    if (!rabItem || !kwitansiList || kwitansiList.length === 0) return null;
+    const lowerRab = rabItem.uraian.toLowerCase().trim();
+    const lowerDiv = division?.uraian.toLowerCase().trim() || '';
+
+    // 1. Direct match in UPAH kwitansi
+    const direct = kwitansiList.find((k) => {
+      if (k.tipe !== 'UPAH') return false;
+      const kUraian = (k.uraian || '').toLowerCase();
+      return kUraian.includes(lowerRab) || (lowerDiv && kUraian.includes(lowerDiv));
+    });
+    if (direct) return direct;
+
+    // 2. Fallback to first upah kwitansi
+    return kwitansiList.find((k) => k.tipe === 'UPAH') || null;
+  }, [rabItem, division, kwitansiList]);
+
+  // Exact receipt and SPB numbers matching Kwitansi Bon & SPB menu
+  const materialNoBukti = matchedMaterialKw?.noBukti || `01/KW-MAT/${yearStr}`;
+  const materialNoSpb = matchedMaterialKw?.noSpb || `SPB-01/MAT/${yearStr}`;
+  const materialTanggal =
+    matchedMaterialKw?.tanggalFormatted ||
+    matchedMaterialKw?.tanggal ||
+    `${school?.kabKota || 'Kota'}, T.A ${yearStr}`;
+
+  const upahNoBukti = matchedUpahKw?.noBukti || `01/UK/${yearStr}`;
+  const upahNoSpb = matchedUpahKw?.noSpb || `SPB-01/UK/${yearStr}`;
+  const upahTanggal =
+    matchedUpahKw?.tanggalFormatted ||
+    matchedUpahKw?.tanggal ||
+    `${school?.kabKota || 'Kota'}, T.A ${yearStr}`;
 
   // Find automatic match if no specific ahspIdRef
   const matchedAhsp = useMemo(() => {
@@ -113,50 +188,85 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
         const isUpahBahan = rabItem.kategoriBiaya === 'UPAH_BAHAN';
         const isUpahOnly = rabItem.kategoriBiaya === 'UPAH';
         if (isUpahOnly) {
-          setEditableComponents([
-            {
-              id: 'comp-syn-upah',
-              kategori: 'UPAH',
-              uraian: `Upah Tukang & Pekerja (${rabItem.uraian})`,
-              koefisien: 1,
-              satuan: rabItem.satuan || 'ls',
-              hargaSatuan: rabItem.hargaSatuan,
-              totalHarga: rabItem.hargaSatuan,
-            },
-          ]);
+          const decomposed = decomposeRealisticBahanAndUpah(rabItem.uraian, 0, rabItem.hargaSatuan);
+          if (decomposed.upahComponents.length > 0) {
+            setEditableComponents(
+              decomposed.upahComponents.map((ui, i) => ({
+                id: `comp-syn-upah-${i}`,
+                kategori: 'UPAH' as const,
+                uraian: ui.namaBarang,
+                koefisien: ui.volume,
+                satuan: ui.satuan,
+                hargaSatuan: ui.hargaSatuan,
+                totalHarga: ui.jumlah,
+              }))
+            );
+          } else {
+            setEditableComponents([
+              {
+                id: 'comp-syn-upah',
+                kategori: 'UPAH',
+                uraian: `Upah Tukang & Pekerja (${rabItem.uraian})`,
+                koefisien: 1,
+                satuan: rabItem.satuan || 'ls',
+                hargaSatuan: rabItem.hargaSatuan,
+                totalHarga: rabItem.hargaSatuan,
+              },
+            ]);
+          }
         } else if (isUpahBahan) {
-          setEditableComponents([
-            {
-              id: 'comp-syn-mat',
-              kategori: 'BAHAN',
-              uraian: `Material & Bahan (${rabItem.uraian})`,
-              koefisien: 1,
-              satuan: rabItem.satuan || 'ls',
-              hargaSatuan: Math.round(rabItem.hargaSatuan * 0.65),
-              totalHarga: Math.round(rabItem.hargaSatuan * 0.65),
-            },
-            {
-              id: 'comp-syn-upah',
-              kategori: 'UPAH',
-              uraian: `Upah Tenaga Kerja (${rabItem.uraian})`,
-              koefisien: 1,
-              satuan: rabItem.satuan || 'ls',
-              hargaSatuan: Math.round(rabItem.hargaSatuan * 0.35),
-              totalHarga: Math.round(rabItem.hargaSatuan * 0.35),
-            },
-          ]);
+          const bNominal = Math.round(rabItem.hargaSatuan * 0.65);
+          const uNominal = rabItem.hargaSatuan - bNominal;
+          const decomposed = decomposeRealisticBahanAndUpah(rabItem.uraian, bNominal, uNominal);
+          const comps: AhspKomponen[] = [
+            ...decomposed.bahanItems.map((bi, i) => ({
+              id: `comp-syn-mat-${i}`,
+              kategori: 'BAHAN' as const,
+              uraian: bi.namaBarang,
+              koefisien: bi.volume,
+              satuan: bi.satuan,
+              hargaSatuan: bi.hargaSatuan,
+              totalHarga: bi.jumlah,
+            })),
+            ...decomposed.upahComponents.map((ui, i) => ({
+              id: `comp-syn-upah-${i}`,
+              kategori: 'UPAH' as const,
+              uraian: ui.namaBarang,
+              koefisien: ui.volume,
+              satuan: ui.satuan,
+              hargaSatuan: ui.hargaSatuan,
+              totalHarga: ui.jumlah,
+            })),
+          ];
+          setEditableComponents(comps);
         } else {
-          setEditableComponents([
-            {
-              id: 'comp-syn-mat',
-              kategori: 'BAHAN',
-              uraian: rabItem.uraian,
-              koefisien: 1,
-              satuan: rabItem.satuan || 'unit',
-              hargaSatuan: rabItem.hargaSatuan,
-              totalHarga: rabItem.hargaSatuan,
-            },
-          ]);
+          // If composite job in BAHAN, decompose into realistic materials
+          const isCompositeJob = /pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar/i.test(rabItem.uraian);
+          if (isCompositeJob) {
+            const decomposed = decomposeRealisticBahanAndUpah(rabItem.uraian, rabItem.hargaSatuan, 0);
+            const comps: AhspKomponen[] = decomposed.bahanItems.map((bi, i) => ({
+              id: `comp-syn-mat-${i}`,
+              kategori: 'BAHAN' as const,
+              uraian: bi.namaBarang,
+              koefisien: bi.volume,
+              satuan: bi.satuan,
+              hargaSatuan: bi.hargaSatuan,
+              totalHarga: bi.jumlah,
+            }));
+            setEditableComponents(comps);
+          } else {
+            setEditableComponents([
+              {
+                id: 'comp-syn-mat',
+                kategori: 'BAHAN',
+                uraian: rabItem.uraian,
+                koefisien: 1,
+                satuan: rabItem.satuan || 'unit',
+                hargaSatuan: rabItem.hargaSatuan,
+                totalHarga: rabItem.hargaSatuan,
+              },
+            ]);
+          }
         }
       }
     }
@@ -376,6 +486,11 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
               >
                 <ShoppingCart className="w-3.5 h-3.5" />
                 <span>2. Tercetak di Bon Toko & SPB ({bahanItems.length} Bahan)</span>
+                <span className={`ml-1 text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                  activeTab === 'BON_SPB' ? 'bg-black/25 text-white' : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {materialNoBukti}
+                </span>
               </button>
 
               <button
@@ -389,6 +504,11 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
               >
                 <UserCheck className="w-3.5 h-3.5" />
                 <span>3. Tercetak di Kwitansi Upah ({upahItems.length} Tenaga)</span>
+                <span className={`ml-1 text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                  activeTab === 'UPAH' ? 'bg-black/25 text-white' : 'bg-purple-100 text-purple-800'
+                }`}>
+                  {upahNoBukti}
+                </span>
               </button>
             </div>
           </div>
@@ -581,11 +701,16 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
 
                   {/* Table: Bahan Components */}
                   <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-                    <div className="bg-emerald-50 px-4 py-2 border-b border-emerald-100 flex items-center justify-between">
-                      <span className="font-bold text-xs text-emerald-900 flex items-center gap-1.5">
-                        <ShoppingCart className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>A. Komponen Bahan (Material) $\rightarrow$ Tercetak di Bon Toko & SPB</span>
-                      </span>
+                    <div className="bg-emerald-50 px-4 py-2.5 border-b border-emerald-100 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-emerald-900 flex items-center gap-1.5">
+                          <ShoppingCart className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>A. Komponen Bahan (Material) $\rightarrow$ Tercetak di Bon Toko & SPB</span>
+                        </span>
+                        <span className="font-mono text-[10px] bg-white border border-emerald-300 text-emerald-900 px-2 py-0.5 rounded font-bold shadow-2xs">
+                          No. Kwitansi: {materialNoBukti}
+                        </span>
+                      </div>
                       <span className="font-mono text-xs font-bold text-emerald-900">
                         Subtotal: {formatRupiah(totalBahanProyek)}
                       </span>
@@ -641,11 +766,16 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
 
                   {/* Table: Upah Components */}
                   <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-                    <div className="bg-purple-50 px-4 py-2 border-b border-purple-100 flex items-center justify-between">
-                      <span className="font-bold text-xs text-purple-900 flex items-center gap-1.5">
-                        <UserCheck className="w-3.5 h-3.5 text-purple-600" />
-                        <span>B. Komponen Tenaga Kerja (Upah) $\rightarrow$ Tercetak di Kwitansi Upah & Absensi</span>
-                      </span>
+                    <div className="bg-purple-50 px-4 py-2.5 border-b border-purple-100 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-purple-900 flex items-center gap-1.5">
+                          <UserCheck className="w-3.5 h-3.5 text-purple-600" />
+                          <span>B. Komponen Tenaga Kerja (Upah) $\rightarrow$ Tercetak di Kwitansi Upah & Absensi</span>
+                        </span>
+                        <span className="font-mono text-[10px] bg-white border border-purple-300 text-purple-900 px-2 py-0.5 rounded font-bold shadow-2xs">
+                          No. Kwitansi: {upahNoBukti}
+                        </span>
+                      </div>
                       <span className="font-mono text-xs font-bold text-purple-900">
                         Subtotal: {formatRupiah(totalUpahProyek)}
                       </span>
@@ -703,93 +833,141 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
 
               {/* TAB 2: SIMULASI BON TOKO & SPB */}
               {activeTab === 'BON_SPB' && (
-                <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-300 shadow-sm font-sans text-xs space-y-5">
-                  <div className="flex justify-between items-start border-b-2 border-black pb-3">
-                    <div>
-                      <h3 className="font-extrabold text-base uppercase tracking-wider text-slate-900">
-                        {defaultStoreName}
-                      </h3>
-                      <p className="text-[11px] text-slate-600">Penyedia Bahan Bangunan & Alat Konstruksi</p>
-                      <p className="text-[11px] text-slate-600">{defaultStoreAddress}</p>
+                <div className="space-y-4">
+                  {/* Synchronized Document Number Banner */}
+                  <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-700 text-white rounded-lg shadow-xs">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider block">
+                          Nomor Dokumen Sesuai Menu Kwitansi Bon & SPB
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                          <span className="text-slate-700 font-semibold">
+                            No. Kwitansi / Bukti: <strong className="font-mono text-emerald-950 bg-white px-2 py-0.5 rounded border border-emerald-300 shadow-2xs">{materialNoBukti}</strong>
+                          </span>
+                          <span className="text-slate-300">|</span>
+                          <span className="text-slate-700 font-semibold">
+                            No. SPB: <strong className="font-mono text-emerald-950 bg-white px-2 py-0.5 rounded border border-emerald-300 shadow-2xs">{materialNoSpb}</strong>
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right text-xs">
-                      <p className="font-medium">{school?.kabKota || 'Kota'}, {school?.tahunAnggaran ? `T.A ${school.tahunAnggaran}` : ''}</p>
-                      <p className="text-slate-600">Kepada Yth: Ketua P2SP</p>
-                      <p className="font-bold text-slate-900">{school?.namaSekolah || realData.namaSekolah}</p>
-                      <p className="text-slate-600">Keperluan: {rabItem.uraian}</p>
+                    <div className="flex items-center gap-2 self-start sm:self-center">
+                      {matchedMaterialKw?.mingguKeRef ? (
+                        <span className="px-2.5 py-1 bg-emerald-200/90 text-emerald-950 font-extrabold rounded-lg text-[11px] border border-emerald-400">
+                          Terdaftar di Minggu Ke-{matchedMaterialKw.mingguKeRef}
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[11px] border border-emerald-200">
+                          Tersinkronisasi Otomatis
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="text-center py-1">
-                    <h4 className="font-extrabold text-sm uppercase tracking-widest underline">
-                      SIMULASI FAKTUR / BON TOKO & SURAT PESANAN BARANG (SPB)
-                    </h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      (Daftar barang ini yang akan otomatis tercetak pada Faktur & SPB untuk pekerjaan: <strong>{rabItem.uraian}</strong>)
-                    </p>
-                  </div>
+                  <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-300 shadow-sm font-sans text-xs space-y-5">
+                    <div className="flex justify-between items-start border-b-2 border-black pb-3">
+                      <div>
+                        <h3 className="font-extrabold text-base uppercase tracking-wider text-slate-900">
+                          {defaultStoreName}
+                        </h3>
+                        <p className="text-[11px] text-slate-600">Penyedia Bahan Bangunan & Alat Konstruksi</p>
+                        <p className="text-[11px] text-slate-600">{defaultStoreAddress}</p>
+                      </div>
+                      <div className="text-right text-xs">
+                        <p className="font-medium">{school?.kabKota || 'Kota'}, {school?.tahunAnggaran ? `T.A ${school.tahunAnggaran}` : ''}</p>
+                        <p className="text-slate-600">Kepada Yth: Ketua P2SP</p>
+                        <p className="font-bold text-slate-900">{school?.namaSekolah || realData.namaSekolah}</p>
+                        <p className="text-slate-600">Keperluan: {rabItem.uraian}</p>
+                      </div>
+                    </div>
 
-                  <table className="w-full border-collapse border border-black text-xs">
-                    <thead>
-                      <tr className="bg-slate-100 text-center font-bold">
-                        <th className="border border-black p-2 w-10">No</th>
-                        <th className="border border-black p-2 w-28">Banyaknya</th>
-                        <th className="border border-black p-2 text-left">Nama Barang / Spesifikasi Material</th>
-                        <th className="border border-black p-2 text-right w-32">Harga Satuan</th>
-                        <th className="border border-black p-2 text-right w-36">Jumlah</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bahanItems.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="border border-black p-4 text-center text-slate-400 italic">
-                            Tidak ada pengeluaran bahan toko terdaftar untuk pekerjaan ini.
+                    {/* Official Document Numbers Box */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border border-black p-2.5 bg-slate-50 font-mono text-[11px]">
+                      <div className="space-y-0.5">
+                        <p>NO. FAKTUR / KWITANSI : <strong className="text-emerald-950 font-bold">{materialNoBukti}</strong></p>
+                        <p>NO. SURAT PESANAN (SPB): <strong className="text-emerald-950 font-bold">{materialNoSpb}</strong></p>
+                      </div>
+                      <div className="sm:text-right space-y-0.5">
+                        <p>TANGGAL BUKTI : <strong className="text-slate-900 font-bold">{materialTanggal}</strong></p>
+                        <p>SUMBER ANGGARAN : <strong className="text-slate-900 font-bold">DANA REVITALISASI</strong></p>
+                      </div>
+                    </div>
+
+                    <div className="text-center py-1">
+                      <h4 className="font-extrabold text-sm uppercase tracking-widest underline">
+                        SIMULASI FAKTUR / BON TOKO & SURAT PESANAN BARANG (SPB)
+                      </h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        (Daftar barang ini yang otomatis tercetak pada Faktur & SPB untuk pekerjaan: <strong>{rabItem.uraian}</strong>)
+                      </p>
+                    </div>
+
+                    <table className="w-full border-collapse border border-black text-xs">
+                      <thead>
+                        <tr className="bg-slate-100 text-center font-bold">
+                          <th className="border border-black p-2 w-10">No</th>
+                          <th className="border border-black p-2 w-28">Banyaknya</th>
+                          <th className="border border-black p-2 text-left">Nama Barang / Spesifikasi Material</th>
+                          <th className="border border-black p-2 text-right w-32">Harga Satuan</th>
+                          <th className="border border-black p-2 text-right w-36">Jumlah</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bahanItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="border border-black p-4 text-center text-slate-400 italic">
+                              Tidak ada pengeluaran bahan toko terdaftar untuk pekerjaan ini.
+                            </td>
+                          </tr>
+                        ) : (
+                          bahanItems.map((b, idx) => {
+                            const totalVol = Math.round((b.koefisien * rabVolume) * 100) / 100;
+                            const totalHrg = Math.round(totalVol * b.hargaSatuan);
+                            return (
+                              <tr key={idx}>
+                                <td className="border border-black p-2 text-center font-mono">{idx + 1}</td>
+                                <td className="border border-black p-2 text-center font-mono font-bold">
+                                  {totalVol} {b.satuan}
+                                </td>
+                                <td className="border border-black p-2 font-medium">{b.uraian}</td>
+                                <td className="border border-black p-2 text-right font-mono">
+                                  {formatRupiah(b.hargaSatuan, false)}
+                                </td>
+                                <td className="border border-black p-2 text-right font-mono font-bold">
+                                  {formatRupiah(totalHrg, false)}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="font-bold bg-slate-50">
+                          <td colSpan={4} className="border border-black p-2 text-right uppercase">
+                            Total Belanja Bahan Toko :
+                          </td>
+                          <td className="border border-black p-2 text-right font-mono font-bold text-slate-900 text-sm">
+                            {formatRupiah(totalBahanProyek, false)}
                           </td>
                         </tr>
-                      ) : (
-                        bahanItems.map((b, idx) => {
-                          const totalVol = Math.round((b.koefisien * rabVolume) * 100) / 100;
-                          const totalHrg = Math.round(totalVol * b.hargaSatuan);
-                          return (
-                            <tr key={idx}>
-                              <td className="border border-black p-2 text-center font-mono">{idx + 1}</td>
-                              <td className="border border-black p-2 text-center font-mono font-bold">
-                                {totalVol} {b.satuan}
-                              </td>
-                              <td className="border border-black p-2 font-medium">{b.uraian}</td>
-                              <td className="border border-black p-2 text-right font-mono">
-                                {formatRupiah(b.hargaSatuan, false)}
-                              </td>
-                              <td className="border border-black p-2 text-right font-mono font-bold">
-                                {formatRupiah(totalHrg, false)}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                    <tfoot>
-                      <tr className="font-bold bg-slate-50">
-                        <td colSpan={4} className="border border-black p-2 text-right uppercase">
-                          Total Belanja Bahan Toko :
-                        </td>
-                        <td className="border border-black p-2 text-right font-mono font-bold text-slate-900 text-sm">
-                          {formatRupiah(totalBahanProyek, false)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                      </tfoot>
+                    </table>
 
-                  <div className="flex justify-between items-end pt-4 border-t border-slate-200">
-                    <p className="italic text-[11px] text-slate-500">
-                      * Data di atas otomatis ditransfer ke Kwitansi Bon & SPB saat laporan mingguan dibuat.
-                    </p>
-                    <div className="text-center w-52 space-y-0.5">
-                      <p>Hormat Kami,</p>
-                      <p className="font-bold uppercase">{defaultStoreName}</p>
-                      <div className="h-12" />
-                      <p className="font-bold underline uppercase">Pemilik Toko</p>
-                      <p className="text-[10px] text-slate-500">Cap & Tanda Tangan</p>
+                    <div className="flex justify-between items-end pt-4 border-t border-slate-200">
+                      <p className="italic text-[11px] text-slate-500">
+                        * Data di atas otomatis ditransfer ke Kwitansi Bon & SPB saat laporan mingguan dibuat.
+                      </p>
+                      <div className="text-center w-52 space-y-0.5">
+                        <p>Hormat Kami,</p>
+                        <p className="font-bold uppercase">{defaultStoreName}</p>
+                        <div className="h-12" />
+                        <p className="font-bold underline uppercase">Pemilik Toko</p>
+                        <p className="text-[10px] text-slate-500">Cap & Tanda Tangan</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -797,44 +975,91 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
 
               {/* TAB 3: SIMULASI KWITANSI UPAH */}
               {activeTab === 'UPAH' && (
-                <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-300 shadow-sm font-sans text-xs space-y-5">
-                  <div className="flex justify-between items-start border-b border-black pb-2">
-                    <div className="font-mono text-xs space-y-0.5">
-                      <p>Tahun Anggaran : <strong>{school?.tahunAnggaran || realData.tahunAnggaran}</strong></p>
-                      <p>Kegiatan : <strong>{realData.kegiatan || 'Revitalisasi Satuan Pendidikan'}</strong></p>
+                <div className="space-y-4">
+                  {/* Synchronized Document Number Banner */}
+                  <div className="bg-purple-50 border border-purple-300 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-purple-700 text-white rounded-lg shadow-xs">
+                        <UserCheck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
+                          Nomor Dokumen Sesuai Menu Kwitansi Upah & Absensi
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                          <span className="text-slate-700 font-semibold">
+                            No. Kwitansi Upah: <strong className="font-mono text-purple-950 bg-white px-2 py-0.5 rounded border border-purple-300 shadow-2xs">{upahNoBukti}</strong>
+                          </span>
+                          <span className="text-slate-300">|</span>
+                          <span className="text-slate-700 font-semibold">
+                            No. SPB Upah: <strong className="font-mono text-purple-950 bg-white px-2 py-0.5 rounded border border-purple-300 shadow-2xs">{upahNoSpb}</strong>
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <h2 className="text-lg font-bold tracking-widest uppercase underline font-serif">
-                        KWITANSI PEMBAYARAN UPAH
-                      </h2>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 py-2 text-xs">
-                    <div className="grid grid-cols-12 gap-2">
-                      <span className="col-span-3 font-medium">Sudah terima dari</span>
-                      <span className="col-span-1">:</span>
-                      <span className="col-span-8 font-bold text-slate-900">
-                        Bendahara {school?.namaSekolah || realData.namaSekolah}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-12 gap-2">
-                      <span className="col-span-3 font-medium">Uang Banyaknya</span>
-                      <span className="col-span-1">:</span>
-                      <span className="col-span-8 font-bold italic underline bg-slate-50 p-2.5 rounded border border-slate-200 text-purple-900 font-serif text-sm">
-                        {terbilangRupiah(totalUpahProyek)}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-12 gap-2">
-                      <span className="col-span-3 font-medium">Y a i t u</span>
-                      <span className="col-span-1">:</span>
-                      <span className="col-span-8 leading-relaxed font-semibold text-slate-800">
-                        Pembayaran Ongkos Tenaga Kerja Pelaksanaan {rabItem.uraian} Volume {rabVolume} {rabItem.satuan}
-                      </span>
+                    <div className="flex items-center gap-2 self-start sm:self-center">
+                      {matchedUpahKw?.mingguKeRef ? (
+                        <span className="px-2.5 py-1 bg-purple-200/90 text-purple-950 font-extrabold rounded-lg text-[11px] border border-purple-400">
+                          Terdaftar di Minggu Ke-{matchedUpahKw.mingguKeRef}
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-purple-100 text-purple-800 font-bold rounded-lg text-[11px] border border-purple-200">
+                          Tersinkronisasi Otomatis
+                        </span>
+                      )}
                     </div>
                   </div>
+
+                  <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-300 shadow-sm font-sans text-xs space-y-5">
+                    <div className="flex justify-between items-start border-b border-black pb-2">
+                      <div className="font-mono text-xs space-y-0.5">
+                        <p>Tahun Anggaran : <strong>{school?.tahunAnggaran || realData.tahunAnggaran}</strong></p>
+                        <p>Kegiatan : <strong>{realData.kegiatan || 'Revitalisasi Satuan Pendidikan'}</strong></p>
+                      </div>
+                      <div className="text-right">
+                        <h2 className="text-lg font-bold tracking-widest uppercase underline font-serif">
+                          KWITANSI PEMBAYARAN UPAH
+                        </h2>
+                      </div>
+                    </div>
+
+                    {/* Official Document Numbers Box */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border border-black p-2.5 bg-slate-50 font-mono text-[11px]">
+                      <div className="space-y-0.5">
+                        <p>NO. BUKTI KAS / KWITANSI : <strong className="text-purple-950 font-bold">{upahNoBukti}</strong></p>
+                        <p>NO. SURAT PERINTAH BAYAR : <strong className="text-purple-950 font-bold">{upahNoSpb}</strong></p>
+                      </div>
+                      <div className="sm:text-right space-y-0.5">
+                        <p>TANGGAL PEMBAYARAN : <strong className="text-slate-900 font-bold">{upahTanggal}</strong></p>
+                        <p>KODE MATA ANGGARAN : <strong className="text-slate-900 font-bold">UPAH TENAGA KERJA REVITALISASI</strong></p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 py-2 text-xs">
+                      <div className="grid grid-cols-12 gap-2">
+                        <span className="col-span-3 font-medium">Sudah terima dari</span>
+                        <span className="col-span-1">:</span>
+                        <span className="col-span-8 font-bold text-slate-900">
+                          Bendahara {school?.namaSekolah || realData.namaSekolah}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-2">
+                        <span className="col-span-3 font-medium">Uang Banyaknya</span>
+                        <span className="col-span-1">:</span>
+                        <span className="col-span-8 font-bold italic underline bg-slate-50 p-2.5 rounded border border-slate-200 text-purple-900 font-serif text-sm">
+                          {terbilangRupiah(totalUpahProyek)}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-2">
+                        <span className="col-span-3 font-medium">Y a i t u</span>
+                        <span className="col-span-1">:</span>
+                        <span className="col-span-8 leading-relaxed font-semibold text-slate-800">
+                          Pembayaran Ongkos Tenaga Kerja Pelaksanaan {rabItem.uraian} Volume {rabVolume} {rabItem.satuan}
+                        </span>
+                      </div>
+                    </div>
 
                   <table className="w-full border-collapse border border-black text-xs font-sans">
                     <thead>
@@ -903,7 +1128,8 @@ export const RabAhspDocumentPreviewModal: React.FC<RabAhspDocumentPreviewModalPr
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
             </div>
           )}
         </div>
