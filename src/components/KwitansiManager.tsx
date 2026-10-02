@@ -521,11 +521,13 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
                 {/* Items in Kwitansi */}
                 {selectedKw.items && selectedKw.items.length > 0 && (() => {
                   const isServiceOrLabor =
-                    selectedKw.tipe === 'UPAH' ||
-                    selectedKw.tipe === 'KONSULTAN' ||
-                    /upah|tukang|pekerja|jasa|konsultan|perencana|pengawas|honor|administrasi|adm\b/i.test(
-                      `${selectedKw.noBukti} ${selectedKw.uraian} ${selectedKw.penerimaPekerjaan} ${selectedKw.penerimaNama}`
-                    );
+                    selectedKw.tipe !== 'MATERIAL' &&
+                    selectedKw.tipe !== 'PERABOT' &&
+                    (selectedKw.tipe === 'UPAH' ||
+                      selectedKw.tipe === 'KONSULTAN' ||
+                      /\bupah\b|\btukang\b|\bpekerja\b|\bjasa\b|\bkonsultan\b|\bperencana\b|\bpengawas\b|\bhonor\b|\badministrasi\b|\badm\b/i.test(
+                        `${selectedKw.noBukti} ${selectedKw.uraian} ${selectedKw.penerimaPekerjaan} ${selectedKw.penerimaNama}`
+                      ));
                   const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
                   const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
 

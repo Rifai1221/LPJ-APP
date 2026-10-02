@@ -1514,11 +1514,13 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                         {/* Rincian Barang / Layanan Terlampir Sesuai Format Cetak Resmi */}
                         {kw.items && kw.items.length > 0 && (() => {
                           const isServiceOrLabor =
-                            kw.tipe === 'UPAH' ||
-                            kw.tipe === 'KONSULTAN' ||
-                            /upah|tukang|pekerja|jasa|konsultan|perencana|pengawas|honor|administrasi|adm\b/i.test(
-                              `${kw.noBukti} ${kw.uraian} ${kw.penerimaPekerjaan} ${kw.penerimaNama}`
-                            );
+                            kw.tipe !== 'MATERIAL' &&
+                            kw.tipe !== 'PERABOT' &&
+                            (kw.tipe === 'UPAH' ||
+                              kw.tipe === 'KONSULTAN' ||
+                              /\bupah\b|\btukang\b|\bpekerja\b|\bjasa\b|\bkonsultan\b|\bperencana\b|\bpengawas\b|\bhonor\b|\badministrasi\b|\badm\b/i.test(
+                                `${kw.noBukti} ${kw.uraian} ${kw.penerimaPekerjaan} ${kw.penerimaNama}`
+                              ));
                           const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
                           const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
                           const printItems =

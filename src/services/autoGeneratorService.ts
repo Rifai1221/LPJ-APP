@@ -52,8 +52,37 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
 ): T[] {
   if (!rawItems || rawItems.length === 0) return [];
 
+  // 0. Auto-Decompose any composite job titles (e.g. "Pekerjaan Pengukuran & Pasang Bowplank") into physical materials
+  const expandedItems: T[] = [];
+  rawItems.forEach((item) => {
+    const rawName = (item.namaBarang || '').trim();
+    const rawJml = item.jumlah || 0;
+    const isCompositeJob =
+      /pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar|bowplank|bouwplank|pengukuran/i.test(
+        rawName
+      );
+
+    if (isCompositeJob && rawJml >= 30000) {
+      const decomposed = decomposeRealisticBahanAndUpah(rawName, rawJml, 0);
+      if (decomposed.bahanItems.length > 0) {
+        decomposed.bahanItems.forEach((bi) => {
+          expandedItems.push({
+            ...item,
+            namaBarang: bi.namaBarang,
+            volume: bi.volume,
+            satuan: bi.satuan,
+            hargaSatuan: bi.hargaSatuan,
+            jumlah: bi.jumlah,
+          } as T);
+        });
+        return;
+      }
+    }
+    expandedItems.push(item);
+  });
+
   // 1. Standarisasi nama dan konversi satuan komersial dasar
-  const preProcessed = rawItems.map((item) => {
+  const preProcessed = expandedItems.map((item) => {
     const rawVol = item.volume || 0;
     const rawJml = item.jumlah || 0;
     const rawSatuan = (item.satuan || '').toLowerCase().trim();
@@ -1061,6 +1090,24 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
           const lowerAh = (ah.namaPekerjaan || '').toLowerCase().trim();
           const lowerRab = it.uraian.toLowerCase().trim();
           if (lowerAh === lowerRab || lowerAh.includes(lowerRab) || lowerRab.includes(lowerAh)) return true;
+
+          // Special smart alias mappings for standard construction trades:
+          if (/bowplank|bouwplank|pengukuran|utzet/i.test(lowerRab) && /bowplank|bouwplank|pengukuran|utzet/i.test(lowerAh)) return true;
+          if (/papan nama/i.test(lowerRab) && /papan nama/i.test(lowerAh)) return true;
+          if (/galian/i.test(lowerRab) && /galian/i.test(lowerAh)) return true;
+          if (/urugan pasir/i.test(lowerRab) && /urugan pasir/i.test(lowerAh)) return true;
+          if (/pondasi|batu kali/i.test(lowerRab) && /pondasi|batu kali/i.test(lowerAh)) return true;
+          if (/beton/i.test(lowerRab) && /beton/i.test(lowerAh)) return true;
+          if (/bata/i.test(lowerRab) && /bata/i.test(lowerAh)) return true;
+          if (/plesteran/i.test(lowerRab) && /plesteran/i.test(lowerAh)) return true;
+          if (/keramik/i.test(lowerRab) && /keramik/i.test(lowerAh)) return true;
+          if (/plafon|gypsum/i.test(lowerRab) && /plafon|gypsum|langit/i.test(lowerAh)) return true;
+          if (/atap|spandek|baja ringan/i.test(lowerRab) && /atap|spandek|baja ringan/i.test(lowerAh)) return true;
+          if (/cat|pengecatan/i.test(lowerRab) && /cat|pengecatan/i.test(lowerAh)) return true;
+          if (/pintu|jendela|kusen/i.test(lowerRab) && /pintu|jendela|kusen/i.test(lowerAh)) return true;
+          if (/listrik|lampu/i.test(lowerRab) && /listrik|lampu/i.test(lowerAh)) return true;
+          if (/sanitasi|kloset|pipa/i.test(lowerRab) && /sanitasi|kloset|pipa/i.test(lowerAh)) return true;
+
           const keywords = lowerRab
             .replace(/[^a-zA-Z0-9\s]/g, ' ')
             .split(/\s+/)

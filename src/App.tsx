@@ -17,6 +17,7 @@ import {
   calculateBktFromBku,
   generateTaxesFromKwitansi,
   generateWeeklyTransactionsFromProgressAndRealData,
+  normalizeMaterialItems,
 } from './services/autoGeneratorService';
 import {
   SchoolTenant,
@@ -719,6 +720,29 @@ export default function App() {
         updatedBkb = res.updatedBkb;
       });
     }
+
+    // Deep Force-Sync: Normalize & decompose any composite job titles across all existing kwitansi
+    updatedKwitansi = updatedKwitansi.map((kw) => {
+      if (kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0) {
+        const hasCompositeJob = kw.items.some((it) =>
+          /pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar|bowplank|bouwplank|pengukuran/i.test(
+            it.namaBarang || ''
+          )
+        );
+        if (hasCompositeJob) {
+          const normalized = normalizeMaterialItems(kw.items);
+          return {
+            ...kw,
+            items: normalized,
+            uraian: `Pembayaran Lunas Biaya Pembelian Material/Bahan (${normalized
+              .map((i: { namaBarang: string }) => i.namaBarang)
+              .slice(0, 3)
+              .join(', ')}), Untuk Pekerjaan Revitalisasi ${updatedSchool.namaSekolah}, Tahun ${updatedSchool.tahunAnggaran || '2026'}, Daftar Terlampir.`,
+          };
+        }
+      }
+      return kw;
+    });
 
     isDirtyRef.current = true;
     setAppState((prev) => ({
