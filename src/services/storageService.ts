@@ -55,11 +55,18 @@ export function sanitizeAndFilterDemoState(state: AppStateData): AppStateData {
     divisions: standardizeWeekDivisions(w.divisions),
   }));
 
+  const targetYear = state.school?.tahunAnggaran?.trim() || '2026';
+
   return {
     ...state,
     progressWeeks: normalizedWeeks,
-    kwitansiList: healKwitansiList(state.kwitansiList || []),
-    wageReports: state.wageReports || [],
+    kwitansiList: healKwitansiList(state.kwitansiList || [], targetYear),
+    wageReports: (state.wageReports || []).map((wr) => ({
+      ...wr,
+      noBuktiKwitansi: wr.noBuktiKwitansi
+        ? wr.noBuktiKwitansi.replace(/\/(19\d\d|20\d\d)$/, `/${targetYear}`)
+        : wr.noBuktiKwitansi,
+    })),
     bkbRecords: state.bkbRecords || [],
     manualBkuTransactions: state.manualBkuTransactions || [],
   };

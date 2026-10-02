@@ -19,6 +19,7 @@ import {
   generateWeeklyTransactionsFromProgressAndRealData,
   normalizeMaterialItems,
   isPureDirectMaterial,
+  healKwitansiList,
 } from './services/autoGeneratorService';
 import {
   SchoolTenant,
@@ -503,7 +504,24 @@ export default function App() {
   // Handlers
   const handleUpdateSchool = (updated: SchoolMasterData) => {
     isDirtyRef.current = true;
-    setAppState((prev) => ({ ...prev, school: updated }));
+    const newYear = updated.tahunAnggaran?.trim() || '2026';
+    setAppState((prev) => {
+      const updatedKwitansi = healKwitansiList(prev.kwitansiList, newYear);
+      const updatedWageReports = (prev.wageReports || []).map((wr) => {
+        const oldBukti = wr.noBuktiKwitansi;
+        const newBukti = oldBukti ? oldBukti.replace(/\/(19\d\d|20\d\d)$/, `/${newYear}`) : oldBukti;
+        return {
+          ...wr,
+          noBuktiKwitansi: newBukti,
+        };
+      });
+      return {
+        ...prev,
+        school: updated,
+        kwitansiList: updatedKwitansi,
+        wageReports: updatedWageReports,
+      };
+    });
   };
 
   const handleUpdateRpd = (updatedItems: RpdItem[]) => {

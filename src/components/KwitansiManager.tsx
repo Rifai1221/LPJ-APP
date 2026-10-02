@@ -24,6 +24,7 @@ import {
   normalizeMaterialItems,
   getHarmonizedKwitansiUraian,
   getAutoHealedKwitansiItems,
+  getHarmonizedKwitansiNoBukti,
 } from '../services/autoGeneratorService';
 import { isRegisteredVendor, isSiplahVendor, findMasterStore, isInternalNonVendorTransaction } from '../utils/vendorValidation';
 import { VendorQuickRegisterModal } from './VendorQuickRegisterModal';
@@ -384,7 +385,7 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-800 font-mono font-bold text-[11px]">
-                        {kw.noBukti}
+                        {getHarmonizedKwitansiNoBukti(kw, school?.tahunAnggaran)}
                       </span>
                       <span className="text-[11px] text-slate-500">{kw.tanggal}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
@@ -437,9 +438,13 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-blue-600 font-mono">No. {selectedKw.noBukti}</span>
+                    <span className="text-xs font-bold text-blue-600 font-mono">
+                      No. {getHarmonizedKwitansiNoBukti(selectedKw, school?.tahunAnggaran)}
+                    </span>
                     {selectedKw.noSpb && (
-                      <span className="text-xs text-slate-500 font-mono">| SPB: {selectedKw.noSpb}</span>
+                      <span className="text-xs text-slate-500 font-mono">
+                        | SPB: {getHarmonizedKwitansiNoBukti({ noBukti: selectedKw.noSpb, tanggal: selectedKw.tanggal }, school?.tahunAnggaran)}
+                      </span>
                     )}
                   </div>
                   <h3 className="text-base font-bold text-slate-900 mt-0.5 flex items-center gap-2">

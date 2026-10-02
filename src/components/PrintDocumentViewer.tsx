@@ -23,6 +23,7 @@ import {
   normalizeMaterialItems,
   getHarmonizedKwitansiUraian,
   getAutoHealedKwitansiItems,
+  getHarmonizedKwitansiNoBukti,
 } from '../services/autoGeneratorService';
 
 interface PrintDocumentViewerProps {
@@ -1499,7 +1500,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                       <div className="space-y-4">
                         <div className="flex justify-between items-start border-b border-black pb-2">
                           <div className="font-mono text-xs space-y-0.5">
-                            <p>No. : <strong>{kw.noBukti}</strong></p>
+                            <p>No. : <strong>{getHarmonizedKwitansiNoBukti(kw, school.tahunAnggaran)}</strong></p>
                             <p>Tahun : <strong>{school.tahunAnggaran}</strong></p>
                           </div>
                           <div className="text-right">
@@ -1716,7 +1717,9 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
 
                         <div className="flex justify-between items-start text-xs pt-2">
                           <div>
-                            <p className="font-mono">Nomor : <strong>{kw.noSpb}</strong></p>
+                            <p className="font-mono">
+                              Nomor : <strong>{getHarmonizedKwitansiNoBukti({ noBukti: kw.noSpb, tanggal: kw.tanggal }, school.tahunAnggaran)}</strong>
+                            </p>
                           </div>
                           <div className="text-right">
                             <p>{school.kabKota}, {kw.tanggalFormatted}</p>

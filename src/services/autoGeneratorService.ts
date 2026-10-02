@@ -300,33 +300,83 @@ export function getAutoHealedKwitansiItems<
 }
 
 /**
- * Heals an entire list of Kwitansi documents, ensuring SMKK items are permanently restored.
+ * Harmonizes Kwitansi or SPB number by making sure the trailing year matches
+ * either the school fiscal year (tahunAnggaran) or transaction date year.
+ */
+export function getHarmonizedKwitansiNoBukti(
+  kw?: { noBukti?: string; tanggal?: string },
+  targetYear?: string
+): string {
+  if (!kw?.noBukti) return '';
+  let effYear = targetYear?.trim();
+  if (!effYear && kw.tanggal) {
+    const match = kw.tanggal.match(/\b(20\d\d|19\d\d)\b/);
+    if (match) effYear = match[1];
+  }
+  if (!effYear) effYear = '2026';
+  return kw.noBukti.replace(/\/(19\d\d|20\d\d)$/, `/${effYear}`);
+}
+
+/**
+ * Heals an entire list of Kwitansi documents, ensuring SMKK items are permanently restored
+ * and the trailing year in noBukti, noSpb, and uraian matches the active tahunAnggaran.
  */
 export function healKwitansiList<
-  K extends { noBukti?: string; tipe?: string; uraian?: string; nominal?: number; penerimaPekerjaan?: string; items?: any[] }
->(list: K[]): K[] {
+  K extends {
+    noBukti?: string;
+    noSpb?: string;
+    tipe?: string;
+    uraian?: string;
+    nominal?: number;
+    tanggal?: string;
+    penerimaPekerjaan?: string;
+    items?: any[];
+  }
+>(list: K[], targetYear?: string): K[] {
   if (!Array.isArray(list)) return [];
   return list.map((kw) => {
+    let updatedKw = { ...kw };
+
+    let effYear = targetYear?.trim();
+    if (!effYear && updatedKw.tanggal) {
+      const match = updatedKw.tanggal.match(/\b(20\d\d|19\d\d)\b/);
+      if (match) effYear = match[1];
+    }
+    if (!effYear) effYear = '2026';
+
+    if (updatedKw.noBukti && /\/(19\d\d|20\d\d)$/.test(updatedKw.noBukti)) {
+      updatedKw.noBukti = updatedKw.noBukti.replace(/\/(19\d\d|20\d\d)$/, `/${effYear}`);
+    }
+
+    if (updatedKw.noSpb && /\/(19\d\d|20\d\d)$/.test(updatedKw.noSpb)) {
+      updatedKw.noSpb = updatedKw.noSpb.replace(/\/(19\d\d|20\d\d)$/, `/${effYear}`);
+    }
+
+    if (updatedKw.uraian && /Tahun\s+(19\d\d|20\d\d)/i.test(updatedKw.uraian)) {
+      updatedKw.uraian = updatedKw.uraian.replace(/Tahun\s+(19\d\d|20\d\d)/gi, `Tahun ${effYear}`);
+    }
+
     const isSmkk =
-      /smkk/i.test(kw.noBukti || '') ||
-      /smkk|k3|keselamatan kerja|apd/i.test(kw.uraian || '') ||
-      kw.tipe === 'SMKK';
+      /smkk/i.test(updatedKw.noBukti || '') ||
+      /smkk|k3|keselamatan kerja|apd/i.test(updatedKw.uraian || '') ||
+      updatedKw.tipe === 'SMKK';
 
     if (isSmkk) {
       const isCorrupted =
-        !kw.items ||
-        kw.items.length === 0 ||
-        kw.items.some((it) => /semen|pasir|split|kaso|batu|paku campuran/i.test(it.namaBarang));
+        !updatedKw.items ||
+        updatedKw.items.length === 0 ||
+        updatedKw.items.some((it) => /semen|pasir|split|kaso|batu|paku campuran/i.test(it.namaBarang));
 
       if (isCorrupted) {
-        return {
-          ...kw,
-          items: DEFAULT_SMKK_ITEMS,
+        updatedKw = {
+          ...updatedKw,
+          items: DEFAULT_SMKK_ITEMS as any,
           penerimaPekerjaan: 'Penyedia APD & Keselamatan Kerja',
         };
       }
     }
-    return kw;
+
+    return updatedKw;
   });
 }
 
