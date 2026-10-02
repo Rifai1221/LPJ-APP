@@ -7,6 +7,7 @@ import {
   initialProgressWeeks,
 } from '../data/initialData';
 import { DEFAULT_DIVISIONS, renumberDivisions } from '../utils/divisionHelper';
+import { healKwitansiList } from './autoGeneratorService';
 
 const STORAGE_KEY = 'LPJ_REVITALISASI_DATA_V1';
 
@@ -57,7 +58,7 @@ export function sanitizeAndFilterDemoState(state: AppStateData): AppStateData {
   return {
     ...state,
     progressWeeks: normalizedWeeks,
-    kwitansiList: state.kwitansiList || [],
+    kwitansiList: healKwitansiList(state.kwitansiList || []),
     wageReports: state.wageReports || [],
     bkbRecords: state.bkbRecords || [],
     manualBkuTransactions: state.manualBkuTransactions || [],

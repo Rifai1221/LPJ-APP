@@ -653,29 +653,8 @@ export default function App() {
       });
     });
 
-    // 3. Update Progress Weeks divisions based on Real RAB Divisions
-    const updatedProgressWeeks = appState.progressWeeks.map((pw) => {
-      const newDivisions = real.divisions.map((rd) => {
-        const existingDiv = pw.divisions?.find((ed) => ed.kode === rd.kode);
-        const bobot = totalRab > 0 ? parseFloat(((rd.subTotal / totalRab) * 100).toFixed(2)) : 0;
-        return {
-          id: `div-p-${rd.kode}`,
-          kode: rd.kode,
-          kategori: (rd.kode === 'I' ? 'MANAJEMEN' : 'FISIK') as 'MANAJEMEN' | 'FISIK',
-          uraian: rd.uraian,
-          bobotTotal: bobot,
-          prestasiMingguLalu: existingDiv?.prestasiMingguLalu || 0,
-          prestasiMingguIni: existingDiv?.prestasiMingguIni || 0,
-          prestasiSdMingguIni: existingDiv?.prestasiSdMingguIni || 0,
-          materialRef: rd.items.map((i) => i.uraian.toLowerCase().split(' ')[0]),
-        };
-      });
-
-      return {
-        ...pw,
-        divisions: newDivisions,
-      };
-    });
+    // 3. Preserve User's Progress Weeks & Bobot table intact (Solusi A: Don't mutate user's custom progress weights)
+    const progressWeeksToUse = appState.progressWeeks;
 
     // 4. Automatically re-generate Kwitansi, Bon Toko, SPB, and Upah for all active progress weeks
     const existingTargetWeeks = Array.from(
@@ -686,7 +665,7 @@ export default function App() {
       )
     ).sort((a, b) => a - b);
 
-    const progressActiveWeeks = updatedProgressWeeks
+    const progressActiveWeeks = progressWeeksToUse
       .filter((pw) => (pw.bobotRealisasi || 0) > 0 || pw.mingguKe === 1 || (pw.divisions || []).some((d) => (d.prestasiMingguIni || 0) > 0))
       .map((pw) => pw.mingguKe);
 
@@ -700,13 +679,13 @@ export default function App() {
 
     if (targetWeeksToRegen.length > 0) {
       targetWeeksToRegen.forEach((targetWeek) => {
-        const weekObj = updatedProgressWeeks.find((w) => w.mingguKe === targetWeek);
+        const weekObj = progressWeeksToUse.find((w) => w.mingguKe === targetWeek);
         if (!weekObj) return;
 
         const res = generateWeeklyTransactionsFromProgressAndRealData({
           targetWeek,
           weekObj,
-          weeksToUse: updatedProgressWeeks,
+          weeksToUse: progressWeeksToUse,
           school: updatedSchool,
           workers: appState.workers,
           stores: appState.stores || [],
@@ -769,7 +748,8 @@ export default function App() {
       school: updatedSchool,
       realSchoolData: real,
       rpdItems: newRpdItems.length > 0 ? newRpdItems : prev.rpdItems,
-      progressWeeks: updatedProgressWeeks,
+      // Keep user's progressWeeks intact without altering their custom weights or curves!
+      progressWeeks: prev.progressWeeks,
       kwitansiList: updatedKwitansi,
       wageReports: updatedWageReports,
       bkbRecords: updatedBkb,

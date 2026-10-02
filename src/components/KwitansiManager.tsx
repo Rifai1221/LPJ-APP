@@ -18,7 +18,11 @@ import {
 import { KwitansiDocument, SchoolMasterData, ProjectProgressWeek, StoreVendor } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { terbilangRupiah } from '../utils/terbilang';
-import { normalizeMaterialItems, getHarmonizedKwitansiUraian } from '../services/autoGeneratorService';
+import {
+  normalizeMaterialItems,
+  getHarmonizedKwitansiUraian,
+  getAutoHealedKwitansiItems,
+} from '../services/autoGeneratorService';
 import { isRegisteredVendor, isSiplahVendor, findMasterStore, isInternalNonVendorTransaction } from '../utils/vendorValidation';
 import { VendorQuickRegisterModal } from './VendorQuickRegisterModal';
 
@@ -531,10 +535,7 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
                   const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
                   const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
 
-                  const displayItems =
-                    selectedKw.tipe === 'MATERIAL' && selectedKw.items && selectedKw.items.length > 0
-                      ? normalizeMaterialItems(selectedKw.items)
-                      : selectedKw.items || [];
+                  const displayItems = getAutoHealedKwitansiItems(selectedKw);
 
                   return (
                     <div className="mt-3 border-t border-slate-200 pt-3">

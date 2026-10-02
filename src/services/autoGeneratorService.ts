@@ -244,6 +244,92 @@ export function getHarmonizedKwitansiUraian(kw: {
   return kw.uraian;
 }
 
+export const DEFAULT_SMKK_ITEMS: Array<{
+  namaBarang: string;
+  volume: number;
+  satuan: string;
+  hargaSatuan: number;
+  jumlah: number;
+}> = [
+  { namaBarang: 'Penerapan SMKK - Tali keselamatan', volume: 1, satuan: 'roll', hargaSatuan: 550206, jumlah: 550206 },
+  { namaBarang: 'Penerapan SMKK - Peralatan P3K', volume: 1, satuan: 'set', hargaSatuan: 2500000, jumlah: 2500000 },
+  { namaBarang: 'Penerapan SMKK - Rambu-Rambu dan Pengendalian Resiko K3', volume: 1, satuan: 'set', hargaSatuan: 912302, jumlah: 912302 },
+  { namaBarang: 'Penerapan SMKK - Helm kepala', volume: 10, satuan: 'buah', hargaSatuan: 83431, jumlah: 834310 },
+  { namaBarang: 'Penerapan SMKK - Rompi', volume: 10, satuan: 'buah', hargaSatuan: 88852, jumlah: 888520 },
+  { namaBarang: 'Penerapan SMKK - Sepatu boot', volume: 10, satuan: 'buah', hargaSatuan: 134195, jumlah: 1341950 },
+  { namaBarang: 'Penerapan SMKK - Sarung tangan', volume: 10, satuan: 'buah', hargaSatuan: 59763, jumlah: 597630 },
+];
+
+/**
+ * Universal Auto-Healer for Kwitansi Items:
+ * 1. Automatically restores SMKK kwitansi that had accidentally been filled with building materials (semen/pasir/kaso).
+ * 2. Normalizes composite materials for pure MATERIAL transactions.
+ * 3. Leaves other transactions untouched.
+ */
+export function getAutoHealedKwitansiItems<
+  T extends { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }
+>(
+  kw: { noBukti?: string; tipe?: string; uraian?: string; nominal?: number; items?: T[] } | null | undefined
+): T[] {
+  if (!kw) return [];
+
+  const isSmkk =
+    /smkk/i.test(kw.noBukti || '') ||
+    /smkk|k3|keselamatan kerja|apd/i.test(kw.uraian || '') ||
+    kw.tipe === 'SMKK';
+
+  // If it's SMKK, check if items were contaminated with building materials or are empty
+  if (isSmkk) {
+    const isCorrupted =
+      !kw.items ||
+      kw.items.length === 0 ||
+      kw.items.some((it) => /semen|pasir|split|kaso|batu|paku campuran/i.test(it.namaBarang));
+
+    if (isCorrupted) {
+      return DEFAULT_SMKK_ITEMS as unknown as T[];
+    }
+    return kw.items || [];
+  }
+
+  // Pure MATERIAL kwitansi
+  if (kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0) {
+    return normalizeMaterialItems(kw.items);
+  }
+
+  return kw.items || [];
+}
+
+/**
+ * Heals an entire list of Kwitansi documents, ensuring SMKK items are permanently restored.
+ */
+export function healKwitansiList<
+  K extends { noBukti?: string; tipe?: string; uraian?: string; nominal?: number; penerimaPekerjaan?: string; items?: any[] }
+>(list: K[]): K[] {
+  if (!Array.isArray(list)) return [];
+  return list.map((kw) => {
+    const isSmkk =
+      /smkk/i.test(kw.noBukti || '') ||
+      /smkk|k3|keselamatan kerja|apd/i.test(kw.uraian || '') ||
+      kw.tipe === 'SMKK';
+
+    if (isSmkk) {
+      const isCorrupted =
+        !kw.items ||
+        kw.items.length === 0 ||
+        kw.items.some((it) => /semen|pasir|split|kaso|batu|paku campuran/i.test(it.namaBarang));
+
+      if (isCorrupted) {
+        return {
+          ...kw,
+          items: DEFAULT_SMKK_ITEMS,
+          penerimaPekerjaan: 'Penyedia APD & Keselamatan Kerja',
+        };
+      }
+    }
+    return kw;
+  });
+}
+
 export interface DecomposedItem {
   namaBarang: string;
   volume: number;

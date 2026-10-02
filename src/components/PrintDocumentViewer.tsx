@@ -19,7 +19,11 @@ import { getAvailableMonthsForSchool, parseTxDateToIso, resolveWeekDates } from 
 import { getBalancedBoronganAttendance } from '../utils/boronganHelper';
 
 import { SkTimTeknisDocument } from './SkTimTeknisDocument';
-import { normalizeMaterialItems, getHarmonizedKwitansiUraian } from '../services/autoGeneratorService';
+import {
+  normalizeMaterialItems,
+  getHarmonizedKwitansiUraian,
+  getAutoHealedKwitansiItems,
+} from '../services/autoGeneratorService';
 
 interface PrintDocumentViewerProps {
   isOpen: boolean;
@@ -1523,10 +1527,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                               ));
                           const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
                           const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
-                          const printItems =
-                            kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0
-                              ? normalizeMaterialItems(kw.items)
-                              : kw.items || [];
+                          const printItems = getAutoHealedKwitansiItems(kw);
 
                           return (
                             <div className="pt-2 border-t border-slate-300">
@@ -1639,10 +1640,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                         </div>
 
                         {(() => {
-                          const bonItems =
-                            kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0
-                              ? normalizeMaterialItems(kw.items)
-                              : kw.items || [];
+                          const bonItems = getAutoHealedKwitansiItems(kw);
                           return (
                             <table className="w-full border-collapse border border-black text-xs">
                               <thead>
@@ -1721,10 +1719,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                         </div>
 
                         {(() => {
-                          const spbItems =
-                            kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0
-                              ? normalizeMaterialItems(kw.items)
-                              : kw.items || [];
+                          const spbItems = getAutoHealedKwitansiItems(kw);
                           return (
                             <table className="w-full border-collapse border border-black text-xs">
                               <thead>

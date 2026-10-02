@@ -962,7 +962,7 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
             <div>
               <h4 className="font-bold text-sm">Sinkronisasi Berhasil Diterapkan ke Seluruh Menu!</h4>
               <p className="text-xs text-emerald-700 mt-0.5">
-                Nilai RAB (<strong>{formatRupiah(currentTotalRab)}</strong>), {realData.divisions.length} Divisi Pekerjaan, serta Analisa AHSP telah diperbarui ke RPD, Bobot Laporan Mingguan, Kwitansi Bahan, Daftar Upah, dan Buku Kas (BKU/BKT/BKB).
+                Nilai RAB (<strong>{formatRupiah(currentTotalRab)}</strong>), {realData.divisions.length} Divisi Pekerjaan, serta Analisa AHSP telah diperbarui ke RPD, Kwitansi Bahan, Daftar Upah, dan Buku Kas (BKU/BKT/BKB). Tabel Laporan Mingguan & Bobot tetap terlindungi aman.
               </p>
             </div>
           </div>
