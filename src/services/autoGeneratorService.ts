@@ -318,23 +318,88 @@ export function getHarmonizedKwitansiNoBukti(
 }
 
 /**
- * Heals an entire list of Kwitansi documents, ensuring SMKK items are permanently restored
- * and the trailing year in noBukti, noSpb, and uraian matches the active tahunAnggaran.
+ * Removes duplicate kwitansi documents based on unique signature:
+ * - noBukti + nominal
+ * - noBukti + tanggal
+ * - recipient/store + tanggal + nominal + tipe + mingguRef
+ * Keeps the first occurrence and discards duplicate copies.
+ */
+export function deduplicateKwitansiList<
+  K extends {
+    id?: string;
+    noBukti?: string;
+    noSpb?: string;
+    tanggal?: string;
+    nominal?: number;
+    tipe?: string;
+    namaToko?: string;
+    penerimaNama?: string;
+    uraian?: string;
+    mingguKeRef?: number;
+    items?: any[];
+  }
+>(list: K[]): K[] {
+  if (!Array.isArray(list)) return [];
+  const seenKeys = new Set<string>();
+  const result: K[] = [];
+
+  for (const item of list) {
+    const normNoBukti = (item.noBukti || '').trim().toUpperCase();
+    const normTanggal = (item.tanggal || '').trim();
+    const normNominal = Math.round(item.nominal || 0);
+    const normTipe = (item.tipe || '').trim().toUpperCase();
+    const normStore = (item.namaToko || item.penerimaNama || '').trim().toLowerCase();
+    const normWeek = item.mingguKeRef || 0;
+
+    // Signature 1: By noBukti + nominal
+    const key1 = normNoBukti ? `NO:${normNoBukti}|NOM:${normNominal}` : '';
+    // Signature 2: By noBukti + tanggal
+    const key2 = normNoBukti ? `NO:${normNoBukti}|TGL:${normTanggal}` : '';
+    // Signature 3: By store/recipient + tanggal + nominal + type + week
+    const key3 = `STORE:${normStore}|TGL:${normTanggal}|NOM:${normNominal}|TIPE:${normTipe}|W:${normWeek}`;
+
+    let isDuplicate = false;
+    if (key1 && seenKeys.has(key1)) {
+      isDuplicate = true;
+    } else if (key2 && seenKeys.has(key2)) {
+      isDuplicate = true;
+    } else if (seenKeys.has(key3)) {
+      isDuplicate = true;
+    }
+
+    if (!isDuplicate) {
+      if (key1) seenKeys.add(key1);
+      if (key2) seenKeys.add(key2);
+      seenKeys.add(key3);
+      result.push(item);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Heals an entire list of Kwitansi documents, ensuring SMKK items are permanently restored,
+ * trailing year matches active tahunAnggaran, and any duplicate documents are removed.
  */
 export function healKwitansiList<
   K extends {
+    id?: string;
     noBukti?: string;
     noSpb?: string;
     tipe?: string;
     uraian?: string;
     nominal?: number;
     tanggal?: string;
+    namaToko?: string;
+    penerimaNama?: string;
+    mingguKeRef?: number;
     penerimaPekerjaan?: string;
     items?: any[];
   }
 >(list: K[], targetYear?: string): K[] {
   if (!Array.isArray(list)) return [];
-  return list.map((kw) => {
+  const processed = list.map((kw) => {
     let updatedKw = { ...kw };
 
     let effYear = targetYear?.trim();
@@ -378,6 +443,8 @@ export function healKwitansiList<
 
     return updatedKw;
   });
+
+  return deduplicateKwitansiList(processed);
 }
 
 export interface DecomposedItem {
@@ -1041,7 +1108,11 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
   const formattedDateEnd = weekDates.endDateFormatted;
   const formattedDateStart = weekDates.startDateFormatted;
 
-  const newKwitansiList: KwitansiDocument[] = [...existingKwitansi];
+  // 1. Clean previous auto-generated kwitansi for this targetWeek to prevent duplication
+  const cleanExistingKwitansi = existingKwitansi.filter(
+    (k) => k.mingguKeRef !== targetWeek
+  );
+  const newKwitansiList: KwitansiDocument[] = [...cleanExistingKwitansi];
   const updatedWageReports: WeeklyWageReport[] = [...existingWageReports];
   const updatedBkb: BkbTransaction[] = [...existingBkb];
 
@@ -2089,7 +2160,7 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
   });
 
   return {
-    updatedKwitansi: finalizedKwitansi,
+    updatedKwitansi: deduplicateKwitansiList(finalizedKwitansi),
     updatedWageReports,
     updatedBkb,
     generatedCount,

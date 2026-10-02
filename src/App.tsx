@@ -551,7 +551,9 @@ export default function App() {
 
   const handleUpdateKwitansiList = (updatedKwitansi: KwitansiDocument[]) => {
     isDirtyRef.current = true;
-    setAppState((prev) => ({ ...prev, kwitansiList: updatedKwitansi }));
+    const year = appState.school?.tahunAnggaran?.trim() || '2026';
+    const cleaned = healKwitansiList(updatedKwitansi, year);
+    setAppState((prev) => ({ ...prev, kwitansiList: cleaned }));
   };
 
   const handleUpdateRealData = (newData: RealSchoolData) => {
