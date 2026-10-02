@@ -47,22 +47,40 @@ export function getDateInWeek(startDateIso: string, dayOffset: number) {
  * 2. Melakukan AGREGASI / PENGGABUNGAN barang sejenis dalam kwitansi yang sama, sehingga tidak ada barang yang muncul berulang kali dengan harga satuan berbeda.
  * 3. Menghitung harga satuan rata-rata tertimbang (harmonized price) secara presisi sehingga total nominal tetap 100% klop dengan RAB.
  */
+/**
+ * Universal Detector for Pure Direct Retail Materials:
+ * Identifies if a line item is already a physical single commercial store material
+ * (e.g. Semen, Pasir, Paku, Besi, Cat, Bata, Kayu, Keramik) or a composite scope/trade that
+ * needs decomposition into physical store materials.
+ */
+export function isPureDirectMaterial(name: string): boolean {
+  const n = (name || '').toLowerCase().trim();
+  if (!n) return true;
+  // If it starts with or contains job verbs or trade scopes, it's definitely NOT a pure single material:
+  if (/pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar|cor\b|pengecoran|plesteran|acian|urugan|galian|instalasi|pengecatan|pengukuran|bowplank|bouwplank|finishing|pembersihan/i.test(n)) {
+    return false;
+  }
+  // Composite trades
+  if (/rangka atap|penutup atap|struktur|kuda-kuda|kuda kuda|titik lampu|titik saklar|titik stop|sanitasi|saluran air/i.test(n)) {
+    return false;
+  }
+  // Otherwise check if it matches standard physical single retail materials:
+  return /semen|pasir|batu\b|split|kerikil|sirtu|bata\b|hebel|batako|besi\b|kawat|bendrat|paku\b|baut|sekrup|amplas|kertas gosok|lem\b|seal|sealant|lakban|thinner|tiner|cat\b|plamir|kuas|roll\b|hollow|gypsum|grc|kalsiboard|spandek|genteng|asbes|seng\b|nok\b|talang|reng\b|kanal\b|kabel|lampu|saklar|stop kontak|steker|fitting|pipa\b|kran\b|knee\b|socket|teflon|keramik|granit|ubin|grout|oker|engsel|grendel|kunci|handle|hak angin|kaca\b|papan\b|kaso\b|balok\b|triplek|plywood|multiplek|dolken|bambu/i.test(n);
+}
+
 export function normalizeMaterialItems<T extends { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }>(
   rawItems: T[]
 ): T[] {
   if (!rawItems || rawItems.length === 0) return [];
 
-  // 0. Auto-Decompose any composite job titles (e.g. "Pekerjaan Pengukuran & Pasang Bowplank") into physical materials
+  // 0. Universal Auto-Decompose any composite / non-pure-material items into physical store materials
   const expandedItems: T[] = [];
   rawItems.forEach((item) => {
     const rawName = (item.namaBarang || '').trim();
     const rawJml = item.jumlah || 0;
-    const isCompositeJob =
-      /pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar|bowplank|bouwplank|pengukuran/i.test(
-        rawName
-      );
+    const isCompositeJob = !isPureDirectMaterial(rawName);
 
-    if (isCompositeJob && rawJml >= 30000) {
+    if (isCompositeJob && rawJml >= 25000) {
       const decomposed = decomposeRealisticBahanAndUpah(rawName, rawJml, 0);
       if (decomposed.bahanItems.length > 0) {
         decomposed.bahanItems.forEach((bi) => {
@@ -1214,9 +1232,9 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
               jumlah: execRabJml,
             });
           } else {
-            // Kategori BAHAN langsung: Dekomposisi jika merupakan judul pekerjaan komposit agar di bon toko tampil rincian material riil
-            const isCompositeJob = /pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar/i.test(it.uraian);
-            if (isCompositeJob && execRabJml >= 300000) {
+            // Kategori BAHAN langsung: Dekomposisi jika bukan merupakan bahan retail murni tunggal
+            const isCompositeJob = !isPureDirectMaterial(it.uraian);
+            if (isCompositeJob && execRabJml >= 25000) {
               const decomposedBahan = decomposeRealisticBahanAndUpah(it.uraian, execRabJml, 0);
               bahanItems.push(...decomposedBahan.bahanItems);
             } else {

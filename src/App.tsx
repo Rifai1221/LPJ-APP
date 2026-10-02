@@ -18,6 +18,7 @@ import {
   generateTaxesFromKwitansi,
   generateWeeklyTransactionsFromProgressAndRealData,
   normalizeMaterialItems,
+  isPureDirectMaterial,
 } from './services/autoGeneratorService';
 import {
   SchoolTenant,
@@ -686,10 +687,12 @@ export default function App() {
     ).sort((a, b) => a - b);
 
     const progressActiveWeeks = updatedProgressWeeks
-      .filter((pw) => (pw.bobotRealisasi || 0) > 0 || pw.mingguKe === 1)
+      .filter((pw) => (pw.bobotRealisasi || 0) > 0 || pw.mingguKe === 1 || (pw.divisions || []).some((d) => (d.prestasiMingguIni || 0) > 0))
       .map((pw) => pw.mingguKe);
 
-    const targetWeeksToRegen = existingTargetWeeks.length > 0 ? existingTargetWeeks : progressActiveWeeks;
+    const targetWeeksToRegen = Array.from(
+      new Set([1, ...existingTargetWeeks, ...progressActiveWeeks])
+    ).sort((a, b) => a - b);
 
     let updatedKwitansi = [...appState.kwitansiList];
     let updatedWageReports = [...appState.wageReports];
@@ -721,23 +724,39 @@ export default function App() {
       });
     }
 
-    // Deep Force-Sync: Normalize & decompose any composite job titles across all existing kwitansi
+    // Universal Full Regeneration of ALL existing Kwitansi & Bon Toko across all weeks
     updatedKwitansi = updatedKwitansi.map((kw) => {
-      if (kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0) {
-        const hasCompositeJob = kw.items.some((it) =>
-          /pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar|bowplank|bouwplank|pengukuran/i.test(
-            it.namaBarang || ''
-          )
-        );
+      if (kw.tipe === 'MATERIAL' || kw.tipe === 'PERABOT' || !kw.tipe) {
+        let currentItems = kw.items && kw.items.length > 0 ? kw.items : [
+          {
+            namaBarang: (kw.uraian || 'Material Bangunan')
+              .replace(/^Pembayaran Lunas Biaya Pembelian Material\/Bahan\s*\(/i, '')
+              .replace(/\),.*$/i, '')
+              .replace(/Pembayaran Lunas Biaya Pembelian Material\s*/i, '')
+              .trim(),
+            volume: 1,
+            satuan: 'ls',
+            hargaSatuan: kw.nominal,
+            jumlah: kw.nominal,
+          },
+        ];
+
+        const hasCompositeJob = currentItems.some((it) => !isPureDirectMaterial(it.namaBarang || ''));
         if (hasCompositeJob) {
-          const normalized = normalizeMaterialItems(kw.items);
+          const normalized = normalizeMaterialItems(currentItems);
+          const firstNames = normalized
+            .map((i: { namaBarang: string }) => i.namaBarang)
+            .slice(0, 3)
+            .join(', ');
           return {
             ...kw,
             items: normalized,
-            uraian: `Pembayaran Lunas Biaya Pembelian Material/Bahan (${normalized
-              .map((i: { namaBarang: string }) => i.namaBarang)
-              .slice(0, 3)
-              .join(', ')}), Untuk Pekerjaan Revitalisasi ${updatedSchool.namaSekolah}, Tahun ${updatedSchool.tahunAnggaran || '2026'}, Daftar Terlampir.`,
+            uraian: `Pembayaran Lunas Biaya Pembelian Material/Bahan (${firstNames}), Untuk Pekerjaan Revitalisasi ${updatedSchool.namaSekolah}, Tahun ${updatedSchool.tahunAnggaran || '2026'}, Daftar Terlampir.`,
+          };
+        } else if (!kw.items || kw.items.length === 0) {
+          return {
+            ...kw,
+            items: currentItems,
           };
         }
       }
