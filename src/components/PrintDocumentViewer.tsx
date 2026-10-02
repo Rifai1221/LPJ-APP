@@ -1478,8 +1478,20 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
              ======================================================== */}
           {(docType === 'ALL' || docType === 'KWITANSI' || docType === 'FAKTUR' || docType === 'SPB') && (
             <div className="space-y-8">
-              {/* If Single Kwitansi mode, show activeKwitansi; if ALL, loop over all kwitansis */}
-              {(docType === 'ALL' ? kwitansiList : [activeKwitansi]).map((kw) => (
+              {/* If Single Kwitansi mode, show activeKwitansi; if ALL, loop over all kwitansis sorted by date */}
+              {(docType === 'ALL'
+                ? [...kwitansiList].sort((a, b) => {
+                    const isoA = parseTxDateToIso(a.tanggal) || a.tanggal || '';
+                    const isoB = parseTxDateToIso(b.tanggal) || b.tanggal || '';
+                    const cmp = isoA.localeCompare(isoB);
+                    if (cmp !== 0) return cmp;
+                    const wA = a.mingguKeRef || 0;
+                    const wB = b.mingguKeRef || 0;
+                    if (wA !== wB) return wA - wB;
+                    return a.noBukti.localeCompare(b.noBukti, undefined, { numeric: true });
+                  })
+                : [activeKwitansi]
+              ).map((kw) => (
                 <div key={`kw-doc-group-${kw.id}`} className="space-y-6">
                   {/* KWITANSI RESMI */}
                   {(docType === 'ALL' || docType === 'KWITANSI') && (

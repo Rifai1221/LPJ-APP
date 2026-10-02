@@ -13,11 +13,13 @@ import {
   Layers,
   Users,
   Building,
+  ArrowUpDown,
   X
 } from 'lucide-react';
 import { KwitansiDocument, SchoolMasterData, ProjectProgressWeek, StoreVendor } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { terbilangRupiah } from '../utils/terbilang';
+import { parseTxDateToIso } from '../utils/monthHelper';
 import {
   normalizeMaterialItems,
   getHarmonizedKwitansiUraian,
@@ -53,6 +55,7 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
 }) => {
   const [activeType, setActiveType] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('ASC');
   const [selectedKw, setSelectedKw] = useState<KwitansiDocument | null>(kwitansiList[0] || null);
 
   // Quick Register Modal
@@ -65,15 +68,39 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
   const [enableDailySplit, setEnableDailySplit] = useState(true);
   const [genSuccessMsg, setGenSuccessMsg] = useState<string | null>(null);
 
-  const filtered = kwitansiList.filter((k) => {
-    const matchType = activeType === 'ALL' || k.tipe === activeType;
-    const matchSearch =
-      k.noBukti.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      k.uraian.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (k.namaToko && k.namaToko.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      k.penerimaNama.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchType && matchSearch;
-  });
+  const filtered = kwitansiList
+    .filter((k) => {
+      const matchType = activeType === 'ALL' || k.tipe === activeType;
+      const matchSearch =
+        k.noBukti.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        k.uraian.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (k.namaToko && k.namaToko.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        k.penerimaNama.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchType && matchSearch;
+    })
+    .sort((a, b) => {
+      const isoA = parseTxDateToIso(a.tanggal) || a.tanggal || '';
+      const isoB = parseTxDateToIso(b.tanggal) || b.tanggal || '';
+      const dateCmp = isoA.localeCompare(isoB);
+      if (dateCmp !== 0) {
+        return sortOrder === 'ASC' ? dateCmp : -dateCmp;
+      }
+      const wA = a.mingguKeRef || 0;
+      const wB = b.mingguKeRef || 0;
+      if (wA !== wB) {
+        return sortOrder === 'ASC' ? wA - wB : wB - wA;
+      }
+      return a.noBukti.localeCompare(b.noBukti, undefined, { numeric: true });
+    });
+
+  // Keep selectedKw in sync if filtered list changes
+  React.useEffect(() => {
+    if (filtered.length > 0) {
+      if (!selectedKw || !filtered.some((k) => k.id === selectedKw.id)) {
+        setSelectedKw(filtered[0]);
+      }
+    }
+  }, [filtered, selectedKw]);
 
   const handleToggleWeek = (num: number) => {
     setSelectedWeeksForGen((prev) =>
@@ -327,9 +354,20 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Kwitansi List */}
         <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col max-h-[700px]">
-          <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-700">
-            <span>Daftar Kwitansi ({filtered.length} Dokumen)</span>
-            <span className="text-[11px] text-slate-500">Klik untuk lihat rincian & cetak</span>
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-700">
+            <div className="flex items-center gap-2">
+              <span>Daftar Kwitansi ({filtered.length} Dokumen)</span>
+              <button
+                type="button"
+                onClick={() => setSortOrder((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'))}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-white border border-slate-300 hover:bg-slate-100 text-blue-700 shadow-2xs cursor-pointer transition"
+                title="Klik untuk membalik urutan tanggal"
+              >
+                <ArrowUpDown className="w-3 h-3 text-blue-600" />
+                <span>{sortOrder === 'ASC' ? 'Tanggal: Terlama ➜ Terbaru' : 'Tanggal: Terbaru ➜ Terlama'}</span>
+              </button>
+            </div>
+            <span className="text-[11px] text-slate-500 hidden sm:inline">Klik untuk rincian & cetak</span>
           </div>
 
           <div className="overflow-y-auto divide-y divide-slate-100 flex-1">
