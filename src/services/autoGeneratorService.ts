@@ -57,7 +57,7 @@ export function isPureDirectMaterial(name: string): boolean {
   const n = (name || '').toLowerCase().trim();
   if (!n) return true;
   // If it starts with or contains job verbs or trade scopes, it's definitely NOT a pure single material:
-  if (/pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar|cor\b|pengecoran|plesteran|acian|urugan|galian|instalasi|pengecatan|pengukuran|bowplank|bouwplank|finishing|pembersihan/i.test(n)) {
+  if (/pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar|cor\b|pengecoran|plesteran|acian|urugan|uruk|galian|instalasi|pengecatan|pengukuran|bowplank|bouwplank|finishing|pembersihan|pondasi|aanstamping|tebal|\d+\s*cm|\d+\s*mm|bawah|campuran|manual/i.test(n)) {
     return false;
   }
   // Composite trades
@@ -250,8 +250,14 @@ export function decomposeRealisticBahanAndUpah(
 } {
   const lower = uraian.toLowerCase();
 
+  // A raw item is ONLY a direct single material if it has NO job scope, trade or spec words:
+  const hasJobScope =
+    /pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar|urugan|uruk|galian|cor\b|pengecoran|plesteran|acian|instalasi|pengecatan|pengukuran|bowplank|bouwplank|rangka|penutup|pondasi|struktur|titik|bawah|tebal|\d+\s*cm|\d+\s*mm|campuran|manual/i.test(
+      lower
+    );
+
   const isDirectRawMaterial =
-    !/pekerjaan|pasang|pemasangan|pengadaan|pembuatan|perbaikan|rehab|renovasi|bongkar/i.test(lower) &&
+    !hasJobScope &&
     /semen|paku|pasir|cat|bata|genteng|spandek|pipa|kabel|keramik|hollow|gypsum|grc|besi|kayu|baut|engsel|kunci|saklar/i.test(lower);
 
   let materialTemplates: MaterialTemplate[] = [];
@@ -293,8 +299,41 @@ export function decomposeRealisticBahanAndUpah(
     };
   }
 
+  // 0. Urugan Pasir / Tanah / Timbunan / Sirtu
+  if (/urugan|uruk|timbunan|sirtu/i.test(lower)) {
+    if (/pasir/i.test(lower)) {
+      materialTemplates = [
+        { nama: 'Pasir Urug Pilihan / Timbunan Bersih', satuan: 'm³', typicalPrice: 175000, weight: 1.0 },
+      ];
+      upahRoleTukang = 'Pekerja Perata Pasir Urug';
+      upahRolePekerja = 'Pekerja Langsir & Pemadatan';
+    } else {
+      materialTemplates = [
+        { nama: 'Tanah Urug Sub-grade Pilihan', satuan: 'm³', typicalPrice: 135000, weight: 1.0 },
+      ];
+      upahRoleTukang = 'Pekerja Perata Tanah Urug';
+      upahRolePekerja = 'Pekerja Langsir & Pemadatan';
+    }
+  }
+  // 0B. Pondasi Batu Kali / Aanstamping / Batu Belah
+  else if (/batu kali|pondasi batu|pasangan batu|aanstamping|batu kosong|batu belah/i.test(lower)) {
+    if (/aanstamping|batu kosong/i.test(lower)) {
+      materialTemplates = [
+        { nama: 'Batu Kali Belah 15/20 cm', satuan: 'm³', typicalPrice: 280000, weight: 0.75 },
+        { nama: 'Pasir Urug Alas Aanstamping', satuan: 'm³', typicalPrice: 175000, weight: 0.25 },
+      ];
+    } else {
+      materialTemplates = [
+        { nama: 'Batu Kali Belah 15/20 cm', satuan: 'm³', typicalPrice: 280000, weight: 0.50 },
+        { nama: 'Semen Portland (PC) 50 Kg', satuan: 'Zak', typicalPrice: 68000, weight: 0.32 },
+        { nama: 'Pasir Pasang Ayak Bersih', satuan: 'm³', typicalPrice: 220000, weight: 0.18 },
+      ];
+    }
+    upahRoleTukang = 'Tukang Batu Pondasi';
+    upahRolePekerja = 'Pekerja Adukan & Langsir';
+  }
   // 1. Pengecatan
-  if (/cat|pengecatan|plamir|melamik|politur/i.test(lower)) {
+  else if (/cat|pengecatan|plamir|melamik|politur/i.test(lower)) {
     materialTemplates = [
       { nama: 'Cat Tembok Eksterior/Interior Weatherproof', satuan: 'Pail', typicalPrice: 380000, weight: 0.55 },
       { nama: 'Plamir Tembok / Wall Putty Instan', satuan: 'Zak', typicalPrice: 135000, weight: 0.20 },
