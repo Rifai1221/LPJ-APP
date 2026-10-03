@@ -2306,3 +2306,77 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
     generatedCount,
   };
 }
+
+/**
+ * Complete Reset & Rebalancing Engine:
+ * Purges all accumulated/duplicate material & wage kwitansis and cleanly rebuilds
+ * all weekly expenditures to perfectly match the school's total budget (100% Pagu).
+ */
+export function rebalanceAndResyncAllKwitansiToBudget(params: {
+  school: SchoolMasterData;
+  kwitansiList: KwitansiDocument[];
+  progressWeeks: ProjectProgressWeek[];
+  workers?: any[];
+  stores?: StoreVendor[];
+  rpdItems?: any[];
+  realSchoolData?: any;
+}): {
+  rebalancedKwitansi: KwitansiDocument[];
+  rebalancedWageReports: WeeklyWageReport[];
+  rebalancedBkb: BkbTransaction[];
+} {
+  const { school, kwitansiList, progressWeeks, workers = [], stores = [], rpdItems = [], realSchoolData } = params;
+  const targetYear = school?.tahunAnggaran?.trim() || '2026';
+
+  // 1. Keep core non-accumulated documents: Konsultan (Perencana, Pengawas), Pengelola ADM, SMKK
+  const preservedBase = kwitansiList.filter((k) => {
+    const isKons = k.tipe === 'KONSULTAN' || /kons-p|kons-w|perencana|pengawas/i.test(`${k.noBukti} ${k.uraian}`);
+    const isAdm = k.tipe === 'OPERASIONAL' || /\badm\b|pengelola/i.test(`${k.noBukti} ${k.uraian}`);
+    const isSmkk = k.tipe === 'SMKK' || /smkk|k3/i.test(`${k.noBukti} ${k.uraian}`);
+    return isKons || isAdm || isSmkk;
+  });
+
+  // Deduplicate and heal base documents
+  const healedPreserved = healKwitansiList(preservedBase, targetYear);
+
+  let currentKwitansi: KwitansiDocument[] = [...healedPreserved];
+  let currentWageReports: WeeklyWageReport[] = [];
+  let currentBkb: BkbTransaction[] = [];
+
+  // Determine active weeks to generate
+  const activeWeeks = progressWeeks
+    .filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => d.prestasiMingguIni > 0))
+    .map((w) => w.mingguKe);
+  const targetWeekNums = activeWeeks.length > 0 ? activeWeeks : Array.from({ length: Math.min(progressWeeks.length || 12, 14) }, (_, i) => i + 1);
+
+  // Run generation cleanly starting from base
+  targetWeekNums.forEach((targetWeek) => {
+    const weekObj = progressWeeks.find((w) => w.mingguKe === targetWeek);
+    if (!weekObj) return;
+
+    const res = generateWeeklyTransactionsFromProgressAndRealData({
+      targetWeek,
+      weekObj,
+      weeksToUse: progressWeeks,
+      school,
+      workers,
+      stores,
+      rpdItems,
+      realSchoolData,
+      existingKwitansi: currentKwitansi,
+      existingWageReports: currentWageReports,
+      existingBkb: currentBkb,
+      splitDays: true,
+    });
+
+    currentKwitansi = res.updatedKwitansi;
+    currentWageReports = res.updatedWageReports;
+    currentBkb = res.updatedBkb;
+  });
+
+  return {
+    rebalancedKwitansi: deduplicateKwitansiList(currentKwitansi),
+    rebalancedWageReports: currentWageReports,
+    rebalancedBkb: currentBkb,
+  };
+}
