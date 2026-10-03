@@ -353,10 +353,7 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
             kwitansiList: Array.isArray(cloudData.kwitansiList) ? cloudData.kwitansiList : (defaultState.kwitansiList || []),
             wageReports: Array.isArray(cloudData.wageReports) ? cloudData.wageReports : (defaultState.wageReports || []),
             manualBkuTransactions: Array.isArray(cloudData.manualBkuTransactions) ? cloudData.manualBkuTransactions : [],
-            deletedBkuIds: Array.isArray(cloudData.deletedBkuIds) ? cloudData.deletedBkuIds : [],
             bkbRecords: Array.isArray(cloudData.bkbRecords) ? cloudData.bkbRecords : [],
-            manualTaxRecords: Array.isArray(cloudData.manualTaxRecords) ? cloudData.manualTaxRecords : [],
-            deletedTaxIds: Array.isArray(cloudData.deletedTaxIds) ? cloudData.deletedTaxIds : [],
           };
           const mergedState = sanitizeAndFilterDemoState(rawMergedState);
 
