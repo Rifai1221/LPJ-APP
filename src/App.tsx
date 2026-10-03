@@ -958,11 +958,15 @@ export default function App() {
   const handleAutoGenerateAllWeeks = () => {
     // Collect all weeks that have realisasi > 0 or divisions with progress > 0
     const activeWeeks = appState.progressWeeks
-      .filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => d.prestasiMingguIni > 0))
+      .filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0))
       .map((w) => w.mingguKe);
 
-    const targetList = activeWeeks.length > 0 ? activeWeeks : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    generateTransactionsForWeeks(targetList, true);
+    if (activeWeeks.length === 0) {
+      alert('Belum ada bobot kemajuan fisik (> 0%) pada Laporan Mingguan. Silakan input bobot fisik terlebih dahulu.');
+      return;
+    }
+
+    generateTransactionsForWeeks(activeWeeks, true);
   };
 
   const handleFullResyncToBudget = () => {

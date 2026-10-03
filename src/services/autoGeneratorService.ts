@@ -1253,7 +1253,9 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
     (k) => k.mingguKeRef !== targetWeek
   );
   const newKwitansiList: KwitansiDocument[] = [...cleanExistingKwitansi];
-  const updatedWageReports: WeeklyWageReport[] = [...existingWageReports];
+  const updatedWageReports: WeeklyWageReport[] = existingWageReports.filter(
+    (w) => w.mingguKe !== targetWeek
+  );
   const updatedBkb: BkbTransaction[] = [...existingBkb];
 
   const generatedCount = {
@@ -1263,6 +1265,20 @@ export function generateWeeklyTransactionsFromProgressAndRealData({
     smkk: 0,
     manajemen: 0,
   };
+
+  // STRICT ZERO-PROGRESS CHECK:
+  // If physical progress for this week is 0% (or no active division progress), DO NOT generate any labor/materials!
+  const totalDivPrestasi = (weekObj.divisions || []).reduce((s, d) => s + (d.prestasiMingguIni || 0), 0);
+  const hasRealProgress = (weekObj.bobotRealisasi && weekObj.bobotRealisasi > 0) || totalDivPrestasi > 0;
+
+  if (!hasRealProgress) {
+    return {
+      updatedKwitansi: deduplicateKwitansiList(cleanExistingKwitansi),
+      updatedWageReports,
+      updatedBkb,
+      generatedCount,
+    };
+  }
 
   // 1. Initial Deposit in BKB (Termin 1) if not existing yet and budget > 0
   const hasTermin1Bkb = updatedBkb.some((b) => b.noBukti === 'KREDIT-T1' || b.id === 'bkb-init-termin1');
@@ -2343,11 +2359,11 @@ export function rebalanceAndResyncAllKwitansiToBudget(params: {
   let currentWageReports: WeeklyWageReport[] = [];
   let currentBkb: BkbTransaction[] = [];
 
-  // Determine active weeks to generate
+  // Determine active weeks to generate (STRICT: only weeks with real progress > 0%)
   const activeWeeks = progressWeeks
-    .filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => d.prestasiMingguIni > 0))
+    .filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0))
     .map((w) => w.mingguKe);
-  const targetWeekNums = activeWeeks.length > 0 ? activeWeeks : Array.from({ length: Math.min(progressWeeks.length || 12, 14) }, (_, i) => i + 1);
+  const targetWeekNums = activeWeeks;
 
   // Run generation cleanly starting from base
   targetWeekNums.forEach((targetWeek) => {
