@@ -14,7 +14,7 @@ import {
   RabDivision,
   RabSubItem,
 } from '../types';
-import { resolveWeekDates } from '../utils/monthHelper';
+import { resolveWeekDates, parseTxDateToIso } from '../utils/monthHelper';
 import { getAhspWageRateForRole } from '../utils/divisionHelper';
 
 export function getDateInWeek(startDateIso: string, dayOffset: number) {
@@ -262,23 +262,37 @@ export const DEFAULT_SMKK_ITEMS: Array<{
 
 /**
  * Universal Auto-Healer for Kwitansi Items:
- * 1. Automatically restores SMKK kwitansi that had accidentally been filled with building materials (semen/pasir/kaso).
- * 2. Normalizes composite materials for pure MATERIAL transactions.
- * 3. Leaves other transactions untouched.
+ * 1. Restores SMKK kwitansi with safety equipment items.
+ * 2. Restores Konsultan Perencana, Pengawas, and Pengelola Administrasi LPJ with clean professional services/honorarium items instead of store materials.
+ * 3. Normalizes composite materials for pure MATERIAL transactions.
  */
 export function getAutoHealedKwitansiItems<
   T extends { namaBarang: string; volume: number; satuan: string; hargaSatuan: number; jumlah: number }
 >(
-  kw: { noBukti?: string; tipe?: string; uraian?: string; nominal?: number; items?: T[] } | null | undefined
+  kw: {
+    noBukti?: string;
+    tipe?: string;
+    uraian?: string;
+    nominal?: number;
+    penerimaPekerjaan?: string;
+    penerimaNama?: string;
+    items?: T[];
+  } | null | undefined
 ): T[] {
   if (!kw) return [];
 
+  const noBuktiStr = (kw.noBukti || '').toLowerCase();
+  const uraianStr = (kw.uraian || '').toLowerCase();
+  const perStr = (kw.penerimaPekerjaan || '').toLowerCase();
+  const combined = `${noBuktiStr} ${uraianStr} ${perStr} ${(kw.penerimaNama || '').toLowerCase()}`;
+  const nom = kw.nominal || 0;
+
+  // 1. SMKK / K3
   const isSmkk =
-    /smkk/i.test(kw.noBukti || '') ||
-    /smkk|k3|keselamatan kerja|apd/i.test(kw.uraian || '') ||
+    /smkk/i.test(noBuktiStr) ||
+    /smkk|k3|keselamatan kerja|apd/i.test(uraianStr) ||
     kw.tipe === 'SMKK';
 
-  // If it's SMKK, check if items were contaminated with building materials or are empty
   if (isSmkk) {
     const isCorrupted =
       !kw.items ||
@@ -291,7 +305,65 @@ export function getAutoHealedKwitansiItems<
     return kw.items || [];
   }
 
-  // Pure MATERIAL kwitansi
+  // 2. Konsultan Perencana Teknis
+  const isPerencana =
+    /kons-p/i.test(noBuktiStr) ||
+    /perencana/i.test(uraianStr) ||
+    /perencana/i.test(perStr) ||
+    (kw.tipe === 'KONSULTAN' && /perencana/i.test(combined));
+
+  if (isPerencana) {
+    return [
+      {
+        namaBarang: 'Jasa Konsultansi Perencanaan Teknis & Penyusunan Dokumen RAB / Gambar Kerja',
+        volume: 1,
+        satuan: 'Ls',
+        hargaSatuan: nom,
+        jumlah: nom,
+      },
+    ] as unknown as T[];
+  }
+
+  // 3. Konsultan Pengawas Lapangan
+  const isPengawas =
+    /kons-w/i.test(noBuktiStr) ||
+    /pengawas/i.test(uraianStr) ||
+    /pengawas/i.test(perStr) ||
+    (kw.tipe === 'KONSULTAN' && /pengawas/i.test(combined));
+
+  if (isPengawas) {
+    return [
+      {
+        namaBarang: 'Jasa Konsultansi Pengawasan Teknis Lapangan & Laporan Kemajuan Pekerjaan',
+        volume: 1,
+        satuan: 'Ls',
+        hargaSatuan: nom,
+        jumlah: nom,
+      },
+    ] as unknown as T[];
+  }
+
+  // 4. Biaya Pengelolaan Administrasi LPJ
+  const isPengelolaAdm =
+    /\badm\b/i.test(noBuktiStr) ||
+    /pengelola.*(spj|administrasi|lpj)/i.test(uraianStr) ||
+    /administrasi lpj/i.test(uraianStr) ||
+    /administrasi/i.test(perStr) ||
+    /pengelola spj/i.test(combined);
+
+  if (isPengelolaAdm) {
+    return [
+      {
+        namaBarang: 'Honorarium Biaya Pengelolaan Administrasi SPJ & Pelaporan Kegiatan',
+        volume: 1,
+        satuan: 'Keg',
+        hargaSatuan: nom,
+        jumlah: nom,
+      },
+    ] as unknown as T[];
+  }
+
+  // 5. Pure MATERIAL kwitansi
   if (kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0) {
     return normalizeMaterialItems(kw.items);
   }
@@ -341,6 +413,8 @@ export function deduplicateKwitansiList<
 >(list: K[]): K[] {
   if (!Array.isArray(list)) return [];
   const seenKeys = new Set<string>();
+  const seenNoBukti = new Set<string>();
+  const seenUpahWeek = new Set<number>();
   const result: K[] = [];
 
   for (const item of list) {
@@ -349,28 +423,44 @@ export function deduplicateKwitansiList<
     const normNominal = Math.round(item.nominal || 0);
     const normTipe = (item.tipe || '').trim().toUpperCase();
     const normStore = (item.namaToko || item.penerimaNama || '').trim().toLowerCase();
+    const normUraian = (item.uraian || '').trim().toLowerCase();
     const normWeek = item.mingguKeRef || 0;
 
-    // Signature 1: By noBukti + nominal
-    const key1 = normNoBukti ? `NO:${normNoBukti}|NOM:${normNominal}` : '';
-    // Signature 2: By noBukti + tanggal
-    const key2 = normNoBukti ? `NO:${normNoBukti}|TGL:${normTanggal}` : '';
-    // Signature 3: By store/recipient + tanggal + nominal + type + week
-    const key3 = `STORE:${normStore}|TGL:${normTanggal}|NOM:${normNominal}|TIPE:${normTipe}|W:${normWeek}`;
-
     let isDuplicate = false;
-    if (key1 && seenKeys.has(key1)) {
+
+    // Signature 1: Exact No Bukti
+    if (normNoBukti) {
+      if (seenNoBukti.has(normNoBukti)) {
+        isDuplicate = true;
+      }
+    }
+
+    // Signature 2: Single Upah payment per week
+    if (!isDuplicate && normTipe === 'UPAH' && normWeek > 0) {
+      if (seenUpahWeek.has(normWeek)) {
+        isDuplicate = true;
+      }
+    }
+
+    // Signature 3: Duplicate Uraian + Nominal + Week
+    const keyUraianNom = `UR:${normUraian}|NOM:${normNominal}|W:${normWeek}`;
+    if (!isDuplicate && normNominal > 0 && seenKeys.has(keyUraianNom)) {
       isDuplicate = true;
-    } else if (key2 && seenKeys.has(key2)) {
-      isDuplicate = true;
-    } else if (seenKeys.has(key3)) {
+    }
+
+    // Signature 4: Duplicate Store + Date + Nominal
+    const keyStoreDateNom = `STORE:${normStore}|TGL:${normTanggal}|NOM:${normNominal}`;
+    if (!isDuplicate && normNominal > 0 && normStore && seenKeys.has(keyStoreDateNom)) {
       isDuplicate = true;
     }
 
     if (!isDuplicate) {
-      if (key1) seenKeys.add(key1);
-      if (key2) seenKeys.add(key2);
-      seenKeys.add(key3);
+      if (normNoBukti) seenNoBukti.add(normNoBukti);
+      if (normTipe === 'UPAH' && normWeek > 0) seenUpahWeek.add(normWeek);
+      if (normNominal > 0) {
+        seenKeys.add(keyUraianNom);
+        if (normStore) seenKeys.add(keyStoreDateNom);
+      }
       result.push(item);
     }
   }
@@ -440,6 +530,9 @@ export function healKwitansiList<
         };
       }
     }
+
+    // Always heal items for consulting, management, and clean material
+    updatedKw.items = getAutoHealedKwitansiItems(updatedKw) as any;
 
     return updatedKw;
   });
@@ -928,7 +1021,11 @@ export function calculateBkuFromTransactions(
   if (!deletedIds.includes('bku-init-2')) {
     if (manualInit2) {
       result.push(manualInit2);
-    } else if (termin2Amount > 0 && kwitansiList.some((k) => (k.mingguKeRef || 0) >= 8)) {
+    } else if (
+      termin2Amount > 0 &&
+      (kwitansiList.some((k) => (k.mingguKeRef || 0) >= 6) ||
+        result.reduce((s, r) => s + r.pengeluaran, 0) >= termin1Amount * 0.9)
+    ) {
       result.push({
         id: 'bku-init-2',
         tanggal: termin2DateSlash,
@@ -1013,9 +1110,28 @@ export function calculateBktFromBku(bkuList: BkuTransaction[]): BktTransaction[]
   });
 }
 
-export function generateTaxesFromKwitansi(kwitansiList: KwitansiDocument[]): TaxRecord[] {
-  let counter = 1;
-  return kwitansiList.map((kw) => {
+export function generateTaxesFromKwitansi(
+  kwitansiList: KwitansiDocument[],
+  manualTaxRecords: TaxRecord[] = [],
+  deletedTaxIds: string[] = []
+): TaxRecord[] {
+  const result: TaxRecord[] = [];
+  const deletedSet = new Set(deletedTaxIds || []);
+  const manualMap = new Map((manualTaxRecords || []).map((m) => [m.id, m]));
+
+  // 1. Process from kwitansi
+  kwitansiList.forEach((kw) => {
+    const taxId = `tax-${kw.id}`;
+    if (deletedSet.has(taxId) || deletedSet.has(kw.id)) {
+      return;
+    }
+
+    // Check if user manually edited/overrode this tax record
+    if (manualMap.has(taxId)) {
+      result.push(manualMap.get(taxId)!);
+      return;
+    }
+
     const isKonsultan = kw.tipe === 'KONSULTAN' || kw.tipe === 'OPERASIONAL';
     const isPerabot = kw.tipe === 'PERABOT';
     const isPeralatan = false;
@@ -1031,18 +1147,18 @@ export function generateTaxesFromKwitansi(kwitansiList: KwitansiDocument[]): Tax
     let pph23 = 0;
 
     if (kw.isPpn) {
-      ppn = kw.ppnAmount || Math.round((kw.nominal / 1.11) * 0.11 * 100) / 100;
+      ppn = kw.ppnAmount || Math.round((kw.nominal / 1.11) * 0.11);
     }
     if (kw.isPph22) {
-      pph22 = kw.pph22Amount || Math.round((kw.nominal / 1.11) * 0.015 * 100) / 100;
+      pph22 = kw.pph22Amount || Math.round((kw.nominal / 1.11) * 0.015);
     }
     if (kw.isPph23) {
-      pph23 = kw.pph23Amount || Math.round(kw.nominal * 0.04 * 100) / 100;
+      pph23 = kw.pph23Amount || Math.round(kw.nominal * 0.02);
     }
 
-    return {
-      id: `tax-${kw.id}`,
-      noUrut: counter++,
+    result.push({
+      id: taxId,
+      noUrut: 0,
       noBukti: kw.noBukti,
       tanggal: kw.tanggal,
       bulan: kw.bulan,
@@ -1055,8 +1171,32 @@ export function generateTaxesFromKwitansi(kwitansiList: KwitansiDocument[]): Tax
       pph22,
       pph23,
       totalPajak: ppn + pph22 + pph23,
-    };
+      kwitansiIdRef: kw.id,
+      namaToko: kw.namaToko || kw.penerimaNama,
+      penerimaNama: kw.penerimaNama,
+      statusSetor: ppn + pph22 + pph23 > 0 ? 'LUNAS' : undefined,
+    });
   });
+
+  // 2. Add manual standalone tax records (not tied to kwitansi)
+  manualTaxRecords.forEach((m) => {
+    if (!deletedSet.has(m.id) && !result.some((r) => r.id === m.id)) {
+      result.push(m);
+    }
+  });
+
+  // 3. Sort chronologically by date
+  result.sort((a, b) => {
+    const isoA = parseTxDateToIso(a.tanggal) || a.tanggal || '';
+    const isoB = parseTxDateToIso(b.tanggal) || b.tanggal || '';
+    return isoA.localeCompare(isoB);
+  });
+
+  // 4. Assign clean sequential noUrut (1, 2, 3...)
+  return result.map((t, idx) => ({
+    ...t,
+    noUrut: idx + 1,
+  }));
 }
 
 export interface WeeklyGenerationParams {

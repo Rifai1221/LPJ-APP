@@ -194,7 +194,7 @@ export interface TokoItem {
 export interface KwitansiDocument {
   id: string;
   noBukti: string; // e.g. '01/1MD/2025' or 'UK/01/2025'
-  tipe: 'MATERIAL' | 'UPAH' | 'KONSULTAN' | 'PERABOT' | 'OPERASIONAL';
+  tipe: 'MATERIAL' | 'UPAH' | 'KONSULTAN' | 'PERABOT' | 'OPERASIONAL' | 'SMKK';
   tanggal: string; // e.g. '18/10/2025'
   tanggalFormatted: string; // e.g. '18 Oktober 2025'
   bulan: string; // e.g. 'Oktober 2025'
@@ -277,6 +277,14 @@ export interface TaxRecord {
   pph22: number;
   pph23: number;
   totalPajak: number;
+  isManual?: boolean;
+  kwitansiIdRef?: string;
+  ntpn?: string;
+  tanggalSetor?: string;
+  kategori?: 'Konstruksi' | 'Perabot' | 'Peralatan' | 'Perencanaan_Pengelolaan';
+  statusSetor?: 'LUNAS' | 'BELUM_SETOR';
+  namaToko?: string;
+  penerimaNama?: string;
 }
 
 export interface DivisionProgressItem {
@@ -390,6 +398,8 @@ export interface AppStateData {
   bkbRecords: BkbTransaction[];
   manualBkuTransactions: BkuTransaction[];
   deletedBkuIds?: string[];
+  manualTaxRecords?: TaxRecord[];
+  deletedTaxIds?: string[];
   realSchoolData?: RealSchoolData;
 }
 

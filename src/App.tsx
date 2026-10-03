@@ -9,6 +9,7 @@ import {
   KwitansiDocument,
   BkuTransaction,
   BkbTransaction,
+  TaxRecord,
   ProjectProgressWeek,
   AppStateData,
 } from './types';
@@ -392,10 +393,82 @@ export default function App() {
   }, [bkuList]);
 
   const taxRecords = useMemo(() => {
-    return generateTaxesFromKwitansi(appState.kwitansiList);
-  }, [appState.kwitansiList]);
+    return generateTaxesFromKwitansi(
+      appState.kwitansiList,
+      appState.manualTaxRecords || [],
+      appState.deletedTaxIds || []
+    );
+  }, [appState.kwitansiList, appState.manualTaxRecords, appState.deletedTaxIds]);
 
   // Handlers
+  const handleAddManualTax = (tax: Omit<TaxRecord, 'id' | 'noUrut'>) => {
+    const newTaxId = `tax-manual-${Date.now()}`;
+    const newTax: TaxRecord = {
+      ...tax,
+      id: newTaxId,
+      noUrut: 0,
+      isManual: true,
+    };
+    isDirtyRef.current = true;
+    setAppState((prev) => ({
+      ...prev,
+      manualTaxRecords: [...(prev.manualTaxRecords || []), newTax],
+    }));
+  };
+
+  const handleUpdateTax = (updatedTax: TaxRecord) => {
+    isDirtyRef.current = true;
+    setAppState((prev) => {
+      const existingManual = prev.manualTaxRecords || [];
+      const existsInManual = existingManual.some((m) => m.id === updatedTax.id);
+
+      let newManualList: TaxRecord[];
+      if (existsInManual) {
+        newManualList = existingManual.map((m) => (m.id === updatedTax.id ? updatedTax : m));
+      } else {
+        newManualList = [...existingManual, updatedTax];
+      }
+
+      // Also if tied to kwitansi, sync tax amounts on kwitansi
+      let updatedKwitansi = prev.kwitansiList;
+      if (updatedTax.kwitansiIdRef) {
+        updatedKwitansi = prev.kwitansiList.map((kw) => {
+          if (kw.id === updatedTax.kwitansiIdRef) {
+            return {
+              ...kw,
+              isPpn: updatedTax.ppn11 > 0,
+              isPph22: updatedTax.pph22 > 0,
+              isPph23: updatedTax.pph23 > 0,
+              ppnAmount: updatedTax.ppn11,
+              pph22Amount: updatedTax.pph22,
+              pph23Amount: updatedTax.pph23,
+            };
+          }
+          return kw;
+        });
+      }
+
+      return {
+        ...prev,
+        kwitansiList: updatedKwitansi,
+        manualTaxRecords: newManualList,
+      };
+    });
+  };
+
+  const handleDeleteTax = (taxId: string) => {
+    isDirtyRef.current = true;
+    setAppState((prev) => {
+      const updatedManual = (prev.manualTaxRecords || []).filter((m) => m.id !== taxId);
+      const updatedDeleted = Array.from(new Set([...(prev.deletedTaxIds || []), taxId]));
+      return {
+        ...prev,
+        manualTaxRecords: updatedManual,
+        deletedTaxIds: updatedDeleted,
+      };
+    });
+  };
+
   const handleAddManualBku = (tx: Omit<BkuTransaction, 'id'>, weekNum?: number) => {
     const newTxId = `bku-manual-${Date.now()}`;
     const newTx: BkuTransaction = {
@@ -1227,6 +1300,9 @@ Lanjutkan pengosongan data transaksi?`)
             stores={appState.stores || []}
             onOpenPrintModal={(month) => handleOpenPrint('PAJAK', month)}
             onUpdateStores={handleUpdateStores}
+            onAddManualTax={handleAddManualTax}
+            onUpdateTax={handleUpdateTax}
+            onDeleteTax={handleDeleteTax}
           />
         )}
 

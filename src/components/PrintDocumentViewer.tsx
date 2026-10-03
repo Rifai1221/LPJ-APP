@@ -1529,18 +1529,37 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
                         </div>
 
                         {/* Rincian Barang / Layanan Terlampir Sesuai Format Cetak Resmi */}
-                        {kw.items && kw.items.length > 0 && (() => {
+                        {(() => {
+                          const printItems = getAutoHealedKwitansiItems(kw);
+                          if (!printItems || printItems.length === 0) return null;
+
                           const isServiceOrLabor =
                             kw.tipe !== 'MATERIAL' &&
                             kw.tipe !== 'PERABOT' &&
+                            kw.tipe !== 'SMKK' &&
                             (kw.tipe === 'UPAH' ||
                               kw.tipe === 'KONSULTAN' ||
+                              kw.tipe === 'OPERASIONAL' ||
                               /\bupah\b|\btukang\b|\bpekerja\b|\bjasa\b|\bkonsultan\b|\bperencana\b|\bpengawas\b|\bhonor\b|\badministrasi\b|\badm\b/i.test(
                                 `${kw.noBukti} ${kw.uraian} ${kw.penerimaPekerjaan} ${kw.penerimaNama}`
                               ));
-                          const itemColHeader = isServiceOrLabor ? 'Jenis Layanan' : 'Rincian Barang';
-                          const sectionHeader = isServiceOrLabor ? 'Jenis Layanan / Uraian Terlampir:' : 'Rincian Barang Terlampir:';
-                          const printItems = getAutoHealedKwitansiItems(kw);
+
+                          let itemColHeader = 'Rincian Barang';
+                          let sectionHeader = 'Rincian Barang Terlampir:';
+
+                          if (kw.tipe === 'UPAH' || /upah|harian|borongan/i.test(kw.uraian)) {
+                            itemColHeader = 'Daftar Upah / Posisi Tenaga Kerja';
+                            sectionHeader = 'Rincian Tenaga Kerja & Upah Terlampir:';
+                          } else if (kw.tipe === 'KONSULTAN' || /perencana|pengawas/i.test(kw.uraian)) {
+                            itemColHeader = 'Uraian Jasa Konsultansi Teknis';
+                            sectionHeader = 'Jenis Layanan / Jasa Terlampir:';
+                          } else if (kw.tipe === 'OPERASIONAL' || /administrasi|pengelola/i.test(kw.uraian)) {
+                            itemColHeader = 'Uraian Pengelolaan Administrasi & Honorarium';
+                            sectionHeader = 'Jenis Layanan / Honorarium Terlampir:';
+                          } else if (kw.tipe === 'SMKK' || /smkk|k3/i.test(kw.uraian)) {
+                            itemColHeader = 'Rincian Perlengkapan K3 & APD (SMKK)';
+                            sectionHeader = 'Rincian Perlengkapan Keselamatan Konstruksi:';
+                          }
 
                           return (
                             <div className="pt-2 border-t border-slate-300">
