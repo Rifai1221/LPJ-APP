@@ -1224,9 +1224,9 @@ export function calculateBkuFromTransactions(
     }
 
     // 2. MANAGEMENT FEES (Perencana, Pengawas, Pengelolaan ADM) - strictly calculated from RINCIAN BIAYA MANAJEMEN table for active week!
-    const isPerencanaKw = /perencana/i.test(`${kw.noBukti} ${kw.uraian}`);
-    const isPengawasKw = /pengawas/i.test(`${kw.noBukti} ${kw.uraian}`);
-    const isAdmKw = /administrasi|pengelolaan|\badm\b/i.test(`${kw.noBukti} ${kw.uraian}`);
+    const isPerencanaKw = kw.tipe === 'KONSULTAN' && /perencana/i.test(`${kw.noBukti} ${kw.uraian}`);
+    const isPengawasKw = kw.tipe === 'KONSULTAN' && /pengawas/i.test(`${kw.noBukti} ${kw.uraian}`);
+    const isAdmKw = kw.tipe === 'OPERASIONAL' && /administrasi|pengelolaan|\badm\b/i.test(`${kw.noBukti} ${kw.uraian}`);
 
     if (kwWeek !== null && (isPerencanaKw || isPengawasKw || isAdmKw)) {
       const matchW = activeWeeks.find((w) => w.mingguKe === kwWeek);
