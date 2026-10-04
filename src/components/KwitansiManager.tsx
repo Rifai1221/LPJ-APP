@@ -43,6 +43,7 @@ interface KwitansiManagerProps {
   onUpdateKwitansiList?: (kwList: KwitansiDocument[]) => void;
   onFullResyncToBudget?: () => void;
   onCalibrateToRealProgress?: () => void;
+  onCleanDuplicates?: () => void;
 }
 
 export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
@@ -58,6 +59,7 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
   onUpdateKwitansiList,
   onFullResyncToBudget,
   onCalibrateToRealProgress,
+  onCleanDuplicates,
 }) => {
   const [activeType, setActiveType] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,6 +90,11 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
   const isOverBudget = totalKwitansiNominal > paguAnggaran * 1.05; // > 5% over
 
   const handleCleanDuplicates = () => {
+    if (onCleanDuplicates) {
+      onCleanDuplicates();
+      return;
+    }
+
     if (isOverBudget) {
       if (onCalibrateToRealProgress) {
         onCalibrateToRealProgress();
@@ -194,15 +201,15 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {(duplicateCount > 0 || isOverBudget) && onUpdateKwitansiList && (
+          {(onCleanDuplicates || duplicateCount > 0 || isOverBudget) && (
             <button
               type="button"
               onClick={handleCleanDuplicates}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-rose-500/20 transition cursor-pointer"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 transition cursor-pointer"
               title="Klik untuk membuang seluruh transaksi duplikat/ganda dan menyeimbangkan BKU"
             >
-              <Trash2 className="w-4 h-4 text-rose-200" />
-              <span>🧹 Bersihkan {duplicateCount > 0 ? `${duplicateCount} ` : ''}Kwitansi Ganda</span>
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>Bersihkan Data Ganda</span>
             </button>
           )}
 

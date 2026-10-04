@@ -86,6 +86,9 @@ export default function App() {
   );
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [bkuWeekLimit, setBkuWeekLimit] = useState<number>(() => {
+    return Number(localStorage.getItem('bkuWeekLimit') || '2');
+  });
 
   // Print modal state
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -428,7 +431,8 @@ export default function App() {
       appState.manualBkuTransactions,
       appState.progressWeeks,
       appState.deletedBkuIds || [],
-      appState.wageReports || []
+      appState.wageReports || [],
+      bkuWeekLimit
     );
   }, [
     appState.kwitansiList,
@@ -437,6 +441,7 @@ export default function App() {
     appState.progressWeeks,
     appState.deletedBkuIds,
     appState.wageReports,
+    bkuWeekLimit,
   ]);
 
   const bktList = useMemo(() => {
@@ -623,6 +628,13 @@ export default function App() {
         deletedBkuIds: updatedDeletedIds,
       };
     });
+  };
+
+  const handleUpdateBkuWeekLimit = (limit: number) => {
+    setBkuWeekLimit(limit);
+    localStorage.setItem('bkuWeekLimit', String(limit));
+    setSwitchNotification(`✅ Batas minggu BKU berhasil diubah ke Minggu ${limit}. Seluruh BKU & Saldo disesuaikan.`);
+    setTimeout(() => setSwitchNotification(null), 3000);
   };
 
   // Handlers
@@ -962,7 +974,39 @@ export default function App() {
     }
   };
 
-  // Core generator that breaks down Laporan Mingguan & Bobot into real Bahan, Upah, Alat, SMKK, & Manajemen transactions
+  const handleCleanDuplicates = () => {
+    isDirtyRef.current = true;
+    const originalKwCount = appState.kwitansiList.length;
+    const cleanKw = deduplicateKwitansiList(appState.kwitansiList);
+    const removedKwCount = originalKwCount - cleanKw.length;
+
+    // Clean duplicate manual BKU transactions
+    const seenBkuKeys = new Set<string>();
+    const cleanManualBku = (appState.manualBkuTransactions || []).filter((tx) => {
+      const key = `${tx.noBukti?.trim()}-${tx.tanggal}-${tx.pengeluaran || tx.penerimaan}-${tx.uraian?.trim()}`;
+      if (seenBkuKeys.has(key)) {
+        return false;
+      }
+      seenBkuKeys.add(key);
+      return true;
+    });
+
+    const removedManualBkuCount = (appState.manualBkuTransactions || []).length - cleanManualBku.length;
+    const totalCleaned = removedKwCount + removedManualBkuCount;
+
+    setAppState((prev) => ({
+      ...prev,
+      kwitansiList: cleanKw,
+      manualBkuTransactions: cleanManualBku,
+    }));
+
+    if (totalCleaned > 0) {
+      setSwitchNotification(`✅ Berhasil membersihkan ${totalCleaned} data kwitansi/transaksi ganda. BKU & Kwitansi kini 100% rapi.`);
+    } else {
+      setSwitchNotification(`✨ Semua transaksi & kwitansi sudah rapi (tidak ditemukan data terduplikasi).`);
+    }
+    setTimeout(() => setSwitchNotification(null), 4000);
+  };
   const generateTransactionsForWeeks = (
     targetWeeks: number[],
     splitDays = true,
@@ -1429,6 +1473,9 @@ Lanjutkan pengosongan data transaksi?`)
               handleOpenPrint(mode || 'ALL', undefined, undefined, kwId)
             }
             onCalibrateToRealProgress={handleCalibrateToRealProgress}
+            onCleanDuplicates={handleCleanDuplicates}
+            bkuWeekLimit={bkuWeekLimit}
+            onChangeBkuWeekLimit={handleUpdateBkuWeekLimit}
           />
         )}
 
@@ -1456,6 +1503,7 @@ Lanjutkan pengosongan data transaksi?`)
             onOpenPrintKwitansi={(kwId, mode) =>
               handleOpenPrint(mode || 'ALL', undefined, undefined, kwId)
             }
+            onCleanDuplicates={handleCleanDuplicates}
           />
         )}
 
@@ -1498,6 +1546,7 @@ Lanjutkan pengosongan data transaksi?`)
             onUpdateKwitansiList={handleUpdateKwitansiList}
             onFullResyncToBudget={handleFullResyncToBudget}
             onCalibrateToRealProgress={handleCalibrateToRealProgress}
+            onCleanDuplicates={handleCleanDuplicates}
           />
         )}
 

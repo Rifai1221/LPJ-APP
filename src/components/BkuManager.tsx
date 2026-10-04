@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Eye,
   Wand2,
+  RefreshCw,
 } from 'lucide-react';
 import { BkuTransaction, SchoolMasterData, ProjectProgressWeek, TransactionFilterOptions, StoreVendor, KwitansiDocument } from '../types';
 import { formatRupiah } from '../utils/formatters';
@@ -43,6 +44,9 @@ interface BkuManagerProps {
   onUpdateKwitansi?: (kw: KwitansiDocument, updatedTx?: Partial<BkuTransaction>) => void;
   onOpenPrintKwitansi?: (kwId: string, mode: 'KWITANSI' | 'FAKTUR' | 'SPB' | 'ALL') => void;
   onCalibrateToRealProgress?: () => void;
+  onCleanDuplicates?: () => void;
+  bkuWeekLimit?: number;
+  onChangeBkuWeekLimit?: (limit: number) => void;
 }
 
 export const BkuManager: React.FC<BkuManagerProps> = ({
@@ -59,6 +63,9 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
   onUpdateKwitansi,
   onOpenPrintKwitansi,
   onCalibrateToRealProgress,
+  onCleanDuplicates,
+  bkuWeekLimit = 2,
+  onChangeBkuWeekLimit,
 }) => {
   // Filter Mode: 'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'
   const [filterMode, setFilterMode] = useState<'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'>('ALL');
@@ -504,6 +511,48 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {onChangeBkuWeekLimit && (
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-800">
+              <Clock className="w-3.5 h-3.5 text-blue-600" />
+              <span>Batas Progres BKU s/d:</span>
+              <select
+                value={bkuWeekLimit}
+                onChange={(e) => onChangeBkuWeekLimit(Number(e.target.value))}
+                className="bg-white border border-slate-300 rounded px-1.5 py-0.5 font-bold text-slate-800 cursor-pointer focus:outline-none"
+              >
+                {progressWeeks.map((w) => (
+                  <option key={w.mingguKe} value={w.mingguKe}>
+                    Minggu {w.mingguKe} ({w.bobotRealisasi || w.bobotRencana}%)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {onCleanDuplicates && (
+            <button
+              type="button"
+              onClick={onCleanDuplicates}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+              title="Cari & Hapus Otomatis Kwitansi / Transaksi BKU Terduplikasi"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>Bersihkan Data Ganda</span>
+            </button>
+          )}
+
+          {onCalibrateToRealProgress && (
+            <button
+              type="button"
+              onClick={onCalibrateToRealProgress}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+              title="Singkronkan & Kalibrasikan seluruh BKU dengan Progres Riil"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Kalibrasi BKU</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handlePrintCurrentFilter}

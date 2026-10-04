@@ -1020,10 +1020,12 @@ export function calculateBkuFromTransactions(
   manualTransactions: BkuTransaction[] = [],
   progressWeeks: ProjectProgressWeek[] = [],
   deletedIds: string[] = [],
-  wageReports: WeeklyWageReport[] = []
+  wageReports: WeeklyWageReport[] = [],
+  bkuWeekLimit?: number
 ): BkuTransaction[] {
   const result: BkuTransaction[] = [];
   const yearStr = school?.tahunAnggaran?.trim() || '2026';
+  const effLimit = bkuWeekLimit || 14;
 
   // Determine starting date strictly from Laporan Mingguan & Bobot input
   let startProjectDateIso = `${yearStr}-07-01`;
@@ -1075,9 +1077,10 @@ export function calculateBkuFromTransactions(
   }
 
   // 2. Map all Kwitansi into BKU rows
-  const activeWeeks = (progressWeeks || []).filter(
-    (w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0)
-  );
+  const activeWeeks = (progressWeeks || [])
+    .filter((w) => w.mingguKe <= effLimit)
+    .filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0));
+
   const activeWeekNums = new Set(activeWeeks.map((w) => w.mingguKe));
   const hasAnyActiveProgress = activeWeekNums.size > 0;
 
@@ -1093,10 +1096,15 @@ export function calculateBkuFromTransactions(
       return;
     }
 
+    const kwWeek = extractWeekNumberFromKwitansi(kw);
+    // STRICT ISOLATION: Anything beyond the week limit is excluded!
+    if (kwWeek !== null && kwWeek > effLimit) {
+      return;
+    }
+
     // STRICT ANTI-NEGATIVE BALANCE:
     // Any weekly expenditure (material, upah borongan, alat, adm mingguan) belonging to an inactive week (0% progress)
     // MUST NOT be displayed in BKU so the cash balance stays positive and strictly reflects real physical progress!
-    const kwWeek = extractWeekNumberFromKwitansi(kw);
     if (hasAnyActiveProgress && kwWeek !== null && !activeWeekNums.has(kwWeek)) {
       return;
     }
@@ -1374,6 +1382,7 @@ export function calculateBkuFromTransactions(
     if (manualInit2) {
       result.push(manualInit2);
     } else if (
+      effLimit >= 6 &&
       termin2Amount > 0 &&
       (kwitansiList.some((k) => (k.mingguKeRef || 0) >= 6) ||
         result.reduce((s, r) => s + r.pengeluaran, 0) >= termin1Amount * 0.9)

@@ -38,6 +38,7 @@ interface BktManagerProps {
   onUpdateStores?: (stores: StoreVendor[]) => void;
   onUpdateKwitansi?: (kw: KwitansiDocument, updatedTx?: Partial<BkuTransaction>) => void;
   onOpenPrintKwitansi?: (kwId: string, mode: 'KWITANSI' | 'FAKTUR' | 'SPB' | 'ALL') => void;
+  onCleanDuplicates?: () => void;
 }
 
 export const BktManager: React.FC<BktManagerProps> = ({
@@ -53,6 +54,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
   onUpdateStores,
   onUpdateKwitansi,
   onOpenPrintKwitansi,
+  onCleanDuplicates,
 }) => {
   // Filter Mode: 'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'
   const [filterMode, setFilterMode] = useState<'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'>('ALL');
