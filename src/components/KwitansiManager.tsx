@@ -42,6 +42,7 @@ interface KwitansiManagerProps {
   onUpdateStores?: (stores: StoreVendor[]) => void;
   onUpdateKwitansiList?: (kwList: KwitansiDocument[]) => void;
   onFullResyncToBudget?: () => void;
+  onCalibrateToRealProgress?: () => void;
 }
 
 export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
@@ -56,6 +57,7 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
   onUpdateStores,
   onUpdateKwitansiList,
   onFullResyncToBudget,
+  onCalibrateToRealProgress,
 }) => {
   const [activeType, setActiveType] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -86,9 +88,15 @@ export const KwitansiManager: React.FC<KwitansiManagerProps> = ({
   const isOverBudget = totalKwitansiNominal > paguAnggaran * 1.05; // > 5% over
 
   const handleCleanDuplicates = () => {
-    if (isOverBudget && onFullResyncToBudget) {
-      onFullResyncToBudget();
-      return;
+    if (isOverBudget) {
+      if (onCalibrateToRealProgress) {
+        onCalibrateToRealProgress();
+        return;
+      }
+      if (onFullResyncToBudget) {
+        onFullResyncToBudget();
+        return;
+      }
     }
 
     const cleaned = deduplicateKwitansiList(kwitansiList);

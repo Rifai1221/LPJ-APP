@@ -56,6 +56,7 @@ interface WeeklyProgressManagerProps {
   onAddTransaction?: (tx: Omit<BkuTransaction, 'id'>, weekNum?: number) => void;
   onUpdateTransaction?: (tx: BkuTransaction) => void;
   onDeleteTransaction?: (tx: BkuTransaction) => void;
+  onCalibrateToRealProgress?: () => void;
 }
 
 export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
@@ -72,6 +73,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
   onAddTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
+  onCalibrateToRealProgress,
 }) => {
   const [selectedWeekNum, setSelectedWeekNum] = useState<number>(1);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
@@ -517,6 +519,25 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     currentWeek.customTotalSdMingguIni !== undefined && currentWeek.customTotalSdMingguIni !== null
       ? currentWeek.customTotalSdMingguIni
       : rawTotalSdMingguIni;
+
+  const currentTotalRealizedBobot = useMemo(() => {
+    const active = progressWeeks.filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0));
+    return active.reduce((s, w) => {
+      const dSum = (w.divisions || []).reduce((ds, d) => ds + (d.prestasiMingguIni || 0), 0);
+      return Math.max(s, w.bobotRealisasi || dSum || 0);
+    }, 0);
+  }, [progressWeeks]);
+
+  const totalKwitansiExpenditure = useMemo(() => {
+    return (kwitansiList || []).reduce((s, k) => s + (k.nominal || 0), 0);
+  }, [kwitansiList]);
+
+  const paguSekolah = school?.totalAnggaran || 552457000;
+  const isExpenditureImbalanced = useMemo(() => {
+    if (currentTotalRealizedBobot <= 0) return totalKwitansiExpenditure > 0;
+    const maxAllowed = Math.round(paguSekolah * (currentTotalRealizedBobot / 100) * 1.35) + 35000000;
+    return totalKwitansiExpenditure > maxAllowed;
+  }, [currentTotalRealizedBobot, totalKwitansiExpenditure, paguSekolah]);
 
   // Handler for manual override of Total Minggu Lalu
   const handleCustomTotalMingguLaluChange = (valStr: string) => {
@@ -1322,6 +1343,18 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
             <span>Sinkronkan ke SPJ & Kas</span>
           </button>
+
+          {onCalibrateToRealProgress && (
+            <button
+              type="button"
+              onClick={onCalibrateToRealProgress}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-700 hover:to-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+              title="Kalibrasi belanja bahan & upah borongan mingguan agar sinkron murni dengan progres fisik riil (cegah saldo minus)"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-amber-300" />
+              <span>⚡ Kalibrasi Belanja Progres</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -2685,6 +2718,31 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
 
         {/* PENCATATAN OTOMATIS PECAHAN TRANSAKSI DARI BOBOT MINGGUAN (TERINTEGRASI DI DALAM KARTU LAPORAN MINGGUAN & BOBOT) */}
         <div id="rekap-transaksi-mingguan" className="border-t-2 border-slate-300 bg-white space-y-0 scroll-mt-6">
+        {/* Anti-Negative Balance Alert Banner */}
+        {isExpenditureImbalanced && onCalibrateToRealProgress && (
+          <div className="p-4 bg-rose-50 border-b border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-rose-900">
+                  ⚠️ Akumulasi Belanja ({formatRupiah(totalKwitansiExpenditure)}) Melebihi Progres Nyata ({currentTotalRealizedBobot.toFixed(1)}%)
+                </h4>
+                <p className="text-xs text-rose-700 mt-0.5">
+                  Terdeteksi kwitansi belanja bahan atau upah yang terakumulasi melebihi bobot fisik nyata saat ini, sehingga berpotensi membuat saldo kas BKU minus. Klik tombol untuk mengalibrasi ulang pengeluaran bertahap dan upah borongan mingguan.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onCalibrateToRealProgress}
+              className="shrink-0 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+            >
+              <Wand2 className="w-4 h-4 text-amber-200" />
+              <span>⚡ Kalibrasi Belanja Sekarang</span>
+            </button>
+          </div>
+        )}
+
         {/* Section Header */}
         <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
@@ -2738,10 +2796,22 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                 type="button"
                 onClick={onAutoGenerateAllWeeks}
                 className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
-                title="Pecah otomatis seluruh 12-14 minggu sekaligus"
+                title="Pecah otomatis seluruh minggu yang aktif sekaligus"
               >
                 <Layers className="w-3.5 h-3.5 text-blue-400" />
                 <span>Pecah Semua Minggu</span>
+              </button>
+            )}
+
+            {onCalibrateToRealProgress && (
+              <button
+                type="button"
+                onClick={onCalibrateToRealProgress}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-700 hover:to-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-indigo-600/30 transition cursor-pointer"
+                title="Kalibrasi belanja bahan & upah borongan mingguan agar sinkron murni dengan progres fisik riil (cegah saldo minus)"
+              >
+                <Wand2 className="w-4 h-4 text-amber-300" />
+                <span>⚡ Kalibrasi Belanja Progres</span>
               </button>
             )}
           </div>

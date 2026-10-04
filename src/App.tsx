@@ -22,6 +22,9 @@ import {
   isPureDirectMaterial,
   healKwitansiList,
   rebalanceAndResyncAllKwitansiToBudget,
+  calibrateAllTransactionsToCurrentProgress,
+  extractWeekNumberFromKwitansi,
+  deduplicateKwitansiList,
 } from './services/autoGeneratorService';
 import {
   SchoolTenant,
@@ -884,6 +887,19 @@ export default function App() {
     if (targetWeeks.length === 0) return;
     const weeksToUse = overrideWeeks || appState.progressWeeks;
 
+    // Filter active weeks with real physical progress > 0
+    const activeWeeks = weeksToUse.filter(
+      (w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0)
+    );
+    const activeWeekNums = new Set(activeWeeks.map((w) => w.mingguKe));
+
+    // Target weeks should only include active weeks with real progress
+    const validTargetWeeks = targetWeeks.filter((tw) => activeWeekNums.has(tw));
+    if (validTargetWeeks.length === 0) {
+      handleCalibrateToRealProgress();
+      return;
+    }
+
     let currentKwitansi = [...appState.kwitansiList];
     let currentWageReports = [...appState.wageReports];
     let currentBkb = [...appState.bkbRecords];
@@ -893,7 +909,7 @@ export default function App() {
     let totalAlat = 0;
     let totalSmkk = 0;
 
-    targetWeeks.forEach((targetWeek) => {
+    validTargetWeeks.forEach((targetWeek) => {
       const weekObj = weeksToUse.find((w) => w.mingguKe === targetWeek);
       if (!weekObj) return;
 
@@ -922,17 +938,26 @@ export default function App() {
       totalSmkk += res.generatedCount.smkk;
     });
 
+    // Anti-Negative Balance: Purge all kwitansis belonging to inactive / zero-progress weeks
+    const cleanedKwitansi = deduplicateKwitansiList(currentKwitansi).filter((k) => {
+      const wNum = extractWeekNumberFromKwitansi(k);
+      if (wNum !== null && !activeWeekNums.has(wNum)) {
+        return false;
+      }
+      return true;
+    });
+
     isDirtyRef.current = true;
     setAppState((prev) => ({
       ...prev,
       progressWeeks: overrideWeeks || prev.progressWeeks,
-      kwitansiList: currentKwitansi,
-      wageReports: currentWageReports,
+      kwitansiList: cleanedKwitansi,
+      wageReports: currentWageReports.filter((w) => activeWeekNums.has(w.mingguKe)),
       bkbRecords: currentBkb,
     }));
 
     setSwitchNotification(
-      `✅ Transaksi berhasil dialokasikan: ${totalBahan} Kwitansi & Bon Bahan, ${totalUpah} Kwitansi & Absensi Upah, ${totalAlat} Alat, ${totalSmkk} SMKK/K3.`
+      `✅ Belanja & Upah Borongan berhasil disinkronkan sesuai bobot fisik: ${totalBahan} Kwitansi Bahan, ${totalUpah} Upah Borongan Mingguan, ${totalAlat} Alat, ${totalSmkk} SMKK/K3.`
     );
     setTimeout(() => setSwitchNotification(null), 5000);
 
@@ -996,6 +1021,37 @@ export default function App() {
     setTimeout(() => {
       try {
         confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      } catch {}
+    }, 150);
+  };
+
+  const handleCalibrateToRealProgress = () => {
+    const res = calibrateAllTransactionsToCurrentProgress({
+      school: appState.school,
+      kwitansiList: appState.kwitansiList,
+      progressWeeks: appState.progressWeeks,
+      workers: appState.workers,
+      stores: appState.stores || [],
+      rpdItems: appState.rpdItems,
+      realSchoolData: appState.realSchoolData,
+    });
+
+    isDirtyRef.current = true;
+    setAppState((prev) => ({
+      ...prev,
+      kwitansiList: res.calibratedKwitansi,
+      wageReports: res.calibratedWageReports,
+      bkbRecords: res.calibratedBkb,
+    }));
+
+    setSwitchNotification(
+      `⚡ Berhasil mengalibrasi belanja sesuai progres fisik riil (${res.cumulativeBobot}%): Kwitansi minggu masa depan dibersihkan, upah borongan mingguan dirapikan, dan saldo kas BKU kembali positif sehat!`
+    );
+    setTimeout(() => setSwitchNotification(null), 7000);
+
+    setTimeout(() => {
+      try {
+        confetti({ particleCount: 85, spread: 90, origin: { y: 0.6 } });
       } catch {}
     }, 150);
   };
@@ -1260,6 +1316,7 @@ Lanjutkan pengosongan data transaksi?`)
             onAddTransaction={(tx, weekNum) => handleAddManualBku(tx, weekNum)}
             onUpdateTransaction={handleUpdateBku}
             onDeleteTransaction={handleDeleteBku}
+            onCalibrateToRealProgress={handleCalibrateToRealProgress}
           />
         )}
 
@@ -1287,6 +1344,7 @@ Lanjutkan pengosongan data transaksi?`)
             onOpenPrintKwitansi={(kwId, mode) =>
               handleOpenPrint(mode || 'ALL', undefined, undefined, kwId)
             }
+            onCalibrateToRealProgress={handleCalibrateToRealProgress}
           />
         )}
 
@@ -1355,6 +1413,7 @@ Lanjutkan pengosongan data transaksi?`)
             onUpdateStores={handleUpdateStores}
             onUpdateKwitansiList={handleUpdateKwitansiList}
             onFullResyncToBudget={handleFullResyncToBudget}
+            onCalibrateToRealProgress={handleCalibrateToRealProgress}
           />
         )}
 

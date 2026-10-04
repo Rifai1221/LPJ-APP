@@ -20,6 +20,7 @@ import {
   Sparkles,
   AlertTriangle,
   Eye,
+  Wand2,
 } from 'lucide-react';
 import { BkuTransaction, SchoolMasterData, ProjectProgressWeek, TransactionFilterOptions, StoreVendor, KwitansiDocument } from '../types';
 import { formatRupiah } from '../utils/formatters';
@@ -41,6 +42,7 @@ interface BkuManagerProps {
   onUpdateStores?: (stores: StoreVendor[]) => void;
   onUpdateKwitansi?: (kw: KwitansiDocument, updatedTx?: Partial<BkuTransaction>) => void;
   onOpenPrintKwitansi?: (kwId: string, mode: 'KWITANSI' | 'FAKTUR' | 'SPB' | 'ALL') => void;
+  onCalibrateToRealProgress?: () => void;
 }
 
 export const BkuManager: React.FC<BkuManagerProps> = ({
@@ -56,6 +58,7 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
   onUpdateStores,
   onUpdateKwitansi,
   onOpenPrintKwitansi,
+  onCalibrateToRealProgress,
 }) => {
   // Filter Mode: 'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'
   const [filterMode, setFilterMode] = useState<'ALL' | 'MONTH' | 'WEEK' | 'CUSTOM'>('ALL');
@@ -64,6 +67,14 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Calculate current realized progress percentage across active weeks
+  const currentRealizedProgress = useMemo(() => {
+    return progressWeeks.reduce((s, w) => {
+      const divSum = (w.divisions || []).reduce((ds, d) => ds + (d.prestasiMingguIni || 0), 0);
+      return s + (w.bobotRealisasi || divSum || 0);
+    }, 0);
+  }, [progressWeeks]);
 
   // Document Preview Modal State
   const [previewTx, setPreviewTx] = useState<BkuTransaction | null>(null);
@@ -662,6 +673,35 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
         </div>
       </div>
 
+      {/* Saldo Minus Anti-Deficit Alert Banner */}
+      {saldoAkhir < 0 && (
+        <div className="bg-gradient-to-r from-amber-50 to-rose-50 border-2 border-rose-300 text-rose-950 p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-rose-100 rounded-xl text-rose-700 shrink-0 mt-0.5 md:mt-0">
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+            </div>
+            <div>
+              <h4 className="font-extrabold text-sm text-rose-900">
+                ⚠️ Saldo Kas Minus ({formatRupiah(saldoAkhir)}) — Belanja Melebihi Progres Nyata ({currentRealizedProgress.toFixed(1)}%)
+              </h4>
+              <p className="text-xs text-rose-700 mt-0.5">
+                Pengeluaran kas ({formatRupiah(totalPengeluaran)}) terakumulasi melebihi progres fisik nyata saat ini ({currentRealizedProgress.toFixed(1)}%). Ini terjadi karena bahan terhitung penuh sekaligus dan ada transaksi minggu masa depan yang menumpuk. Klik tombol untuk mengalibrasi belanja bertahap dan upah borongan mingguan agar saldo kas kembali positif sehat.
+              </p>
+            </div>
+          </div>
+          {onCalibrateToRealProgress && (
+            <button
+              type="button"
+              onClick={onCalibrateToRealProgress}
+              className="shrink-0 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+            >
+              <Wand2 className="w-4 h-4 text-amber-200" />
+              <span>⚡ Kalibrasi Belanja Sesuai Progres ({currentRealizedProgress.toFixed(1)}%)</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Summary KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -690,6 +730,18 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onCalibrateToRealProgress && (
+              <button
+                type="button"
+                onClick={onCalibrateToRealProgress}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-lg shadow-xs transition cursor-pointer"
+                title="Sesuaikan belanja bahan & upah borongan murni sesuai progres fisik saat ini"
+              >
+                <Wand2 className="w-3.5 h-3.5 text-amber-200" />
+                <span>⚡ Kalibrasi ({currentRealizedProgress.toFixed(1)}%)</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handlePrintCurrentFilter}
