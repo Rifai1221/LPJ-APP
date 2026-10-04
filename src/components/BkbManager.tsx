@@ -482,7 +482,7 @@ export const BkbManager: React.FC<BkbManagerProps> = ({
                 <input
                   type="number"
                   min="0"
-                  step="1000"
+                  step="any"
                   placeholder="0"
                   value={formData.nominal || ''}
                   onChange={(e) => setFormData({ ...formData, nominal: parseFloat(e.target.value) || 0 })}

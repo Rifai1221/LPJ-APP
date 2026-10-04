@@ -104,6 +104,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
   // Modal states for manual input & editing
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<BktTransaction | null>(null);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const [formError, setFormError] = useState<string | null>(null);
 
   const schoolYear = school?.tahunAnggaran?.trim() || '2026';
@@ -235,6 +236,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
   const handleOpenAdd = () => {
     setEditingTx(null);
     setFormError(null);
+    setSelectedStoreId('');
     setFormData({
       tanggal: minStartDateInfo.startDate,
       jenis: 'PENGELUARAN',
@@ -258,6 +260,23 @@ export const BktManager: React.FC<BktManagerProps> = ({
       dateInput = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
     }
 
+    // Try to auto-match store from transaction uraian or linked kwitansi
+    let matchedStore = (stores || []).find(
+      (s) => s.namaToko && tx.uraian.toLowerCase().includes(s.namaToko.toLowerCase())
+    );
+    if (!matchedStore && tx.kwitansiIdRef && kwitansiList) {
+      const linkedKw = kwitansiList.find((k) => k.id === tx.kwitansiIdRef || k.noBukti === tx.noBukti);
+      if (linkedKw) {
+        matchedStore = (stores || []).find(
+          (s) =>
+            s.namaToko &&
+            (s.namaToko.toLowerCase() === linkedKw.namaToko?.toLowerCase() ||
+              s.pemilikNama?.toLowerCase() === linkedKw.penerimaNama?.toLowerCase())
+        );
+      }
+    }
+    setSelectedStoreId(matchedStore ? matchedStore.id : '');
+
     setFormData({
       tanggal: dateInput,
       jenis: tx.pemasukan > 0 ? 'PENERIMAAN' : 'PENGELUARAN',
@@ -267,6 +286,38 @@ export const BktManager: React.FC<BktManagerProps> = ({
       kategoriBiaya: 'Konstruksi',
     });
     setIsModalOpen(true);
+  };
+
+  const handleSelectStore = (storeId: string) => {
+    setSelectedStoreId(storeId);
+    if (!storeId) return;
+    const store = (stores || []).find((s) => s.id === storeId);
+    if (!store) return;
+
+    let newUraian = formData.uraian;
+    const storeName = store.namaToko || store.pemilikNama;
+
+    if (!newUraian || /bayar\s+bahan|pembelian|bayar\s+meubelair|bayar\s+peralatan|bayar\s+apd|bayar/i.test(newUraian)) {
+      if (formData.kategoriBiaya === 'Perabot') {
+        newUraian = `Bayar Meubelair Dari ${storeName}`;
+      } else if (formData.kategoriBiaya === 'Peralatan') {
+        newUraian = `Bayar Peralatan Dari ${storeName}`;
+      } else if (formData.kategoriBiaya === 'SMKK') {
+        newUraian = `Bayar APD / SMKK Dari ${storeName}`;
+      } else if (formData.kategoriBiaya === 'Perencanaan_Pengelolaan') {
+        newUraian = `Bayar Honorarium / Jasa Dari ${store.pemilikNama || storeName}`;
+      } else {
+        newUraian = `Bayar Bahan Dari ${storeName}`;
+      }
+    } else {
+      if (/dari/i.test(newUraian)) {
+        newUraian = newUraian.replace(/dari\s+.*$/i, `Dari ${storeName}`);
+      } else {
+        newUraian = `${newUraian} (Penyedia: ${storeName})`;
+      }
+    }
+
+    setFormData((prev) => ({ ...prev, uraian: newUraian }));
   };
 
   const handleSaveTransaction = (e: React.FormEvent) => {
@@ -878,6 +929,26 @@ export const BktManager: React.FC<BktManagerProps> = ({
                 </div>
               </div>
 
+              {/* Dropdown Toko Rekanan / Penyedia */}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>Pilih Toko Rekanan / Penyedia (Opsional)</span>
+                  <span className="text-[10px] text-emerald-600 font-medium">Otomatiskan Uraian & Rekanan</span>
+                </label>
+                <select
+                  value={selectedStoreId}
+                  onChange={(e) => handleSelectStore(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white text-xs font-medium"
+                >
+                  <option value="">-- Tanpa Penyedia Khusus / Manual --</option>
+                  {(stores || []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      🏬 {s.namaToko} ({s.pemilikNama || 'Pemilik'} - {s.pekerjaan || s.kategori})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Uraian Transaksi</label>
                 <textarea
@@ -907,6 +978,7 @@ export const BktManager: React.FC<BktManagerProps> = ({
                   <input
                     type="number"
                     min={0}
+                    step="any"
                     value={formData.nominal || ''}
                     onChange={(e) => setFormData({ ...formData, nominal: Number(e.target.value) || 0 })}
                     placeholder="0"

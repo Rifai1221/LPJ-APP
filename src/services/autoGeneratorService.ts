@@ -1019,7 +1019,8 @@ export function calculateBkuFromTransactions(
   school: SchoolMasterData,
   manualTransactions: BkuTransaction[] = [],
   progressWeeks: ProjectProgressWeek[] = [],
-  deletedIds: string[] = []
+  deletedIds: string[] = [],
+  wageReports: WeeklyWageReport[] = []
 ): BkuTransaction[] {
   const result: BkuTransaction[] = [];
   const yearStr = school?.tahunAnggaran?.trim() || '2026';
@@ -1193,6 +1194,44 @@ export function calculateBkuFromTransactions(
       kategoriBiaya: kw.kategoriBiayaPajak,
       kwitansiIdRef: kw.id,
     });
+  });
+
+  // 2b. Map WeeklyWageReports into BKU if not already represented in kwitansiList
+  (wageReports || []).forEach((wr) => {
+    if (!wr || wr.totalUpah <= 0) return;
+    const wNum = wr.mingguKe;
+    if (hasAnyActiveProgress && !activeWeekNums.has(wNum)) return;
+
+    // Check if this wage report is already represented in kwitansiList
+    const alreadyInKw = kwitansiList.some((k) => {
+      const kwW = extractWeekNumberFromKwitansi(k);
+      return kwW === wNum && (k.tipe === 'UPAH' || /uk\//i.test(k.noBukti || '') || /upah/i.test(k.uraian || ''));
+    });
+
+    if (!alreadyInKw) {
+      const matchW = progressWeeks.find((w) => w.mingguKe === wNum);
+      const wDates = matchW
+        ? resolveWeekDates(matchW, yearStr)
+        : { endDate: `${yearStr}-07-12`, endDateSlash: `12/07/${yearStr}`, bulan: startProjectBulan };
+
+      const bkuUpahId = `bku-wage-w${wNum}`;
+      if (deletedIds.includes(bkuUpahId)) return;
+
+      const weekPad = String(wNum).padStart(2, '0');
+      result.push({
+        id: bkuUpahId,
+        tanggal: wDates.endDateSlash,
+        tanggalObj: wDates.endDate,
+        bulan: wDates.bulan || startProjectBulan,
+        jenis: 'PENGELUARAN',
+        uraian: `Bayar Upah Borongan Pekerja Fisik Minggu Ke-${wNum}`,
+        noBukti: `UK/${weekPad}/${yearStr}`,
+        penerimaan: 0,
+        pengeluaran: wr.totalUpah,
+        kategoriBiaya: 'Konstruksi',
+        kwitansiIdRef: `kw-upah-m${wNum}`,
+      });
+    }
   });
 
   // 3. Add Termin 2 bank withdrawal

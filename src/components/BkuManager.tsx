@@ -104,6 +104,7 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
   // Modal state for manual input & editing
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<BkuTransaction | null>(null);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const [formError, setFormError] = useState<string | null>(null);
 
   const schoolYear = school?.tahunAnggaran?.trim() || '2026';
@@ -307,6 +308,7 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
   const handleOpenAdd = () => {
     setEditingTx(null);
     setFormError(null);
+    setSelectedStoreId('');
     setFormData({
       tanggal: minStartDateInfo.startDate,
       jenis: 'PENGELUARAN',
@@ -330,6 +332,23 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
       dateInput = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
     }
 
+    // Try to auto-match store from transaction uraian or linked kwitansi
+    let matchedStore = stores.find(
+      (s) => s.namaToko && tx.uraian.toLowerCase().includes(s.namaToko.toLowerCase())
+    );
+    if (!matchedStore && tx.kwitansiIdRef && kwitansiList) {
+      const linkedKw = kwitansiList.find((k) => k.id === tx.kwitansiIdRef || k.noBukti === tx.noBukti);
+      if (linkedKw) {
+        matchedStore = stores.find(
+          (s) =>
+            s.namaToko &&
+            (s.namaToko.toLowerCase() === linkedKw.namaToko?.toLowerCase() ||
+              s.pemilikNama?.toLowerCase() === linkedKw.penerimaNama?.toLowerCase())
+        );
+      }
+    }
+    setSelectedStoreId(matchedStore ? matchedStore.id : '');
+
     setFormData({
       tanggal: dateInput,
       jenis: tx.jenis,
@@ -339,6 +358,38 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
       kategoriBiaya: tx.kategoriBiaya || 'Konstruksi',
     });
     setIsModalOpen(true);
+  };
+
+  const handleSelectStore = (storeId: string) => {
+    setSelectedStoreId(storeId);
+    if (!storeId) return;
+    const store = stores.find((s) => s.id === storeId);
+    if (!store) return;
+
+    let newUraian = formData.uraian;
+    const storeName = store.namaToko || store.pemilikNama;
+
+    if (!newUraian || /bayar\s+bahan|pembelian|bayar\s+meubelair|bayar\s+peralatan|bayar\s+apd|bayar/i.test(newUraian)) {
+      if (formData.kategoriBiaya === 'Perabot') {
+        newUraian = `Bayar Meubelair Dari ${storeName}`;
+      } else if (formData.kategoriBiaya === 'Peralatan') {
+        newUraian = `Bayar Peralatan Dari ${storeName}`;
+      } else if (formData.kategoriBiaya === 'SMKK') {
+        newUraian = `Bayar APD / SMKK Dari ${storeName}`;
+      } else if (formData.kategoriBiaya === 'Perencanaan_Pengelolaan') {
+        newUraian = `Bayar Honorarium / Jasa Dari ${store.pemilikNama || storeName}`;
+      } else {
+        newUraian = `Bayar Bahan Dari ${storeName}`;
+      }
+    } else {
+      if (/dari/i.test(newUraian)) {
+        newUraian = newUraian.replace(/dari\s+.*$/i, `Dari ${storeName}`);
+      } else {
+        newUraian = `${newUraian} (Penyedia: ${storeName})`;
+      }
+    }
+
+    setFormData((prev) => ({ ...prev, uraian: newUraian }));
   };
 
   const handleSaveTransaction = (e: React.FormEvent) => {
@@ -398,6 +449,27 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
           pengeluaran: formData.jenis === 'PENGELUARAN' ? formData.nominal : 0,
           kategoriBiaya: formData.kategoriBiaya,
         });
+      }
+    }
+
+    // Sync selected store to linked Kwitansi Document if available
+    if (selectedStoreId && onUpdateKwitansi && kwitansiList) {
+      const selectedStore = stores.find((s) => s.id === selectedStoreId);
+      if (selectedStore) {
+        const linkedKw = kwitansiList.find(
+          (k) =>
+            (editingTx?.kwitansiIdRef && k.id === editingTx.kwitansiIdRef) ||
+            (formData.noBukti && k.noBukti?.trim() === formData.noBukti.trim())
+        );
+        if (linkedKw) {
+          onUpdateKwitansi({
+            ...linkedKw,
+            namaToko: selectedStore.namaToko,
+            penerimaNama: selectedStore.pemilikNama || linkedKw.penerimaNama,
+            penerimaPekerjaan: selectedStore.pekerjaan || linkedKw.penerimaPekerjaan,
+            penerimaAlamat: selectedStore.alamat || linkedKw.penerimaAlamat,
+          });
+        }
       }
     }
 
@@ -1003,6 +1075,26 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
                 </div>
               </div>
 
+              {/* Dropdown Toko Rekanan / Penyedia */}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>Pilih Toko Rekanan / Penyedia (Opsional)</span>
+                  <span className="text-[10px] text-blue-600 font-medium">Otomatiskan Uraian & Kwitansi</span>
+                </label>
+                <select
+                  value={selectedStoreId}
+                  onChange={(e) => handleSelectStore(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white text-xs font-medium"
+                >
+                  <option value="">-- Tanpa Penyedia Khusus / Manual --</option>
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      🏬 {s.namaToko} ({s.pemilikNama || 'Pemilik'} - {s.pekerjaan || s.kategori})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Uraian Transaksi */}
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Uraian Transaksi / Keperluan</label>
@@ -1055,7 +1147,7 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
                   <input
                     type="number"
                     min={0}
-                    step={100}
+                    step="any"
                     value={formData.nominal || ''}
                     onChange={(e) => setFormData({ ...formData, nominal: Number(e.target.value) || 0 })}
                     placeholder="0"

@@ -427,7 +427,8 @@ export default function App() {
       appState.school,
       appState.manualBkuTransactions,
       appState.progressWeeks,
-      appState.deletedBkuIds || []
+      appState.deletedBkuIds || [],
+      appState.wageReports || []
     );
   }, [
     appState.kwitansiList,
@@ -435,6 +436,7 @@ export default function App() {
     appState.manualBkuTransactions,
     appState.progressWeeks,
     appState.deletedBkuIds,
+    appState.wageReports,
   ]);
 
   const bktList = useMemo(() => {
