@@ -998,6 +998,7 @@ export default function App() {
       ...prev,
       kwitansiList: cleanKw,
       manualBkuTransactions: cleanManualBku,
+      deletedBkuIds: [],
     }));
 
     if (totalCleaned > 0) {
