@@ -142,6 +142,9 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
 
     // Semen Kg -> Zak (1 Zak = 50 kg)
     const isSemen = /semen|pc\b|portland/i.test(rawName);
+    const isBesi = /besi|beton|polos|ulir|hollow|wiremesh/i.test(rawName);
+    const isKayu = /kayu|kaso|balok|reng|papan|tiang/i.test(rawName);
+
     if (isSemen) {
       convertedSatuan = 'Zak';
       let volKg = rawVol;
@@ -152,6 +155,15 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
       if (convertedPrice > 0 && convertedPrice <= 5000) {
         convertedPrice = Math.round(convertedPrice * 50);
       }
+    } else if (isBesi && (rawVol > 10 || /kg|kilogram/i.test(rawSatuan))) {
+      convertedSatuan = 'btg';
+      convertedVol = Math.max(1, Math.round(rawVol / 7.4));
+      if (convertedPrice > 0 && convertedPrice <= 25000) {
+        convertedPrice = Math.round(convertedPrice * 7.4);
+      }
+    } else if (isKayu && (/m3|m³|m2|m²|lbr|lembar/i.test(rawSatuan) || rawVol < 1)) {
+      convertedSatuan = 'btg';
+      convertedVol = Math.max(1, Math.round(rawVol < 1 ? Math.max(1, rawVol * 25) : rawVol));
     } else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
       convertedSatuan = /m3|m³/i.test(rawSatuan) ? 'm³' : 'm²';
     }
@@ -231,6 +243,60 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
         satuan: 'Zak',
         hargaSatuan: hargaPerZak,
         jumlah: finalZakTotal,
+      });
+      return;
+    }
+
+    // B. Besi Beton / Wiremesh / Hollow (Kg -> Batang Utuh)
+    if (/besi|beton|polos|ulir|hollow|wiremesh/i.test(rawName)) {
+      const samplePrice = sampleItem.hargaSatuan || 0;
+      let hargaPerBtg = samplePrice <= 25000 && samplePrice > 0 ? Math.round(samplePrice * 7.4) : Math.round(samplePrice);
+      if (hargaPerBtg <= 0) hargaPerBtg = 95000;
+
+      const rawBtgSum = group.items.reduce((s, it) => {
+        const v = it.volume || 0;
+        return s + (v > 10 ? v / 7.4 : v);
+      }, 0);
+      realisticVolume = Math.max(1, Math.round(rawBtgSum));
+      const finalBesiTotal = realisticVolume * hargaPerBtg;
+
+      let cleanBesiName = group.namaBarang;
+      if (!/batang|btg|12m|12 meter/i.test(cleanBesiName)) {
+        cleanBesiName = `${cleanBesiName} (12 Meter)`;
+      }
+
+      result.push({
+        ...sampleItem,
+        namaBarang: cleanBesiName,
+        volume: realisticVolume,
+        satuan: 'btg',
+        hargaSatuan: hargaPerBtg,
+        jumlah: finalBesiTotal,
+      });
+      return;
+    }
+
+    // C. Kayu Kaso / Balok / Reng (m3/lbr -> Batang Utuh)
+    if (/kayu|kaso|balok|reng|tiang/i.test(rawName)) {
+      const samplePrice = sampleItem.hargaSatuan || 0;
+      let hargaPerBtg = samplePrice <= 100000 && samplePrice > 0 ? Math.round(samplePrice) : Math.round(totalRawJml / Math.max(1, Math.round(totalRawVol)));
+      if (hargaPerBtg <= 0 || hargaPerBtg > 200000) hargaPerBtg = 38500;
+
+      realisticVolume = Math.max(1, Math.round(totalRawVol < 1 ? Math.max(1, totalRawVol * 25) : totalRawVol));
+      const finalKayuTotal = realisticVolume * hargaPerBtg;
+
+      let cleanKayuName = group.namaBarang;
+      if (!/batang|btg|4m|4 meter/i.test(cleanKayuName)) {
+        cleanKayuName = `${cleanKayuName} (4 Meter)`;
+      }
+
+      result.push({
+        ...sampleItem,
+        namaBarang: cleanKayuName,
+        volume: realisticVolume,
+        satuan: 'btg',
+        hargaSatuan: hargaPerBtg,
+        jumlah: finalKayuTotal,
       });
       return;
     }
