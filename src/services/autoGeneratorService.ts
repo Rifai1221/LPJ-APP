@@ -139,10 +139,13 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
     let convertedVol = rawVol;
     let convertedSatuan = item.satuan || 'unit';
 
-    // Semen Kg -> Zak (1 Zak = 50 kg standar AHSP)
-    if (/semen|pc\b|portland/i.test(rawName) && /kg|kilogram/i.test(rawSatuan)) {
-      convertedVol = rawVol / 50;
+    // Semen Kg -> Zak (1 Zak = 50 kg)
+    const isSemen = /semen|pc\b|portland/i.test(rawName);
+    if (isSemen) {
       convertedSatuan = 'Zak';
+      if (rawVol > 15 || /kg|kilogram/i.test(rawSatuan)) {
+        convertedVol = rawVol / 50;
+      }
     } else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
       convertedSatuan = /m3|m³/i.test(rawSatuan) ? 'm³' : 'm²';
     }
@@ -190,9 +193,16 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
     let realisticSatuan = group.satuan;
 
     // A. Semen (Zak)
-    if (/semen|pc\b|portland/i.test(rawName) && /zak|sak/i.test(rawSatuan)) {
-      realisticVolume = Math.max(1, Math.round(totalRawVol));
+    if (/semen|pc\b|portland/i.test(rawName)) {
       realisticSatuan = 'Zak';
+      if (totalRawVol > 15) {
+        realisticVolume = Math.max(1, Math.round(totalRawVol / 50));
+      } else {
+        realisticVolume = Math.max(1, Math.round(totalRawVol * 100) / 100);
+      }
+      if (!/pcc|padang|gresik|holcim|tiga roda|dynamix/i.test(group.namaBarang)) {
+        group.namaBarang = `${group.namaBarang.replace(/\s*\(?50\s*kg\)?/gi, '')} PCC (@ 50 Kg)`.trim();
+      }
     }
     // B. Pasir, Batu, Tanah (m³)
     else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
