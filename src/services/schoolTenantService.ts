@@ -354,6 +354,7 @@ export async function loadSchoolTenantAppState(tenant: SchoolTenant): Promise<{
             wageReports: Array.isArray(cloudData.wageReports) ? cloudData.wageReports : (defaultState.wageReports || []),
             manualBkuTransactions: Array.isArray(cloudData.manualBkuTransactions) ? cloudData.manualBkuTransactions : [],
             deletedBkuIds: Array.isArray(cloudData.deletedBkuIds) ? cloudData.deletedBkuIds : [],
+            deletedKwitansiIds: Array.isArray(cloudData.deletedKwitansiIds) ? cloudData.deletedKwitansiIds : [],
             bkbRecords: Array.isArray(cloudData.bkbRecords) ? cloudData.bkbRecords : [],
             manualTaxRecords: Array.isArray(cloudData.manualTaxRecords) ? cloudData.manualTaxRecords : [],
             deletedTaxIds: Array.isArray(cloudData.deletedTaxIds) ? cloudData.deletedTaxIds : [],

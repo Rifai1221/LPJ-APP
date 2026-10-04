@@ -524,9 +524,17 @@ export function healKwitansiList<
     penerimaPekerjaan?: string;
     items?: any[];
   }
->(list: K[], targetYear?: string): K[] {
+>(list: K[], targetYear?: string, deletedKwitansiIds?: string[]): K[] {
   if (!Array.isArray(list)) return [];
-  const processed = list.map((kw) => {
+  const deletedSet = new Set(deletedKwitansiIds || []);
+  const activeList = list.filter((k) => {
+    if (!k) return false;
+    if (k.id && deletedSet.has(k.id)) return false;
+    if (k.noBukti && deletedSet.has(k.noBukti)) return false;
+    return true;
+  });
+
+  const processed = activeList.map((kw) => {
     let updatedKw = { ...kw };
 
     let effYear = targetYear?.trim();
@@ -962,7 +970,12 @@ export function calculateBkuFromTransactions(
   kwitansiList.forEach((kw) => {
     const cleanKwId = (kw.id || '').replace(/^(bku-kw-)+/, '');
     const kwBkuId = `bku-kw-${cleanKwId}`;
-    if (deletedIds.includes(kw.id) || deletedIds.includes(cleanKwId) || deletedIds.includes(kwBkuId)) {
+    if (
+      deletedIds.includes(kw.id) ||
+      deletedIds.includes(cleanKwId) ||
+      deletedIds.includes(kwBkuId) ||
+      (kw.noBukti && deletedIds.includes(kw.noBukti))
+    ) {
       return;
     }
 

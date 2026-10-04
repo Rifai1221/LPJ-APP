@@ -628,7 +628,7 @@ export default function App() {
     isDirtyRef.current = true;
     const newYear = updated.tahunAnggaran?.trim() || '2026';
     setAppState((prev) => {
-      const updatedKwitansi = healKwitansiList(prev.kwitansiList, newYear);
+      const updatedKwitansi = healKwitansiList(prev.kwitansiList, newYear, prev.deletedKwitansiIds);
       const updatedWageReports = (prev.wageReports || []).map((wr) => {
         const oldBukti = wr.noBuktiKwitansi;
         const newBukti = oldBukti ? oldBukti.replace(/\/(19\d\d|20\d\d)$/, `/${newYear}`) : oldBukti;
@@ -693,7 +693,7 @@ export default function App() {
   const handleUpdateKwitansiList = (updatedKwitansi: KwitansiDocument[]) => {
     isDirtyRef.current = true;
     const year = appState.school?.tahunAnggaran?.trim() || '2026';
-    const cleaned = healKwitansiList(updatedKwitansi, year);
+    const cleaned = healKwitansiList(updatedKwitansi, year, appState.deletedKwitansiIds);
     setAppState((prev) => ({ ...prev, kwitansiList: cleaned }));
   };
 
@@ -935,10 +935,28 @@ export default function App() {
   const handleDeleteKwitansi = (id: string) => {
     if (confirm('Hapus kwitansi ini beserta data terkait dari database sekolah ini?')) {
       isDirtyRef.current = true;
-      setAppState((prev) => ({
-        ...prev,
-        kwitansiList: prev.kwitansiList.filter((k) => k.id !== id),
-      }));
+      setAppState((prev) => {
+        const targetKw = prev.kwitansiList.find((k) => k.id === id);
+        const kwNoBukti = targetKw?.noBukti;
+        const cleanKwId = id.replace(/^(bku-kw-)+/, '');
+        const kwBkuId = `bku-kw-${cleanKwId}`;
+
+        const updatedDeletedKw = Array.from(
+          new Set([...(prev.deletedKwitansiIds || []), id, cleanKwId, kwNoBukti || '', kwBkuId].filter(Boolean))
+        );
+        const updatedDeletedBku = Array.from(
+          new Set([...(prev.deletedBkuIds || []), id, cleanKwId, kwBkuId].filter(Boolean))
+        );
+
+        return {
+          ...prev,
+          deletedKwitansiIds: updatedDeletedKw,
+          deletedBkuIds: updatedDeletedBku,
+          kwitansiList: prev.kwitansiList.filter(
+            (k) => k.id !== id && k.id !== cleanKwId && (kwNoBukti ? k.noBukti !== kwNoBukti : true)
+          ),
+        };
+      });
     }
   };
 

@@ -398,6 +398,7 @@ export interface AppStateData {
   bkbRecords: BkbTransaction[];
   manualBkuTransactions: BkuTransaction[];
   deletedBkuIds?: string[];
+  deletedKwitansiIds?: string[];
   manualTaxRecords?: TaxRecord[];
   deletedTaxIds?: string[];
   realSchoolData?: RealSchoolData;

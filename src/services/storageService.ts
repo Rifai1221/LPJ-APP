@@ -69,6 +69,8 @@ export function sanitizeAndFilterDemoState(state: AppStateData): AppStateData {
     })),
     bkbRecords: state.bkbRecords || [],
     manualBkuTransactions: state.manualBkuTransactions || [],
+    deletedBkuIds: state.deletedBkuIds || [],
+    deletedKwitansiIds: state.deletedKwitansiIds || [],
     manualTaxRecords: state.manualTaxRecords || [],
     deletedTaxIds: state.deletedTaxIds || [],
   };
@@ -86,6 +88,7 @@ export function getDefaultState(): AppStateData {
     bkbRecords: [],
     manualBkuTransactions: [],
     deletedBkuIds: [],
+    deletedKwitansiIds: [],
     manualTaxRecords: [],
     deletedTaxIds: [],
   };
