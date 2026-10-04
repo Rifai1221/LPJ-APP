@@ -1214,7 +1214,7 @@ export function calculateBkuFromTransactions(
       const matchW = activeWeeks.find((w) => w.mingguKe === kwWeek);
       if (matchW) {
         const weekDivSum = (matchW.divisions || []).reduce((s, d) => s + (d.prestasiMingguIni || 0), 0);
-        const weekBobot = matchW.bobotRealisasi || weekDivSum || 0;
+        const weekBobot = weekDivSum;
         const weekIncrementalBudget = Math.round((paguTotal * weekBobot) / 100);
         const maxWageCap = Math.round(weekIncrementalBudget * 0.35);
         if (maxWageCap > 0) {
@@ -1280,7 +1280,7 @@ export function calculateBkuFromTransactions(
     if (!alreadyInKw) {
       const matchW = activeWeeks.find((w) => w.mingguKe === wNum);
       const weekDivSum = (matchW?.divisions || []).reduce((s, d) => s + (d.prestasiMingguIni || 0), 0);
-      const weekBobot = matchW?.bobotRealisasi || weekDivSum || 0;
+      const weekBobot = weekDivSum;
       const paguTotal = school?.totalAnggaran || 552457000;
       const weekIncrementalBudget = Math.round((paguTotal * weekBobot) / 100);
       const maxWageCap = Math.round(weekIncrementalBudget * 0.35);
@@ -1399,10 +1399,8 @@ export function calculateBkuFromTransactions(
     if (manualInit2) {
       result.push(manualInit2);
     } else if (
-      effLimit >= 6 &&
-      termin2Amount > 0 &&
-      (kwitansiList.some((k) => (k.mingguKeRef || 0) >= 6) ||
-        result.reduce((s, r) => s + r.pengeluaran, 0) >= termin1Amount * 0.9)
+      effLimit >= 8 &&
+      termin2Amount > 0
     ) {
       result.push({
         id: 'bku-init-2',
@@ -2827,14 +2825,24 @@ export function calibrateAllTransactionsToCurrentProgress(params: {
 
   // 2. Only preserve baseline contracts or kwitansi strictly within activeWeekNums
   const preservedBase = kwitansiList.filter((k) => {
-    const kwWeek = extractWeekNumberFromKwitansi(k);
+    // If it is a manual user-created kuitansi, keep it!
+    const isAutoId = (k.id || '').startsWith('kw-') || (k.id || '').startsWith('bku-') || (k.id || '').includes('mgt-');
+    if (!isAutoId) {
+      return true;
+    }
+
+    // For auto-generated kuitansis, we discard management kuitansis (Perencana, Pengawas, Adm, SMKK)
+    // because they will be freshly regenerated in step 3 to prevent infinite multiplication.
+    const isMgt = /kons-p|kons-w|perencana|pengawas|adm|pengelola|smkk|k3/i.test(`${k.id} ${k.noBukti} ${k.uraian}`);
+    if (isMgt) {
+      return false; 
+    }
+
+    const kwWeek = extractWeekNumberFromKwitansi(k, progressWeeks, targetYear);
     if (kwWeek !== null) {
       return activeWeekNums.has(kwWeek);
     }
-    const isKons = k.tipe === 'KONSULTAN' || /kons-p|kons-w|perencana|pengawas/i.test(`${k.noBukti} ${k.uraian}`);
-    const isAdm = k.tipe === 'OPERASIONAL' || /\badm\b|pengelola/i.test(`${k.noBukti} ${k.uraian}`);
-    const isWeek1Smkk = (k.tipe === 'SMKK' || /smkk|k3/i.test(`${k.noBukti} ${k.uraian}`));
-    return isKons || isAdm || isWeek1Smkk;
+    return false;
   });
 
   const healedPreserved = healKwitansiList(preservedBase, targetYear);
@@ -2876,7 +2884,7 @@ export function calibrateAllTransactionsToCurrentProgress(params: {
     processedWeeks.add(targetWeek);
     const weekObj = activeWeeks.find((w) => w.mingguKe === targetWeek);
     const weekDivSum = (weekObj?.divisions || []).reduce((ds, d) => ds + (d.prestasiMingguIni || 0), 0);
-    const weekIncrementalBobot = weekObj?.bobotRealisasi || weekDivSum || 0;
+    const weekIncrementalBobot = weekDivSum;
     const weekMaxTarget = Math.round((paguTotal * weekIncrementalBobot) / 100);
 
     // Get all material/wage kwitansis belonging to targetWeek
