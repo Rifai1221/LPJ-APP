@@ -139,9 +139,9 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
     let convertedVol = rawVol;
     let convertedSatuan = item.satuan || 'unit';
 
-    // Semen Kg -> Zak (1 Zak = 40 kg standar AHSP/SNI)
+    // Semen Kg -> Zak (1 Zak = 50 kg standar AHSP)
     if (/semen|pc\b|portland/i.test(rawName) && /kg|kilogram/i.test(rawSatuan)) {
-      convertedVol = rawVol / 40;
+      convertedVol = rawVol / 50;
       convertedSatuan = 'Zak';
     } else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
       convertedSatuan = /m3|m³/i.test(rawSatuan) ? 'm³' : 'm²';
@@ -335,12 +335,22 @@ export function getAutoHealedKwitansiItems<
     return kw.items || [];
   }
 
-  // 2. Konsultan Perencana Teknis
+  // 2. Pure MATERIAL kwitansi (MUST ALWAYS display store material items)
+  if (kw.tipe === 'MATERIAL') {
+    if (kw.items && kw.items.length > 0) {
+      return normalizeMaterialItems(kw.items);
+    }
+    const dec = decomposeRealisticBahanAndUpah(kw.uraian || 'Pembelian Bahan Bangunan', nom, 0);
+    return normalizeMaterialItems(dec.bahanItems as unknown as T[]);
+  }
+
+  // 3. Konsultan Perencana Teknis
   const isPerencana =
-    /kons-p/i.test(noBuktiStr) ||
-    /perencana/i.test(uraianStr) ||
-    /perencana/i.test(perStr) ||
-    (kw.tipe === 'KONSULTAN' && /perencana/i.test(combined));
+    kw.tipe !== 'MATERIAL' &&
+    (/kons-p/i.test(noBuktiStr) ||
+      /perencana/i.test(uraianStr) ||
+      /perencana/i.test(perStr) ||
+      (kw.tipe === 'KONSULTAN' && /perencana/i.test(combined)));
 
   if (isPerencana) {
     return [
@@ -354,12 +364,13 @@ export function getAutoHealedKwitansiItems<
     ] as unknown as T[];
   }
 
-  // 3. Konsultan Pengawas Lapangan
+  // 4. Konsultan Pengawas Lapangan
   const isPengawas =
-    /kons-w/i.test(noBuktiStr) ||
-    /pengawas/i.test(uraianStr) ||
-    /pengawas/i.test(perStr) ||
-    (kw.tipe === 'KONSULTAN' && /pengawas/i.test(combined));
+    kw.tipe !== 'MATERIAL' &&
+    (/kons-w/i.test(noBuktiStr) ||
+      /pengawas/i.test(uraianStr) ||
+      /pengawas/i.test(perStr) ||
+      (kw.tipe === 'KONSULTAN' && /pengawas/i.test(combined)));
 
   if (isPengawas) {
     return [
@@ -373,13 +384,14 @@ export function getAutoHealedKwitansiItems<
     ] as unknown as T[];
   }
 
-  // 4. Biaya Pengelolaan Administrasi LPJ
+  // 5. Biaya Pengelolaan Administrasi LPJ
   const isPengelolaAdm =
-    /\badm\b/i.test(noBuktiStr) ||
-    /pengelola.*(spj|administrasi|lpj)/i.test(uraianStr) ||
-    /administrasi lpj/i.test(uraianStr) ||
-    /administrasi/i.test(perStr) ||
-    /pengelola spj/i.test(combined);
+    kw.tipe !== 'MATERIAL' &&
+    (/\badm\b/i.test(noBuktiStr) ||
+      /pengelola.*(spj|administrasi|lpj)/i.test(uraianStr) ||
+      /administrasi lpj/i.test(uraianStr) ||
+      /administrasi/i.test(perStr) ||
+      /pengelola spj/i.test(combined));
 
   if (isPengelolaAdm) {
     return [
@@ -391,11 +403,6 @@ export function getAutoHealedKwitansiItems<
         jumlah: nom,
       },
     ] as unknown as T[];
-  }
-
-  // 5. Pure MATERIAL kwitansi
-  if (kw.tipe === 'MATERIAL' && kw.items && kw.items.length > 0) {
-    return normalizeMaterialItems(kw.items);
   }
 
   return kw.items || [];
