@@ -2473,11 +2473,10 @@ export function calibrateAllTransactionsToCurrentProgress(params: {
   const targetYear = school?.tahunAnggaran?.trim() || '2026';
   const paguTotal = school?.totalAnggaran || 552457000;
 
-  // 1. Identify all active weeks that actually have physical progress > 0%
+  // 1. Identify all active weeks that actually have INCREMENTAL physical progress > 0% in prestasiMingguIni
   const activeWeeks = progressWeeks.filter((w) => {
-    const hasRealisasi = (w.bobotRealisasi && w.bobotRealisasi > 0);
-    const hasDivProgress = w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0);
-    return hasRealisasi || hasDivProgress;
+    const totalDivPrestasi = (w.divisions || []).reduce((ds, d) => ds + (d.prestasiMingguIni || 0), 0);
+    return totalDivPrestasi > 0.0001 || (w.bobotRealisasi && w.bobotRealisasi > 0);
   });
 
   const activeWeekNums = new Set(activeWeeks.map((w) => w.mingguKe));
