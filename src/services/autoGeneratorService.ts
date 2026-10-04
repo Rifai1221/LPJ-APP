@@ -1196,11 +1196,11 @@ export function calculateBkuFromTransactions(
     let bkuUraian = kw.uraian;
     if (kw.tipe === 'UPAH') {
       bkuUraian = kw.uraian.replace('Pembayaran Lunas Biaya ', 'Bayar ');
-    } else if (/perencana/i.test(kw.uraian)) {
+    } else if (kw.tipe === 'KONSULTAN' && /perencana/i.test(kw.uraian)) {
       bkuUraian = `Bayar Honorarium Jasa Perencana Teknis (${kw.penerimaNama || 'Zulfahmi, ST'})`;
-    } else if (/pengawas/i.test(kw.uraian)) {
+    } else if (kw.tipe === 'KONSULTAN' && /pengawas/i.test(kw.uraian)) {
       bkuUraian = `Bayar Honorarium Jasa Pengawas Lapangan (${kw.penerimaNama || 'M. Aris Syahputra, ST'})`;
-    } else if (/administrasi|pengelolaan/i.test(kw.uraian)) {
+    } else if (kw.tipe === 'OPERASIONAL' && /administrasi|pengelolaan/i.test(kw.uraian)) {
       bkuUraian = `Bayar Biaya Pengelolaan Administrasi LPJ (${kw.penerimaNama || 'IRWAN YUSUF'})`;
     } else {
       bkuUraian = `Bayar Bahan Dari ${kw.namaToko || kw.penerimaNama}`;
