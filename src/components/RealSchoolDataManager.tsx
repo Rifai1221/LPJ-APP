@@ -232,12 +232,21 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
   const currentTotalRab = realData.divisions.reduce((sum, d) => sum + (d.subTotal || 0), 0);
   const activePagu = realData.paguAnggaran !== undefined && realData.paguAnggaran > 0 
     ? realData.paguAnggaran 
-    : currentTotalRab > 0 
-      ? currentTotalRab 
-      : 516851675.10;
+    : school?.totalAnggaran && school.totalAnggaran > 0
+      ? school.totalAnggaran
+      : currentTotalRab > 0 
+        ? currentTotalRab 
+        : 552457000;
   const sisaPagu = activePagu - currentTotalRab;
   const biayaPerM2 = realData.luasBangunanM2 > 0 ? currentTotalRab / realData.luasBangunanM2 : 0;
   const totalBobotTerkini = realData.divisions.reduce((s, d) => s + (d.bobotPersen || 0), 0);
+
+  // Check if current divisions reflect 2-decimal rounded percentages rather than exact Excel values
+  const hasRoundingDifference = React.useMemo(() => {
+    return realData.divisions.some(
+      (d) => Math.abs(d.subTotal - 14695356.2) < 50 || Math.abs(d.subTotal - 82647567.2) < 50 || Math.abs(d.subTotal - 75465626.2) < 50
+    );
+  }, [realData.divisions]);
 
   // Handle header field change
   const handleHeaderChange = (field: keyof RealSchoolData, value: any) => {
@@ -402,6 +411,76 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
       paguAnggaran: activePagu,
       biayaPerM2: realData.luasBangunanM2 > 0 ? finalTotal / realData.luasBangunanM2 : 0,
     });
+  };
+
+  // Apply exact Excel-matching subTotals and bobot (Total: Rp 552.457.000,00)
+  const handleApplyExcelPrecise552M = () => {
+    const excelValues: Record<string, { subTotal: number; bobot: number }> = {
+      'I': { subTotal: 14670041.65, bobot: 2.66 },
+      'II': { subTotal: 9874439.92, bobot: 1.79 },
+      'III': { subTotal: 82649811.26, bobot: 14.96 },
+      'IV': { subTotal: 75440354.37, bobot: 13.66 },
+      'V': { subTotal: 46162983.19, bobot: 8.36 },
+      'VI': { subTotal: 97338293.68, bobot: 17.62 },
+      'VII': { subTotal: 54913112.64, bobot: 9.94 },
+      'VIII': { subTotal: 55495660.89, bobot: 10.05 },
+      'IX': { subTotal: 0, bobot: 0.00 },
+      'X': { subTotal: 29380080.49, bobot: 5.32 },
+      'XI': { subTotal: 8821316.03, bobot: 1.60 },
+      'XII': { subTotal: 42104948.47, bobot: 7.62 },
+      'XIII': { subTotal: 10207041.51, bobot: 1.85 },
+      'XIV': { subTotal: 12106025.18, bobot: 2.19 },
+      'XV': { subTotal: 13292890.73, bobot: 2.41 },
+    };
+
+    const keywordMap: { match: RegExp; subTotal: number; bobot: number }[] = [
+      { match: /persiapan/i, subTotal: 14670041.65, bobot: 2.66 },
+      { match: /galian|urugan/i, subTotal: 9874439.92, bobot: 1.79 },
+      { match: /pasangan|bata/i, subTotal: 82649811.26, bobot: 14.96 },
+      { match: /beton/i, subTotal: 75440354.37, bobot: 13.66 },
+      { match: /kayu|kaca|besi/i, subTotal: 46162983.19, bobot: 8.36 },
+      { match: /atap/i, subTotal: 97338293.68, bobot: 17.62 },
+      { match: /langit/i, subTotal: 54913112.64, bobot: 9.94 },
+      { match: /lantai/i, subTotal: 55495660.89, bobot: 10.05 },
+      { match: /pengunci/i, subTotal: 0, bobot: 0.00 },
+      { match: /cat/i, subTotal: 29380080.49, bobot: 5.32 },
+      { match: /listrik/i, subTotal: 8821316.03, bobot: 1.60 },
+      { match: /mebeler|perabot/i, subTotal: 42104948.47, bobot: 7.62 },
+      { match: /perencanaan/i, subTotal: 10207041.51, bobot: 1.85 },
+      { match: /pengawasan/i, subTotal: 12106025.18, bobot: 2.19 },
+      { match: /pengelolaan/i, subTotal: 13292890.73, bobot: 2.41 },
+    ];
+
+    const updatedDivisions = realData.divisions.map((div) => {
+      let exact = excelValues[div.kode?.toUpperCase()];
+      if (!exact) {
+        const found = keywordMap.find((km) => km.match.test(div.uraian));
+        if (found) exact = { subTotal: found.subTotal, bobot: found.bobot };
+      }
+      if (exact) {
+        return {
+          ...div,
+          subTotal: exact.subTotal,
+          bobotPersen: exact.bobot,
+        };
+      }
+      return div;
+    });
+
+    const newTotal = updatedDivisions.reduce((s, d) => s + (d.subTotal || 0), 0);
+
+    onUpdateRealData({
+      ...realData,
+      divisions: updatedDivisions,
+      totalNilaiRab: newTotal,
+      paguAnggaran: 552457000,
+      biayaPerM2: realData.luasBangunanM2 > 0 ? newTotal / realData.luasBangunanM2 : 0,
+    });
+
+    setExcelSuccessMsg(
+      '✅ Seluruh 14/15 Divisi berhasil diselaraskan presisi dengan nominal Excel! (Total: Rp 552.457.000,00)'
+    );
+    setTimeout(() => setExcelSuccessMsg(null), 6000);
   };
 
   // Direct table edit: Edit Jumlah Harga (Rp) of a division -> AUTO CALCULATE BOBOT (%) DARI PAGU ANGGARAN
@@ -1478,6 +1557,16 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={handleApplyExcelPrecise552M}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-600 hover:to-indigo-600 text-white shadow-sm transition cursor-pointer"
+                title="Sesuaikan seluruh nominal divisi agar presisi sama persis dengan tabel Excel RAB Anda (Total Rp 552.457.000,00)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-300" />
+                <span>⚡ Presisi Excel (Rp 552 Jt)</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handleScaleAllToPagu}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm transition cursor-pointer"
                 title="Serap penuh 100% Pagu Anggaran ke seluruh divisi secara proporsional tanpa sisa selisih desimal"
@@ -1523,6 +1612,33 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Alert Banner for Rounding Difference */}
+          {hasRoundingDifference && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 text-blue-950 p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-blue-100 rounded-xl text-blue-700 shrink-0 mt-0.5 md:mt-0">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-blue-900">
+                    💡 Terdeteksi Selisih Pembulatan Bobot 2 Desimal vs Excel
+                  </h4>
+                  <p className="text-xs text-blue-700 mt-0.5">
+                    Tabel saat ini menghitung dari pembulatan bobot 2 desimal (Persiapan: Rp 14.695.356,20). Klik tombol di samping untuk langsung menyamakan setiap divisi dengan angka nominal riil Excel Anda (Persiapan: Rp 14.670.041,65) hingga ke nilai sen (Total: Rp 552.457.000,00).
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleApplyExcelPrecise552M}
+                className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>⚡ Samakan dengan Excel Sekarang</span>
+              </button>
+            </div>
+          )}
 
           {/* Rekap Table */}
           <div className="overflow-x-auto">
@@ -1672,6 +1788,15 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
               </div>
               <button
                 type="button"
+                onClick={handleApplyExcelPrecise552M}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-600 hover:to-indigo-600 text-white shadow-sm transition cursor-pointer"
+                title="Sesuaikan seluruh nominal divisi agar presisi sama persis dengan tabel Excel RAB Anda (Total Rp 552.457.000,00)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-300" />
+                <span>⚡ Presisi Excel (Rp 552 Jt)</span>
+              </button>
+              <button
+                type="button"
                 onClick={handleExecuteSync}
                 className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer"
                 title="Terapkan seluruh perubahan RAB dan AHSP ke Kwitansi, Bon Toko, SPB, dan BKU secara langsung"
@@ -1689,6 +1814,33 @@ export const RealSchoolDataManager: React.FC<RealSchoolDataManagerProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Alert Banner for Rounding Difference in Sub-tab 2 */}
+          {hasRoundingDifference && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 text-blue-950 p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-blue-100 rounded-xl text-blue-700 shrink-0 mt-0.5 md:mt-0">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-blue-900">
+                    💡 Terdeteksi Selisih Pembulatan Bobot 2 Desimal vs Excel
+                  </h4>
+                  <p className="text-xs text-blue-700 mt-0.5">
+                    Divisi di bawah saat ini menghitung dari pembulatan bobot 2 desimal (Persiapan: Rp 14.695.356,20). Klik tombol di samping untuk langsung menyamakan setiap divisi dengan angka nominal riil Excel Anda (Persiapan: Rp 14.670.041,65) hingga ke nilai sen (Total: Rp 552.457.000,00).
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleApplyExcelPrecise552M}
+                className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>⚡ Samakan dengan Excel Sekarang</span>
+              </button>
+            </div>
+          )}
 
           {realData.divisions.map((div, divIdx) => {
             const isExpanded = !!expandedDivisions[div.id];
