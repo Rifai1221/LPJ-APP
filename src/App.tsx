@@ -1081,7 +1081,7 @@ export default function App() {
       progressWeeks: overrideWeeks || prev.progressWeeks,
       kwitansiList: cleanedKwitansi,
       wageReports: currentWageReports.filter((w) => activeWeekNums.has(w.mingguKe)),
-      bkbRecords: currentBkb,
+      bkbRecords: prev.bkbRecords || [],
     }));
 
     setSwitchNotification(
@@ -1138,7 +1138,7 @@ export default function App() {
       ...prev,
       kwitansiList: res.rebalancedKwitansi,
       wageReports: res.rebalancedWageReports,
-      bkbRecords: res.rebalancedBkb,
+      bkbRecords: prev.bkbRecords || [],
     }));
 
     setSwitchNotification(
