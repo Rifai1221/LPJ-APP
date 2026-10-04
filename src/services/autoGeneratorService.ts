@@ -138,13 +138,19 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
 
     let convertedVol = rawVol;
     let convertedSatuan = item.satuan || 'unit';
+    let convertedPrice = item.hargaSatuan || 0;
 
     // Semen Kg -> Zak (1 Zak = 50 kg)
     const isSemen = /semen|pc\b|portland/i.test(rawName);
     if (isSemen) {
       convertedSatuan = 'Zak';
-      if (rawVol > 15 || /kg|kilogram/i.test(rawSatuan)) {
-        convertedVol = rawVol / 50;
+      let volKg = rawVol;
+      if (rawVol <= 15 && /zak|sak/i.test(rawSatuan)) {
+        volKg = rawVol * 50;
+      }
+      convertedVol = Math.max(1, Math.round(volKg / 50));
+      if (convertedPrice > 0 && convertedPrice <= 5000) {
+        convertedPrice = Math.round(convertedPrice * 50);
       }
     } else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
       convertedSatuan = /m3|m³/i.test(rawSatuan) ? 'm³' : 'm²';
@@ -155,7 +161,8 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
       namaBarang: rawName,
       volume: convertedVol,
       satuan: convertedSatuan,
-      jumlah: rawJml,
+      hargaSatuan: convertedPrice || (convertedVol > 0 ? Math.round(rawJml / convertedVol) : 0),
+      jumlah: isSemen && convertedPrice > 0 ? convertedVol * convertedPrice : rawJml,
     };
   });
 
@@ -192,17 +199,40 @@ export function normalizeMaterialItems<T extends { namaBarang: string; volume: n
     let realisticVolume: number;
     let realisticSatuan = group.satuan;
 
-    // A. Semen (Zak)
+    // A. Semen (Zak Utuh & Harga per Zak AHSP x 50)
     if (/semen|pc\b|portland/i.test(rawName)) {
       realisticSatuan = 'Zak';
-      if (totalRawVol > 15) {
-        realisticVolume = Math.max(1, Math.round(totalRawVol / 50));
-      } else {
-        realisticVolume = Math.max(1, Math.round(totalRawVol * 100) / 100);
+      const samplePrice = sampleItem.hargaSatuan || 0;
+      let hargaPerZak = samplePrice <= 5000 && samplePrice > 0 ? Math.round(samplePrice * 50) : Math.round(samplePrice);
+      if (hargaPerZak <= 0 && totalRawVol > 0 && totalRawJml > 0) {
+        const estUnitP = totalRawJml / totalRawVol;
+        hargaPerZak = estUnitP <= 5000 ? Math.round(estUnitP * 50) : Math.round(estUnitP);
       }
-      if (!/pcc|padang|gresik|holcim|tiga roda|dynamix/i.test(group.namaBarang)) {
-        group.namaBarang = `${group.namaBarang.replace(/\s*\(?50\s*kg\)?/gi, '')} PCC (@ 50 Kg)`.trim();
+      if (hargaPerZak <= 0) hargaPerZak = 72500;
+
+      // Compute whole integer Zak count
+      const rawZakSum = group.items.reduce((s, it) => {
+        const v = it.volume || 0;
+        return s + (v > 15 ? v / 50 : v);
+      }, 0);
+      realisticVolume = Math.max(1, Math.round(rawZakSum));
+
+      const finalZakTotal = realisticVolume * hargaPerZak;
+
+      let cleanBarangName = group.namaBarang.replace(/\s*\(?50\s*kg\)?/gi, '').trim();
+      if (!/pcc|padang|gresik|holcim|tiga roda|dynamix/i.test(cleanBarangName)) {
+        cleanBarangName = `${cleanBarangName} PCC (@ 50 Kg)`;
       }
+
+      result.push({
+        ...sampleItem,
+        namaBarang: cleanBarangName,
+        volume: realisticVolume,
+        satuan: 'Zak',
+        hargaSatuan: hargaPerZak,
+        jumlah: finalZakTotal,
+      });
+      return;
     }
     // B. Pasir, Batu, Tanah (m³)
     else if (/pasir|batu|tanah|sirtu|agregat|kerikil/i.test(rawName) && /m3|m³|m2|m²/i.test(rawSatuan)) {
