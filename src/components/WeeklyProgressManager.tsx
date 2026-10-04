@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import {
   TrendingUp,
   Sparkles,
@@ -94,6 +95,137 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
     try {
       localStorage.setItem('lpj_progress_decimal_precision', precision.toString());
     } catch {}
+  };
+
+  // Download Template Excel
+  const handleDownloadExcelTemplate = () => {
+    try {
+      const firstWeek = progressWeeks[0];
+      if (!firstWeek) return;
+      const divisions = firstWeek.divisions || [];
+
+      // 1. Prepare headers
+      const headers = ['Kode Divisi', 'Uraian Pekerjaan', 'Bobot Kontrak (%)'];
+      progressWeeks.forEach((w) => {
+        headers.push(`Minggu ${w.mingguKe} (%)`);
+      });
+
+      // 2. Prepare data rows
+      const rows = divisions.map((d) => {
+        const rowData: any[] = [d.id, d.uraian, d.bobotTotal || 0];
+        
+        // Add progress for each week
+        progressWeeks.forEach((w) => {
+          const matchDiv = (w.divisions || []).find((div) => div.id === d.id);
+          rowData.push(matchDiv ? matchDiv.prestasiMingguIni || 0 : 0);
+        });
+        
+        return rowData;
+      });
+
+      // 3. Combine headers and rows
+      const sheetData = [headers, ...rows];
+
+      // 4. Create workbook and worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+      // Set column widths for readability
+      ws['!cols'] = [
+        { wch: 12 }, // Kode Divisi
+        { wch: 40 }, // Uraian Pekerjaan
+        { wch: 18 }, // Bobot Kontrak
+        ...progressWeeks.map(() => ({ wch: 15 })) // Weeks
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Bobot Mingguan');
+
+      // 5. Trigger download
+      const fileName = `Template_Bobot_Mingguan_${school.namaSekolah.replace(/\s+/g, '_')}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      
+      setSyncSuccessMsg('✅ Template Excel berhasil diunduh. Silakan isi bobot prestasi mingguan Anda!');
+      setTimeout(() => setSyncSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error(err);
+      alert('Gagal mendownload template Excel.');
+    }
+  };
+
+  // Upload & Parse Excel Data
+  const handleUploadExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // Parse worksheet into rows
+        const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        if (jsonData.length < 2) {
+          alert('Format berkas Excel tidak sesuai template.');
+          return;
+        }
+
+        const headers = jsonData[0];
+        const weekCols: { colIdx: number; weekNum: number }[] = [];
+        headers.forEach((h, colIdx) => {
+          if (typeof h === 'string') {
+            const match = h.match(/Minggu\s*(\d+)/i);
+            if (match) {
+              weekCols.push({ colIdx, weekNum: parseInt(match[1], 10) });
+            }
+          }
+        });
+
+        if (weekCols.length === 0) {
+          alert('Tidak ditemukan kolom "Minggu X (%)" dalam Excel.');
+          return;
+        }
+
+        // Clone existing weeks to make modifications
+        const updatedWeeks = JSON.parse(JSON.stringify(progressWeeks)) as ProjectProgressWeek[];
+
+        // Loop through data rows (skip header)
+        for (let r = 1; r < jsonData.length; r++) {
+          const row = jsonData[r];
+          if (!row || row.length === 0) continue;
+
+          const divId = row[0]; // Kode Divisi
+          if (!divId || typeof divId !== 'string') continue;
+
+          weekCols.forEach(({ colIdx, weekNum }) => {
+            const rawVal = row[colIdx];
+            const valNum = parseFloat(rawVal) || 0;
+            
+            const targetW = updatedWeeks.find((w) => w.mingguKe === weekNum);
+            if (targetW) {
+              const targetDiv = (targetW.divisions || []).find((d) => d.id === divId);
+              if (targetDiv) {
+                targetDiv.prestasiMingguIni = Math.max(0, valNum);
+              }
+            }
+          });
+        }
+
+        // Recalculate cumulative progress and previous progress for all weeks
+        const fullyRecalculatedWeeks = recalculateAllWeeksProgress(updatedWeeks);
+        onUpdateWeeks(fullyRecalculatedWeeks);
+        
+        setSyncSuccessMsg(`⚡ Berhasil mengunggah ${weekCols.length} minggu bobot progres dari Excel!`);
+        setTimeout(() => setSyncSuccessMsg(null), 5000);
+      } catch (err: any) {
+        console.error(err);
+        alert('Gagal mengurai file Excel. Pastikan Anda tidak mengubah struktur kolom template.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
   };
 
   const formatProg = (val: number | null | undefined): string => {
@@ -1355,6 +1487,30 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
               <span>⚡ Kalibrasi Belanja ({formatNumber(currentTotalRealizedBobot || totalSdMingguIni, 1)}%)</span>
             </button>
           )}
+
+          {/* Excel Import & Template Download Buttons */}
+          <div className="flex items-center gap-1.5 border-l border-slate-300 pl-2">
+            <button
+              type="button"
+              onClick={handleDownloadExcelTemplate}
+              className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer"
+              title="Download template Excel untuk mengisi bobot beberapa minggu sekaligus"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Download Template Excel</span>
+            </button>
+
+            <label className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer">
+              <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" />
+              <span>Upload Bobot Excel</span>
+              <input
+                type="file"
+                accept=".xlsx, .xls"
+                onChange={handleUploadExcel}
+                className="hidden"
+              />
+            </label>
+          </div>
 
           <button
             type="button"

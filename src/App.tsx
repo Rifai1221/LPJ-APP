@@ -1169,7 +1169,7 @@ export default function App() {
       ...prev,
       kwitansiList: res.calibratedKwitansi,
       wageReports: res.calibratedWageReports,
-      bkbRecords: res.calibratedBkb,
+      bkbRecords: prev.bkbRecords || [],
     }));
 
     setSwitchNotification(
