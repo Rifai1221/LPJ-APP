@@ -1181,6 +1181,22 @@ export function calculateBkuFromTransactions(
       bkuUraian = `Bayar Bahan Dari ${kw.namaToko || kw.penerimaNama}`;
     }
 
+    let finalPengeluaran = kw.nominal;
+    // If it's an UPAH receipt belonging to an active week, cap at 35% of that week's incremental progress budget
+    if (kwWeek !== null && (kw.tipe === 'UPAH' || /uk\//i.test(kw.noBukti || '') || /upah/i.test(kw.uraian))) {
+      const matchW = activeWeeks.find((w) => w.mingguKe === kwWeek);
+      if (matchW) {
+        const weekDivSum = (matchW.divisions || []).reduce((s, d) => s + (d.prestasiMingguIni || 0), 0);
+        const weekBobot = matchW.bobotRealisasi || weekDivSum || 0;
+        const paguTotal = school?.totalAnggaran || 552457000;
+        const weekIncrementalBudget = Math.round((paguTotal * weekBobot) / 100);
+        const maxWageCap = Math.round(weekIncrementalBudget * 0.35);
+        if (maxWageCap > 0) {
+          finalPengeluaran = Math.min(kw.nominal, maxWageCap);
+        }
+      }
+    }
+
     result.push({
       id: kwBkuId,
       tanggal: displayTanggal,
@@ -1190,17 +1206,18 @@ export function calculateBkuFromTransactions(
       uraian: bkuUraian,
       noBukti: kw.noBukti,
       penerimaan: 0,
-      pengeluaran: kw.nominal,
+      pengeluaran: finalPengeluaran,
       kategoriBiaya: kw.kategoriBiayaPajak,
       kwitansiIdRef: kw.id,
     });
   });
 
-  // 2b. Map WeeklyWageReports into BKU if not already represented in kwitansiList
+  // 2b. Map WeeklyWageReports into BKU if not already represented in kwitansiList (Strictly Active Weeks Only & Capped at 35%)
   (wageReports || []).forEach((wr) => {
     if (!wr || wr.totalUpah <= 0) return;
     const wNum = wr.mingguKe;
-    if (hasAnyActiveProgress && !activeWeekNums.has(wNum)) return;
+    // STRICT ISOLATION: Only active weeks with real physical progress > 0% are allowed!
+    if (!activeWeekNums.has(wNum)) return;
 
     // Check if this wage report is already represented in kwitansiList
     const alreadyInKw = kwitansiList.some((k) => {
@@ -1209,7 +1226,14 @@ export function calculateBkuFromTransactions(
     });
 
     if (!alreadyInKw) {
-      const matchW = progressWeeks.find((w) => w.mingguKe === wNum);
+      const matchW = activeWeeks.find((w) => w.mingguKe === wNum);
+      const weekDivSum = (matchW?.divisions || []).reduce((s, d) => s + (d.prestasiMingguIni || 0), 0);
+      const weekBobot = matchW?.bobotRealisasi || weekDivSum || 0;
+      const paguTotal = school?.totalAnggaran || 552457000;
+      const weekIncrementalBudget = Math.round((paguTotal * weekBobot) / 100);
+      const maxWageCap = Math.round(weekIncrementalBudget * 0.35);
+      const cappedUpah = maxWageCap > 0 ? Math.min(wr.totalUpah, maxWageCap) : wr.totalUpah;
+
       const wDates = matchW
         ? resolveWeekDates(matchW, yearStr)
         : { endDate: `${yearStr}-07-12`, endDateSlash: `12/07/${yearStr}`, bulan: startProjectBulan };
@@ -1227,7 +1251,7 @@ export function calculateBkuFromTransactions(
         uraian: `Bayar Upah Borongan Pekerja Fisik Minggu Ke-${wNum}`,
         noBukti: `UK/${weekPad}/${yearStr}`,
         penerimaan: 0,
-        pengeluaran: wr.totalUpah,
+        pengeluaran: cappedUpah,
         kategoriBiaya: 'Konstruksi',
         kwitansiIdRef: `kw-upah-m${wNum}`,
       });
