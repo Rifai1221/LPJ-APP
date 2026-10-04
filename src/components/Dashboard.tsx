@@ -24,6 +24,7 @@ import {
   TaxRecord,
 } from '../types';
 import { formatRupiah, formatNumber } from '../utils/formatters';
+import { extractWeekNumberFromKwitansi } from '../services/autoGeneratorService';
 
 interface DashboardProps {
   school: SchoolMasterData;
@@ -48,9 +49,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenPrintModal,
   onOpenQuickReceipt,
 }) => {
+  // Active week filtering for Dashboard realisasi calculation (Anti-accumulated phantom receipts)
+  const activeWeeks = (progressWeeks || []).filter(
+    (w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0)
+  );
+  const activeWeekNums = new Set(activeWeeks.map((w) => w.mingguKe));
+  const hasActiveProgress = activeWeekNums.size > 0;
+
+  const validKwitansi = hasActiveProgress
+    ? kwitansiList.filter((k) => {
+        const wNum = extractWeekNumberFromKwitansi(k);
+        return wNum === null || activeWeekNums.has(wNum);
+      })
+    : kwitansiList.filter((k) => k.tipe === 'KONSULTAN' || (k.tipe === 'OPERASIONAL' && !extractWeekNumberFromKwitansi(k)));
+
   // Calculations
   const totalAnggaran = school.totalAnggaran || 0;
-  const totalRealisasi = kwitansiList.reduce((acc, curr) => acc + curr.nominal, 0);
+  const totalRealisasi = validKwitansi.reduce((acc, curr) => acc + curr.nominal, 0);
   const sisaAnggaran = totalAnggaran > 0 ? totalAnggaran - totalRealisasi : 0;
   const persentaseKeuangan = totalAnggaran > 0 ? Math.min(100, (totalRealisasi / totalAnggaran) * 100) : 0;
 
@@ -59,13 +74,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
     : { bobotRealisasi: 0, bobotRencana: 0, deviasi: 0 };
   const currentFisik = latestWeek.bobotRealisasi || 0;
 
-  const totalPajakPPN = taxRecords.reduce((sum, t) => sum + t.ppn11, 0);
-  const totalPajakPPh22 = taxRecords.reduce((sum, t) => sum + t.pph22, 0);
-  const totalPajakPPh23 = taxRecords.reduce((sum, t) => sum + t.pph23, 0);
+  const validKwitansiIds = new Set(validKwitansi.map((k) => k.id));
+  const validTaxRecords = hasActiveProgress
+    ? taxRecords.filter((t) => !t.kwitansiIdRef || validKwitansiIds.has(t.kwitansiIdRef))
+    : [];
+
+  const totalPajakPPN = validTaxRecords.reduce((sum, t) => sum + t.ppn11, 0);
+  const totalPajakPPh22 = validTaxRecords.reduce((sum, t) => sum + t.pph22, 0);
+  const totalPajakPPh23 = validTaxRecords.reduce((sum, t) => sum + t.pph23, 0);
   const totalSemuaPajak = totalPajakPPN + totalPajakPPh22 + totalPajakPPh23;
 
-  const totalUpahTerbayar = wageReports.reduce((sum, w) => sum + w.totalUpah, 0);
-  const totalKwitansiMaterial = kwitansiList.filter((k) => k.tipe === 'MATERIAL').length;
+  const validWageReports = hasActiveProgress
+    ? wageReports.filter((w) => activeWeekNums.has(w.mingguKe))
+    : [];
+  const totalUpahTerbayar = validWageReports.reduce((sum, w) => sum + w.totalUpah, 0);
+  const totalKwitansiMaterial = validKwitansi.filter((k) => k.tipe === 'MATERIAL').length;
 
   return (
     <div className="space-y-6">

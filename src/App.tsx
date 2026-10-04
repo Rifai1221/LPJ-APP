@@ -103,6 +103,50 @@ export default function App() {
   const isLoadedRef = useRef(false);
   const isDirtyRef = useRef(false);
 
+  // Helper to automatically sanitize & calibrate state if kwitansi expenditure is severely imbalanced with physical progress
+  const autoSanitizeStateWithProgress = (rawState: AppStateData): { state: AppStateData; changed: boolean } => {
+    const pWeeks = rawState.progressWeeks || [];
+    const activeW = pWeeks.filter((w) => (w.bobotRealisasi && w.bobotRealisasi > 0) || w.divisions?.some((d) => (d.prestasiMingguIni || 0) > 0));
+    const activeWNums = new Set(activeW.map((w) => w.mingguKe));
+
+    const hasOrphanKw = (rawState.kwitansiList || []).some((k) => {
+      const wNum = extractWeekNumberFromKwitansi(k);
+      return wNum !== null && !activeWNums.has(wNum);
+    });
+
+    const totKw = (rawState.kwitansiList || []).reduce((s, k) => s + (k.nominal || 0), 0);
+    const cumBobot = activeW.reduce((s, w) => {
+      const dSum = (w.divisions || []).reduce((ds, d) => ds + (d.prestasiMingguIni || 0), 0);
+      return Math.max(s, w.bobotRealisasi || dSum || 0);
+    }, 0);
+    const pagu = rawState.school?.totalAnggaran || 552457000;
+    const maxExp = Math.round(pagu * (cumBobot / 100) * 1.35) + 35000000;
+    const isImbalanced = totKw > maxExp;
+
+    if (hasOrphanKw || isImbalanced) {
+      const calib = calibrateAllTransactionsToCurrentProgress({
+        school: rawState.school,
+        kwitansiList: rawState.kwitansiList,
+        progressWeeks: rawState.progressWeeks,
+        workers: rawState.workers,
+        stores: rawState.stores || [],
+        rpdItems: rawState.rpdItems,
+        realSchoolData: rawState.realSchoolData,
+      });
+      return {
+        state: {
+          ...rawState,
+          kwitansiList: calib.calibratedKwitansi,
+          wageReports: calib.calibratedWageReports,
+          bkbRecords: calib.calibratedBkb,
+        },
+        changed: true,
+      };
+    }
+
+    return { state: rawState, changed: false };
+  };
+
   // 1. Initial Load of Tenants and School Data from Cloud Firestore
   // CRITICAL: Prioritizes existing Cloud Firestore documents so data from previous deploys/publishes is never lost!
   useEffect(() => {
@@ -134,9 +178,11 @@ export default function App() {
         const loaded = await loadSchoolTenantAppState(activeT);
         if (!isMounted) return;
 
-        setAppState(loaded.state);
+        // Auto-sanitize on initial load so any stale/excessive receipts from inactive weeks are immediately cleaned!
+        const sanitized = autoSanitizeStateWithProgress(loaded.state);
+        setAppState(sanitized.state);
         isLoadedRef.current = true;
-        isDirtyRef.current = false; // Initial load is clean, never dirty!
+        isDirtyRef.current = sanitized.changed;
         setIsInitialLoading(false);
         setLastSyncedText(
           loaded.source === 'cloud'
@@ -213,9 +259,10 @@ export default function App() {
 
     try {
       const loaded = await loadSchoolTenantAppState(targetTenant);
-      setAppState(loaded.state);
+      const sanitized = autoSanitizeStateWithProgress(loaded.state);
+      setAppState(sanitized.state);
       isLoadedRef.current = true;
-      isDirtyRef.current = false;
+      isDirtyRef.current = sanitized.changed;
       setIsSyncing(false);
       setLastSyncedText(
         loaded.source === 'cloud'
@@ -608,7 +655,26 @@ export default function App() {
 
   const handleUpdateProgressWeeks = (updatedWeeks: ProjectProgressWeek[]) => {
     isDirtyRef.current = true;
-    setAppState((prev) => ({ ...prev, progressWeeks: updatedWeeks }));
+
+    // Real-time automatic calibration:
+    // Synchronize kwitansis, wage reports, and BKU to match the updated weekly progress!
+    const calib = calibrateAllTransactionsToCurrentProgress({
+      school: appState.school,
+      kwitansiList: appState.kwitansiList,
+      progressWeeks: updatedWeeks,
+      workers: appState.workers,
+      stores: appState.stores || [],
+      rpdItems: appState.rpdItems,
+      realSchoolData: appState.realSchoolData,
+    });
+
+    setAppState((prev) => ({
+      ...prev,
+      progressWeeks: updatedWeeks,
+      kwitansiList: calib.calibratedKwitansi,
+      wageReports: calib.calibratedWageReports,
+      bkbRecords: calib.calibratedBkb,
+    }));
   };
 
   const handleUpdateWorkers = (updatedWorkers: WorkerItem[]) => {
