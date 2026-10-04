@@ -448,6 +448,7 @@ export function deduplicateKwitansiList<
   const result: K[] = [];
 
   for (const item of list) {
+    const normId = (item.id || '').trim();
     const normNoBukti = (item.noBukti || '').trim().toUpperCase();
     const normTanggal = (item.tanggal || '').trim();
     const normNominal = Math.round(item.nominal || 0);
@@ -458,8 +459,13 @@ export function deduplicateKwitansiList<
 
     let isDuplicate = false;
 
+    // Signature 0: Exact ID
+    if (normId && seenKeys.has(`ID:${normId}`)) {
+      isDuplicate = true;
+    }
+
     // Signature 1: Exact No Bukti
-    if (normNoBukti) {
+    if (!isDuplicate && normNoBukti) {
       if (seenNoBukti.has(normNoBukti)) {
         isDuplicate = true;
       }
@@ -485,6 +491,7 @@ export function deduplicateKwitansiList<
     }
 
     if (!isDuplicate) {
+      if (normId) seenKeys.add(`ID:${normId}`);
       if (normNoBukti) seenNoBukti.add(normNoBukti);
       if (normTipe === 'UPAH' && normWeek > 0) seenUpahWeek.add(normWeek);
       if (normNominal > 0) {
@@ -953,8 +960,9 @@ export function calculateBkuFromTransactions(
   const hasAnyActiveProgress = activeWeekNums.size > 0;
 
   kwitansiList.forEach((kw) => {
-    const kwBkuId = `bku-kw-${kw.id}`;
-    if (deletedIds.includes(kw.id) || deletedIds.includes(kwBkuId)) {
+    const cleanKwId = (kw.id || '').replace(/^(bku-kw-)+/, '');
+    const kwBkuId = `bku-kw-${cleanKwId}`;
+    if (deletedIds.includes(kw.id) || deletedIds.includes(cleanKwId) || deletedIds.includes(kwBkuId)) {
       return;
     }
 
@@ -1109,19 +1117,32 @@ export function calculateBkuFromTransactions(
     return a.tanggalObj.localeCompare(b.tanggalObj);
   });
 
-  // Compute running balance
+  // Compute running balance & guarantee 100% unique React IDs
   let currentSaldo = 0;
-  return result.map((tx) => {
+  const seenBkuTxIds = new Set<string>();
+  const finalUniqueResult: BkuTransaction[] = [];
+
+  result.forEach((tx) => {
     if (tx.jenis === 'PENERIMAAN') {
       currentSaldo += tx.penerimaan;
     } else {
       currentSaldo -= tx.pengeluaran;
     }
-    return {
+
+    let finalId = tx.id || `bku-tx-${Math.random()}`;
+    if (seenBkuTxIds.has(finalId)) {
+      finalId = `${finalId}-${seenBkuTxIds.size}`;
+    }
+    seenBkuTxIds.add(finalId);
+
+    finalUniqueResult.push({
       ...tx,
+      id: finalId,
       saldo: currentSaldo,
-    };
+    });
   });
+
+  return finalUniqueResult;
 }
 
 export function calculateBktFromBku(bkuList: BkuTransaction[]): BktTransaction[] {

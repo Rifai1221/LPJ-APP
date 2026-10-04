@@ -1352,7 +1352,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
               title="Kalibrasi belanja bahan & upah borongan mingguan agar sinkron murni dengan progres fisik riil (cegah saldo minus)"
             >
               <Wand2 className="w-3.5 h-3.5 text-amber-300" />
-              <span>⚡ Kalibrasi Belanja Progres</span>
+              <span>⚡ Kalibrasi Belanja ({formatNumber(currentTotalRealizedBobot || totalSdMingguIni, 1)}%)</span>
             </button>
           )}
 
@@ -2811,7 +2811,7 @@ export const WeeklyProgressManager: React.FC<WeeklyProgressManagerProps> = ({
                 title="Kalibrasi belanja bahan & upah borongan mingguan agar sinkron murni dengan progres fisik riil (cegah saldo minus)"
               >
                 <Wand2 className="w-4 h-4 text-amber-300" />
-                <span>⚡ Kalibrasi Belanja Progres</span>
+                <span>⚡ Kalibrasi Belanja Progres ({formatNumber(currentTotalRealizedBobot || totalSdMingguIni, 1)}%)</span>
               </button>
             )}
           </div>

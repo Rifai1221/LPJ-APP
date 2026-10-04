@@ -178,11 +178,10 @@ export default function App() {
         const loaded = await loadSchoolTenantAppState(activeT);
         if (!isMounted) return;
 
-        // Auto-sanitize on initial load so any stale/excessive receipts from inactive weeks are immediately cleaned!
-        const sanitized = autoSanitizeStateWithProgress(loaded.state);
-        setAppState(sanitized.state);
+        // Load 100% raw saved state on initial load/refresh without forced auto-overwrite
+        setAppState(loaded.state);
         isLoadedRef.current = true;
-        isDirtyRef.current = sanitized.changed;
+        isDirtyRef.current = false; // Initial load is clean, never dirty!
         setIsInitialLoading(false);
         setLastSyncedText(
           loaded.source === 'cloud'
@@ -259,10 +258,9 @@ export default function App() {
 
     try {
       const loaded = await loadSchoolTenantAppState(targetTenant);
-      const sanitized = autoSanitizeStateWithProgress(loaded.state);
-      setAppState(sanitized.state);
+      setAppState(loaded.state);
       isLoadedRef.current = true;
-      isDirtyRef.current = sanitized.changed;
+      isDirtyRef.current = false;
       setIsSyncing(false);
       setLastSyncedText(
         loaded.source === 'cloud'
