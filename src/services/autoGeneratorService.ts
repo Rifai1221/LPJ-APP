@@ -1524,6 +1524,73 @@ export function calculateBktFromBku(bkuList: BkuTransaction[]): BktTransaction[]
   });
 }
 
+export function calculateBkbFromBku(
+  bkuList: BkuTransaction[],
+  school: SchoolMasterData
+): BkbTransaction[] {
+  let runningSaldo = 0;
+  const result: BkbTransaction[] = [];
+
+  bkuList.forEach((bku) => {
+    const isTermin = /termin/i.test(bku.uraian);
+    const isPenarikanBank = /penarikan|tarik.*bank|tarik.*tunai/i.test(bku.uraian);
+    
+    // In our app, isTransfer can be checked via bank payment or specific keywords
+    const isTransfer = 
+      /transfer|bkb|nontunai|non-tunai|giral/i.test(bku.uraian) || 
+      bku.kategoriBiaya === 'KONSULTAN' || 
+      bku.kategoriBiaya === 'PERENCANA' || 
+      bku.kategoriBiaya === 'PENGAWAS';
+
+    if (isTermin) {
+      // Dana masuk ke Bank (Debit)
+      runningSaldo += bku.penerimaan;
+      result.push({
+        id: `bkb-dep-${bku.id}`,
+        tanggal: bku.tanggal,
+        tanggalObj: bku.tanggalObj || bku.tanggal,
+        uraian: bku.uraian,
+        noBukti: bku.noBukti || 'BB-IN',
+        penerimaan: bku.penerimaan,
+        pengeluaran: 0,
+        saldo: runningSaldo,
+        bulan: bku.bulan,
+      });
+    } else if (isPenarikanBank) {
+      // Dana ditarik dari Bank secara tunai (Kredit Bank)
+      const amount = bku.penerimaan || bku.pengeluaran || 0;
+      runningSaldo -= amount;
+      result.push({
+        id: `bkb-wd-${bku.id}`,
+        tanggal: bku.tanggal,
+        tanggalObj: bku.tanggalObj || bku.tanggal,
+        uraian: `Penarikan Dana Bank - Dipindahkan ke Kas Tunai`,
+        noBukti: bku.noBukti || 'BB-OUT',
+        penerimaan: 0,
+        pengeluaran: amount,
+        saldo: runningSaldo,
+        bulan: bku.bulan,
+      });
+    } else if (isTransfer) {
+      // Dana keluar via transfer bank (Kredit Bank)
+      runningSaldo -= bku.pengeluaran;
+      result.push({
+        id: `bkb-tr-${bku.id}`,
+        tanggal: bku.tanggal,
+        tanggalObj: bku.tanggalObj || bku.tanggal,
+        uraian: bku.uraian,
+        noBukti: bku.noBukti || 'BB-TR',
+        penerimaan: 0,
+        pengeluaran: bku.pengeluaran,
+        saldo: runningSaldo,
+        bulan: bku.bulan,
+      });
+    }
+  });
+
+  return result;
+}
+
 export function generateTaxesFromKwitansi(
   kwitansiList: KwitansiDocument[],
   manualTaxRecords: TaxRecord[] = [],

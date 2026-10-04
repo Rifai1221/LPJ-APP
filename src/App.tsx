@@ -16,6 +16,7 @@ import {
 import {
   calculateBkuFromTransactions,
   calculateBktFromBku,
+  calculateBkbFromBku,
   generateTaxesFromKwitansi,
   generateWeeklyTransactionsFromProgressAndRealData,
   normalizeMaterialItems,
@@ -447,6 +448,10 @@ export default function App() {
   const bktList = useMemo(() => {
     return calculateBktFromBku(bkuList);
   }, [bkuList]);
+
+  const bkbList = useMemo(() => {
+    return calculateBkbFromBku(bkuList, appState.school);
+  }, [bkuList, appState.school]);
 
   const taxRecords = useMemo(() => {
     return generateTaxesFromKwitansi(
@@ -1510,7 +1515,7 @@ Lanjutkan pengosongan data transaksi?`)
 
         {activeTab === 'bkb' && (
           <BkbManager
-            bkbList={appState.bkbRecords}
+            bkbList={bkbList}
             school={appState.school}
             progressWeeks={appState.progressWeeks}
             onOpenPrintModal={(period) => handleOpenPrint('BKB', period)}
@@ -1630,7 +1635,7 @@ Lanjutkan pengosongan data transaksi?`)
         wageReports={appState.wageReports}
         bkuList={bkuList}
         bktList={bktList}
-        bkbList={appState.bkbRecords}
+        bkbList={bkbList}
         taxRecords={taxRecords}
         progressWeeks={appState.progressWeeks}
         workers={appState.workers}

@@ -153,6 +153,7 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
   realSchoolData,
 }) => {
   const [selectedDoc, setSelectedDoc] = React.useState<string>(documentType);
+  const [paperSize, setPaperSize] = React.useState<'A4' | 'F4'>('A4');
 
   React.useEffect(() => {
     setSelectedDoc(documentType);
@@ -177,6 +178,65 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex flex-col overflow-hidden">
+      {/* Dynamic Print Styles for A4 vs F4 & Page-Break Protections */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          @page {
+            size: ${paperSize === 'A4' ? 'A4' : '215mm 330mm'} portrait;
+            margin: 1.5cm 1cm 1.5cm 1.5cm !important;
+          }
+          
+          body, .print-container {
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            box-shadow: none !important;
+          }
+
+          .page-break {
+            page-break-after: always !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          /* Force strict table proportions to fit physical page exactly */
+          table {
+            width: 100% !important;
+            max-width: 100% !important;
+            table-layout: fixed !important;
+            word-wrap: break-word !important;
+            border-collapse: collapse !important;
+          }
+
+          th, td {
+            word-break: break-word !important;
+            overflow-wrap: break-word !important;
+            white-space: normal !important;
+          }
+
+          thead {
+            display: table-header-group !important; /* Automatic repeating header on each page */
+          }
+
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          /* Prevent signature box or critical blocks from breaking across pages */
+          .signature-block, .prevent-split, .kop-surat-wrapper {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          .print-hidden, header, footer, nav, button, select {
+            display: none !important;
+          }
+        }
+      `}} />
+
       {/* Top Modal Controls */}
       <div className="bg-slate-900 text-white p-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
@@ -192,6 +252,19 @@ export const PrintDocumentViewer: React.FC<PrintDocumentViewerProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Paper Size Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Kertas:</span>
+            <select
+              value={paperSize}
+              onChange={(e) => setPaperSize(e.target.value as 'A4' | 'F4')}
+              className="bg-transparent text-white text-xs font-bold focus:outline-hidden cursor-pointer"
+            >
+              <option value="A4" className="bg-slate-800">📄 A4 (210 x 297 mm)</option>
+              <option value="F4" className="bg-slate-800">📄 F4 / Folio (215 x 330 mm)</option>
+            </select>
+          </div>
+
           <select
             value={docType}
             onChange={(e) => setSelectedDoc(e.target.value)}
