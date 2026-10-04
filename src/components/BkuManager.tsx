@@ -75,13 +75,14 @@ export const BkuManager: React.FC<BkuManagerProps> = ({
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Calculate current realized progress percentage across active weeks
+  // Calculate current realized progress percentage across active weeks up to the week limit
   const currentRealizedProgress = useMemo(() => {
-    return progressWeeks.reduce((s, w) => {
+    const filteredWeeks = progressWeeks.filter((w) => w.mingguKe <= bkuWeekLimit);
+    return filteredWeeks.reduce((s, w) => {
       const divSum = (w.divisions || []).reduce((ds, d) => ds + (d.prestasiMingguIni || 0), 0);
-      return s + (w.bobotRealisasi || divSum || 0);
+      return s + divSum;
     }, 0);
-  }, [progressWeeks]);
+  }, [progressWeeks, bkuWeekLimit]);
 
   // Document Preview Modal State
   const [previewTx, setPreviewTx] = useState<BkuTransaction | null>(null);

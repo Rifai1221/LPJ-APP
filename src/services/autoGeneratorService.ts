@@ -41,18 +41,35 @@ export function getDateInWeek(startDateIso: string, dayOffset: number) {
  * Accurately extracts the target week number (1..52) from kwitansi document attributes,
  * receipts reference, evidence number (noBukti), or transaction descriptions.
  */
-export function extractWeekNumberFromKwitansi(k: KwitansiDocument): number | null {
+export function extractWeekNumberFromKwitansi(
+  k: KwitansiDocument,
+  progressWeeks?: ProjectProgressWeek[],
+  schoolYear = '2026'
+): number | null {
   if (typeof k.mingguKeRef === 'number' && k.mingguKeRef > 0) {
     return k.mingguKeRef;
   }
+
+  // Match the transaction date directly with the weekly progress dates range (100% accurate fallback)
+  if (k.tanggal && progressWeeks && progressWeeks.length > 0) {
+    const txIso = parseTxDateToIso(k.tanggal, parseInt(schoolYear, 10));
+    if (txIso) {
+      const matchW = progressWeeks.find((w) => {
+        const res = resolveWeekDates(w, schoolYear);
+        return txIso >= res.startDate && txIso <= res.endDate;
+      });
+      if (matchW) return matchW.mingguKe;
+    }
+  }
+
   const bukti = k.noBukti || '';
-  const matchBukti =
-    bukti.match(/(?:UK|ADM|KONS-P|KONS-W|KW-MAT|KW-ALAT|KW-SMKK)\/(\d{1,2})\//i) ||
-    bukti.match(/^(\d{1,2})\/KW-/i);
-  if (matchBukti) {
-    const num = parseInt(matchBukti[1], 10);
+  // UK/01/2026, ADM/01/2026, KONS-P/01/2026, etc are always week-based
+  const matchBuktiWeekly = bukti.match(/(?:UK|ADM|KONS-P|KONS-W)\/(\d{1,2})\//i);
+  if (matchBuktiWeekly) {
+    const num = parseInt(matchBuktiWeekly[1], 10);
     if (!isNaN(num) && num > 0 && num <= 52) return num;
   }
+
   const matchId = (k.id || '').match(/-m(\d{1,2})-/i);
   if (matchId) {
     const num = parseInt(matchId[1], 10);
@@ -1096,7 +1113,7 @@ export function calculateBkuFromTransactions(
       return;
     }
 
-    const kwWeek = extractWeekNumberFromKwitansi(kw);
+    const kwWeek = extractWeekNumberFromKwitansi(kw, progressWeeks, yearStr);
     // STRICT ISOLATION: Anything beyond the week limit is excluded!
     if (kwWeek !== null && kwWeek > effLimit) {
       return;
@@ -1256,7 +1273,7 @@ export function calculateBkuFromTransactions(
 
     // Check if this wage report is already represented in kwitansiList
     const alreadyInKw = kwitansiList.some((k) => {
-      const kwW = extractWeekNumberFromKwitansi(k);
+      const kwW = extractWeekNumberFromKwitansi(k, progressWeeks, yearStr);
       return kwW === wNum && (k.tipe === 'UPAH' || /uk\//i.test(k.noBukti || '') || /upah/i.test(k.uraian || ''));
     });
 
@@ -1404,13 +1421,38 @@ export function calculateBkuFromTransactions(
   // 4. Merge other manual transactions
   manualTransactions.forEach((tx) => {
     if (
-      !deletedIds.includes(tx.id) &&
-      tx.id !== 'bku-init-1' &&
-      tx.id !== 'bku-init-2' &&
-      !result.some((r) => r.id === tx.id)
+      deletedIds.includes(tx.id) ||
+      tx.id === 'bku-init-1' ||
+      tx.id === 'bku-init-2' ||
+      result.some((r) => r.id === tx.id || (r.kwitansiIdRef && r.kwitansiIdRef === tx.kwitansiIdRef))
     ) {
-      result.push(tx);
+      return;
     }
+
+    // Filter by week limit if linked to a kwitansi
+    if (tx.kwitansiIdRef) {
+      const linkedKw = kwitansiList.find((k) => k.id === tx.kwitansiIdRef);
+      if (linkedKw) {
+        const kwWeek = extractWeekNumberFromKwitansi(linkedKw, progressWeeks, yearStr);
+        if (kwWeek !== null && kwWeek > effLimit) {
+          return;
+        }
+      }
+    } else if (tx.tanggal) {
+      // Find matching week by transaction date
+      const txIso = parseTxDateToIso(tx.tanggalObj || tx.tanggal, parseInt(yearStr, 10));
+      if (txIso) {
+        const matchW = progressWeeks.find((w) => {
+          const res = resolveWeekDates(w, yearStr);
+          return txIso >= res.startDate && txIso <= res.endDate;
+        });
+        if (matchW && matchW.mingguKe > effLimit) {
+          return;
+        }
+      }
+    }
+
+    result.push(tx);
   });
 
   // Sort chronologically
@@ -2768,7 +2810,7 @@ export function calibrateAllTransactionsToCurrentProgress(params: {
   const activeWeekNums = new Set(activeWeeks.map((w) => w.mingguKe));
   const cumulativeBobot = activeWeeks.reduce((s, w) => {
     const divSum = (w.divisions || []).reduce((ds, d) => ds + (d.prestasiMingguIni || 0), 0);
-    return s + (w.bobotRealisasi || divSum || 0);
+    return s + divSum;
   }, 0);
 
   // If NO active progress at all (0% across all weeks):
