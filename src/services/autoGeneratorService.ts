@@ -1182,18 +1182,45 @@ export function calculateBkuFromTransactions(
     }
 
     let finalPengeluaran = kw.nominal;
-    // If it's an UPAH receipt belonging to an active week, cap at 35% of that week's incremental progress budget
+    const paguTotal = school?.totalAnggaran || 552457000;
+
+    // 1. If it's an UPAH receipt belonging to an active week, cap at 35% of that week's incremental progress budget
     if (kwWeek !== null && (kw.tipe === 'UPAH' || /uk\//i.test(kw.noBukti || '') || /upah/i.test(kw.uraian))) {
       const matchW = activeWeeks.find((w) => w.mingguKe === kwWeek);
       if (matchW) {
         const weekDivSum = (matchW.divisions || []).reduce((s, d) => s + (d.prestasiMingguIni || 0), 0);
         const weekBobot = matchW.bobotRealisasi || weekDivSum || 0;
-        const paguTotal = school?.totalAnggaran || 552457000;
         const weekIncrementalBudget = Math.round((paguTotal * weekBobot) / 100);
         const maxWageCap = Math.round(weekIncrementalBudget * 0.35);
         if (maxWageCap > 0) {
           finalPengeluaran = Math.min(kw.nominal, maxWageCap);
         }
+      }
+    }
+
+    // 2. MANAGEMENT FEES (Perencana, Pengawas, Pengelolaan ADM) - strictly calculated from RINCIAN BIAYA MANAJEMEN table for active week!
+    const isPerencanaKw = /perencana/i.test(`${kw.noBukti} ${kw.uraian}`);
+    const isPengawasKw = /pengawas/i.test(`${kw.noBukti} ${kw.uraian}`);
+    const isAdmKw = /administrasi|pengelolaan|\badm\b/i.test(`${kw.noBukti} ${kw.uraian}`);
+
+    if (kwWeek !== null && (isPerencanaKw || isPengawasKw || isAdmKw)) {
+      const matchW = activeWeeks.find((w) => w.mingguKe === kwWeek);
+      if (matchW) {
+        let divM = null;
+        if (isPerencanaKw) {
+          divM = matchW.divisions?.find((d) => d.id === 'div-m1' || /perencana/i.test(d.uraian));
+        } else if (isPengawasKw) {
+          divM = matchW.divisions?.find((d) => d.id === 'div-m2' || /pengawas/i.test(d.uraian));
+        } else if (isAdmKw) {
+          divM = matchW.divisions?.find((d) => d.id === 'div-m3' || /pengelolaan|administrasi/i.test(d.uraian));
+        }
+
+        const pMg = divM?.prestasiMingguIni || 0;
+        if (pMg <= 0) {
+          // If Management fee for this active week is 0.00%, DO NOT include in BKU!
+          return;
+        }
+        finalPengeluaran = Math.round((paguTotal * pMg) / 100);
       }
     }
 
@@ -1255,6 +1282,87 @@ export function calculateBkuFromTransactions(
         kategoriBiaya: 'Konstruksi',
         kwitansiIdRef: `kw-upah-m${wNum}`,
       });
+    }
+  });
+
+  // 2c. Auto-generate Management BKU entries strictly from active week RINCIAN BIAYA MANAJEMEN input (div-m1, div-m2, div-m3)
+  const paguTotal = school?.totalAnggaran || 552457000;
+  activeWeeks.forEach((weekObj) => {
+    const wNum = weekObj.mingguKe;
+    const wDates = resolveWeekDates(weekObj, yearStr);
+    const weekPad = String(wNum).padStart(2, '0');
+
+    const divM1 = weekObj.divisions?.find((d) => d.id === 'div-m1' || /perencana/i.test(d.uraian));
+    const divM2 = weekObj.divisions?.find((d) => d.id === 'div-m2' || /pengawas/i.test(d.uraian));
+    const divM3 = weekObj.divisions?.find((d) => d.id === 'div-m3' || /pengelolaan|administrasi/i.test(d.uraian));
+
+    // Perencana (div-m1)
+    if (divM1 && (divM1.prestasiMingguIni || 0) > 0) {
+      const alreadyHasP = result.some(
+        (r) => /perencana/i.test(r.uraian || '') && (r.noBukti?.includes(`/${weekPad}/`) || r.noBukti?.endsWith(`-${wNum}`))
+      );
+      if (!alreadyHasP) {
+        const pNominal = Math.round((paguTotal * divM1.prestasiMingguIni) / 100);
+        result.push({
+          id: `bku-mgt-p-w${wNum}`,
+          tanggal: wDates.endDateSlash,
+          tanggalObj: wDates.endDate,
+          bulan: wDates.bulan || startProjectBulan,
+          jenis: 'PENGELUARAN',
+          uraian: `Bayar Honorarium Jasa Perencana Teknis (DZIKRI IMAM MAJID, ST.)`,
+          noBukti: `KONS-P/${weekPad}/${yearStr}`,
+          penerimaan: 0,
+          pengeluaran: pNominal,
+          kategoriBiaya: 'Perencanaan_Pengelolaan',
+          kwitansiIdRef: `kw-kons-p-m${wNum}`,
+        });
+      }
+    }
+
+    // Pengawas (div-m2)
+    if (divM2 && (divM2.prestasiMingguIni || 0) > 0) {
+      const alreadyHasW = result.some(
+        (r) => /pengawas/i.test(r.uraian || '') && (r.noBukti?.includes(`/${weekPad}/`) || r.noBukti?.endsWith(`-${wNum}`))
+      );
+      if (!alreadyHasW) {
+        const wNominal = Math.round((paguTotal * divM2.prestasiMingguIni) / 100);
+        result.push({
+          id: `bku-mgt-w-w${wNum}`,
+          tanggal: wDates.endDateSlash,
+          tanggalObj: wDates.endDate,
+          bulan: wDates.bulan || startProjectBulan,
+          jenis: 'PENGELUARAN',
+          uraian: `Bayar Honorarium Jasa Pengawas Lapangan (ERWIN RUSANDI, ST.)`,
+          noBukti: `KONS-W/${weekPad}/${yearStr}`,
+          penerimaan: 0,
+          pengeluaran: wNominal,
+          kategoriBiaya: 'Perencanaan_Pengelolaan',
+          kwitansiIdRef: `kw-kons-w-m${wNum}`,
+        });
+      }
+    }
+
+    // Pengelolaan ADM (div-m3)
+    if (divM3 && (divM3.prestasiMingguIni || 0) > 0) {
+      const alreadyHasAdm = result.some(
+        (r) => /administrasi|pengelolaan/i.test(r.uraian || '') && (r.noBukti?.includes(`/${weekPad}/`) || r.noBukti?.endsWith(`-${wNum}`))
+      );
+      if (!alreadyHasAdm) {
+        const admNominal = Math.round((paguTotal * divM3.prestasiMingguIni) / 100);
+        result.push({
+          id: `bku-mgt-adm-w${wNum}`,
+          tanggal: wDates.endDateSlash,
+          tanggalObj: wDates.endDate,
+          bulan: wDates.bulan || startProjectBulan,
+          jenis: 'PENGELUARAN',
+          uraian: `Bayar Biaya Pengelolaan Administrasi LPJ (Hani Sri Wahyuni)`,
+          noBukti: `ADM/${weekPad}/${yearStr}`,
+          penerimaan: 0,
+          pengeluaran: admNominal,
+          kategoriBiaya: 'Perencanaan_Pengelolaan',
+          kwitansiIdRef: `kw-adm-m${wNum}`,
+        });
+      }
     }
   });
 
