@@ -2644,15 +2644,87 @@ export function calibrateAllTransactionsToCurrentProgress(params: {
     currentBkb = res.updatedBkb;
   });
 
-  // 4. Strict Purge of Inactive/Future Weeks:
-  // Any kwitansi with week not in activeWeekNums MUST be purged!
-  const finalizedKwitansi = deduplicateKwitansiList(currentKwitansi).filter((k) => {
-    const kwWeek = extractWeekNumberFromKwitansi(k);
-    if (kwWeek !== null && !activeWeekNums.has(kwWeek)) {
-      return false; // Purge future/inactive week receipts!
+  // 4. Strict Weekly Budget Capping & Scaling:
+  // For every active week, ensure the total material + wage kwitansi expenditure
+  // NEVER exceeds (Incremental Week Progress % / 100) * Pagu Total!
+  const cappedKwitansiList: KwitansiDocument[] = [];
+  const processedWeeks = new Set<number>();
+
+  activeWeekNums.forEach((targetWeek) => {
+    processedWeeks.add(targetWeek);
+    const weekObj = activeWeeks.find((w) => w.mingguKe === targetWeek);
+    const weekDivSum = (weekObj?.divisions || []).reduce((ds, d) => ds + (d.prestasiMingguIni || 0), 0);
+    const weekIncrementalBobot = weekObj?.bobotRealisasi || weekDivSum || 0;
+    const weekMaxTarget = Math.round((paguTotal * weekIncrementalBobot) / 100);
+
+    // Get all material/wage kwitansis belonging to targetWeek
+    const weekKwitansis = currentKwitansi.filter((k) => extractWeekNumberFromKwitansi(k) === targetWeek);
+    const nonWeekKwitansis = currentKwitansi.filter((k) => extractWeekNumberFromKwitansi(k) !== targetWeek);
+
+    const weekMaterialWageKwitansis = weekKwitansis.filter(
+      (k) => k.tipe === 'MATERIAL' || k.tipe === 'UPAH' || /kw-mat|kw-upah|uk\//i.test(k.noBukti || '')
+    );
+    const weekOtherKwitansis = weekKwitansis.filter(
+      (k) => !weekMaterialWageKwitansis.some((mw) => mw.id === k.id)
+    );
+
+    const currentWeekTotal = weekMaterialWageKwitansis.reduce((s, k) => s + (k.nominal || 0), 0);
+
+    if (weekMaxTarget > 0 && currentWeekTotal > weekMaxTarget) {
+      const scaleFactor = weekMaxTarget / currentWeekTotal;
+      let runningSum = 0;
+
+      const scaledWeekKw = weekMaterialWageKwitansis.map((kw, idx) => {
+        if (idx === weekMaterialWageKwitansis.length - 1) {
+          const lastNominal = Math.max(0, weekMaxTarget - runningSum);
+          const scaledItems = (kw.items || []).map((it) => {
+            const itemScale = kw.nominal > 0 ? lastNominal / kw.nominal : scaleFactor;
+            const newVol = Math.max(1, Math.round((it.volume || 1) * itemScale));
+            const newJml = Math.round(newVol * (it.hargaSatuan || 1));
+            return { ...it, volume: newVol, jumlah: newJml };
+          });
+          const newNom = scaledItems.length > 0 ? scaledItems.reduce((s, i) => s + i.jumlah, 0) : lastNominal;
+          return {
+            ...kw,
+            items: scaledItems,
+            nominal: newNom > 0 ? newNom : lastNominal,
+          };
+        }
+
+        const scaledNominal = Math.round((kw.nominal || 0) * scaleFactor);
+        runningSum += scaledNominal;
+        const scaledItems = (kw.items || []).map((it) => {
+          const newVol = Math.max(1, Math.round((it.volume || 1) * scaleFactor));
+          const newJml = Math.round(newVol * (it.hargaSatuan || 1));
+          return { ...it, volume: newVol, jumlah: newJml };
+        });
+        const newNom = scaledItems.length > 0 ? scaledItems.reduce((s, i) => s + i.jumlah, 0) : scaledNominal;
+        return {
+          ...kw,
+          items: scaledItems,
+          nominal: newNom > 0 ? newNom : scaledNominal,
+        };
+      });
+
+      cappedKwitansiList.push(...scaledWeekKw, ...weekOtherKwitansis);
+    } else {
+      cappedKwitansiList.push(...weekKwitansis);
     }
-    return true;
+
+    currentKwitansi = currentKwitansi.filter((k) => extractWeekNumberFromKwitansi(k) !== targetWeek);
   });
+
+  // Preserve non-weekly baseline kwitansis (Consulting, Admin, Baseline SMKK)
+  const nonWeeklyPreserved = currentKwitansi.filter((k) => {
+    const kwWeek = extractWeekNumberFromKwitansi(k);
+    if (kwWeek !== null) return false;
+    const isKons = k.tipe === 'KONSULTAN' || /kons-p|kons-w|perencana|pengawas/i.test(`${k.noBukti} ${k.uraian}`);
+    const isAdm = k.tipe === 'OPERASIONAL' || /\badm\b|pengelola/i.test(`${k.noBukti} ${k.uraian}`);
+    const isWeek1Smkk = k.tipe === 'SMKK' || /smkk|k3/i.test(`${k.noBukti} ${k.uraian}`);
+    return isKons || isAdm || isWeek1Smkk;
+  });
+
+  const finalizedKwitansi = deduplicateKwitansiList([...cappedKwitansiList, ...nonWeeklyPreserved]);
 
   const totalExpenditure = finalizedKwitansi.reduce((s, k) => s + (k.nominal || 0), 0);
 
